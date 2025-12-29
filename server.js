@@ -4,10 +4,6 @@ const WebSocket = require("ws");
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-if (!OPENAI_API_KEY) {
-  console.log("Missing OPENAI_API_KEY environment variable");
-}
-
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 
@@ -18,11 +14,13 @@ app.get("/", (req, res) => {
   res.type("text/plain").send("CallReady stream server is running.");
 });
 
+// Twilio hits this when a call comes in.
+// We start a live audio stream to /stream.
+// No <Say> here, because we want the AI to speak first.
 app.post("/twiml", (req, res) => {
   const twiml =
     `<?xml version="1.0" encoding="UTF-8"?>` +
     `<Response>` +
-    `<Say>Thank you for calling CallReady.</Say>` +
     `<Pause length="1" />` +
     `<Connect>` +
     `<Stream url="wss://callready-stream.onrender.com/stream" />` +
@@ -40,6 +38,12 @@ function safeJsonParse(data) {
   }
 }
 
+function sendJson(ws, obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
+  }
+}
+
 wss.on("connection", (twilioWs) => {
   let streamSid = null;
   let openaiWs = null;
@@ -48,17 +52,12 @@ wss.on("connection", (twilioWs) => {
   console.log("Twilio WebSocket connected");
 
   function sendToTwilio(obj) {
-    if (twilioWs.readyState === WebSocket.OPEN) {
-      twilioWs.send(JSON.stringify(obj));
-    }
-  }
-
-  function clearTwilioAudioBuffer() {
-    if (!streamSid) return;
-    sendToTwilio({ event: "clear", streamSid });
+    sendJson(twilioWs, obj);
   }
 
   function connectToOpenAI() {
+    // This is the OpenAI Realtime WebSocket endpoint.
+    // The model name used here should match what your account supports for realtime.
     const url = "wss://api.openai.com/v1/realtime?model=gpt-realtime";
 
     openaiWs = new WebSocket(url, {
@@ -69,10 +68,13 @@ wss.on("connection", (twilioWs) => {
     });
 
     openaiWs.on("open", () => {
-      console.log("OpenAI Realtime WebSocket connected");
+      console.log("OpenAI WebSocket connected");
 
-      // Configure the session to match Twilio Media Streams audio (mulaw 8k).
-      // Turn detection makes the AI wait until the caller stops talking.
+      const opening =
+        "Welcome to CallReady. This is a safe place to practice talking on the phone without pressure. " +
+        "I’m an AI agent, and I’ll respond the way a real person would, so there’s no need to feel self conscious. " +
+        "What kind of call would you like to practice today, for example calling a doctor’s office, or would you like me to pick an easy scenario to start?";
+
       const sessionUpdate = {
         type: "session.update",
         session: {
@@ -82,14 +84,19 @@ wss.on("connection", (twilioWs) => {
           output_audio_format: "g711_ulaw",
           turn_detection: { type: "server_vad" },
           instructions:
-            "You are CallReady, a friendly phone conversation practice partner for teens and young adults who feel anxious on the phone. " +
-            "Sound natural and human. Keep responses short. Ask one clear question at a time. " +
-            "If the caller is booking an appointment, act like a real clinic receptionist and gather: reason, preferred day, preferred time, name, phone number. " +
-            "Confirm details before ending. Do not say 'you can respond now'."
+            "You are CallReady, a calm and friendly AI phone conversation practice partner for teens and young adults. " +
+            "At the very start of the call, you must say exactly this opening, once, and only once: " +
+            `"${opening}" ` +
+            "After the opening, behave like a real human on the phone. " +
+            "Keep responses natural and concise. Ask one clear question at a time. " +
+            "Adapt to the caller’s answers. Do not repeat the opening. " +
+            "Do not say 'you can respond now'. " +
+            "If the caller chooses a doctor appointment scenario, roleplay as a clinic receptionist and naturally gather: reason, day, time, name, phone number. " +
+            "Confirm details before ending the call."
         }
       };
 
-      openaiWs.send(JSON.stringify(sessionUpdate));
+      sendJson(openaiWs, sessionUpdate);
     });
 
     openaiWs.on("message", (data) => {
@@ -98,11 +105,18 @@ wss.on("connection", (twilioWs) => {
 
       if (msg.type === "session.created" || msg.type === "session.updated") {
         openaiReady = true;
+
+        // Make the AI speak first immediately.
+        sendJson(openaiWs, {
+          type: "response.create",
+          response: {
+            modalities: ["audio", "text"]
+          }
+        });
         return;
       }
 
-      // When OpenAI produces audio, forward it to Twilio.
-      // OpenAI audio comes as base64 chunks. Twilio expects base64 mulaw payloads.
+      // Forward OpenAI audio back to Twilio
       if (msg.type === "response.audio.delta") {
         if (!streamSid) return;
 
@@ -114,15 +128,7 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
-      // Optional: helpful for debugging.
-      if (msg.type === "response.text.delta") {
-        process.stdout.write(msg.delta);
-        return;
-      }
-
-      // If OpenAI ends a response, print a newline for readability.
       if (msg.type === "response.completed") {
-        process.stdout.write("\n");
         return;
       }
     });
@@ -133,12 +139,19 @@ wss.on("connection", (twilioWs) => {
     });
 
     openaiWs.on("error", (err) => {
-      console.log("OpenAI WebSocket error:", err && err.message ? err.message : "unknown");
+      console.log(
+        "OpenAI WebSocket error:",
+        err && err.message ? err.message : "unknown"
+      );
       openaiReady = false;
     });
   }
 
-  connectToOpenAI();
+  if (!OPENAI_API_KEY) {
+    console.log("Missing OPENAI_API_KEY, cannot connect to OpenAI");
+  } else {
+    connectToOpenAI();
+  }
 
   twilioWs.on("message", (data) => {
     const msg = safeJsonParse(data);
@@ -146,10 +159,7 @@ wss.on("connection", (twilioWs) => {
 
     if (msg.event === "start") {
       streamSid = msg.start.streamSid;
-      console.log("Twilio start, streamSid:", streamSid);
-
-      // Clear any buffered audio at the start.
-      clearTwilioAudioBuffer();
+      console.log("Twilio start streamSid:", streamSid);
       return;
     }
 
@@ -157,14 +167,11 @@ wss.on("connection", (twilioWs) => {
       if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
       if (!openaiReady) return;
 
-      // Forward caller audio to OpenAI.
-      // Twilio sends base64 mulaw chunks in msg.media.payload
-      openaiWs.send(
-        JSON.stringify({
-          type: "input_audio_buffer.append",
-          audio: msg.media.payload
-        })
-      );
+      // Forward caller audio to OpenAI
+      sendJson(openaiWs, {
+        type: "input_audio_buffer.append",
+        audio: msg.media.payload
+      });
       return;
     }
 
@@ -182,7 +189,10 @@ wss.on("connection", (twilioWs) => {
   });
 
   twilioWs.on("error", (err) => {
-    console.log("Twilio WebSocket error:", err && err.message ? err.message : "unknown");
+    console.log(
+      "Twilio WebSocket error:",
+      err && err.message ? err.message : "unknown"
+    );
   });
 });
 
