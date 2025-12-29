@@ -6,8 +6,6 @@ const app = express();
 app.use(express.urlencoded({ extended: false }));
 
 const server = http.createServer(app);
-
-// This WebSocket server will receive Twilio Media Streams events.
 const wss = new WebSocket.Server({ server });
 
 app.get("/", (req, res) => {
@@ -27,19 +25,20 @@ app.post("/twiml", (req, res) => {
   res.type("text/xml").send(twiml);
 });
 
-wss.on("connection", (ws, req) => {
+wss.on("connection", (ws) => {
   console.log("WebSocket connected to /stream");
+
+  let mediaCount = 0;
 
   ws.on("message", (data) => {
     let msg;
     try {
       msg = JSON.parse(data.toString());
-    } catch (e) {
-      console.log("Non JSON message received");
+    } catch {
       return;
     }
 
-    const event = msg.event || "unknown";
+    const event = msg.event;
 
     if (event === "connected") {
       console.log("Twilio event: connected");
@@ -47,18 +46,17 @@ wss.on("connection", (ws, req) => {
     }
 
     if (event === "start") {
-      const streamSid = msg.start && msg.start.streamSid ? msg.start.streamSid : "";
-      const callSid = msg.start && msg.start.callSid ? msg.start.callSid : "";
       console.log("Twilio event: start");
-      console.log("streamSid: " + streamSid);
-      console.log("callSid: " + callSid);
+      console.log("streamSid:", msg.start.streamSid);
+      console.log("callSid:", msg.start.callSid);
       return;
     }
 
     if (event === "media") {
-      const track = msg.media && msg.media.track ? msg.media.track : "";
-      const len = msg.media && msg.media.payload ? msg.media.payload.length : 0;
-      console.log("Twilio event: media track=" + track + " payloadLength=" + len);
+      mediaCount += 1;
+      if (mediaCount % 50 === 0) {
+        console.log("Twilio event: media packets received:", mediaCount);
+      }
       return;
     }
 
@@ -66,8 +64,6 @@ wss.on("connection", (ws, req) => {
       console.log("Twilio event: stop");
       return;
     }
-
-    console.log("Twilio event: " + event);
   });
 
   ws.on("close", () => {
@@ -75,7 +71,7 @@ wss.on("connection", (ws, req) => {
   });
 
   ws.on("error", (err) => {
-    console.log("WebSocket error: " + (err && err.message ? err.message : "unknown"));
+    console.log("WebSocket error:", err.message);
   });
 });
 
