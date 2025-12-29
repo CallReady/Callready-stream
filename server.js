@@ -56,8 +56,6 @@ wss.on("connection", (twilioWs) => {
   }
 
   function connectToOpenAI() {
-    // This is the OpenAI Realtime WebSocket endpoint.
-    // The model name used here should match what your account supports for realtime.
     const url = "wss://api.openai.com/v1/realtime?model=gpt-realtime";
 
     openaiWs = new WebSocket(url, {
@@ -71,28 +69,47 @@ wss.on("connection", (twilioWs) => {
       console.log("OpenAI WebSocket connected");
 
       const opening =
-        "Welcome to CallReady. This is a safe place to practice talking on the phone without pressure. " +
-        "I’m an AI agent, and I’ll respond the way a real person would, so there’s no need to feel self conscious. " +
-        "What kind of call would you like to practice today, for example calling a doctor’s office, or would you like me to pick an easy scenario to start?";
+        "Welcome to CallReady, helping you master talking on the phone without fear. " +
+        "I’m an AI agent who can talk with you like a real person would, so there’s no reason to feel self conscious. " +
+        "Do you have a specific type of call you want to practice, like calling a doctor’s office to schedule an appointment, " +
+        "or would you like me to pick an easy scenario to start?";
 
       const sessionUpdate = {
         type: "session.update",
         session: {
           modalities: ["audio", "text"],
-          voice: "alloy",
+
+          // Higher quality voices for Realtime are commonly recommended as marin or cedar.
+          voice: "marin", // 1
+
           input_audio_format: "g711_ulaw",
           output_audio_format: "g711_ulaw",
           turn_detection: { type: "server_vad" },
+
           instructions:
-            "You are CallReady, a calm and friendly AI phone conversation practice partner for teens and young adults. " +
+            "You are CallReady, a friendly and upbeat phone conversation practice partner for teens and young adults. " +
+            "Your job is to simulate realistic, everyday phone calls while keeping the tone supportive and low pressure. " +
+
+            "Speaking style: sound conversational, warm, and human. " +
+            "Use occasional natural filler words when it fits, like 'um', 'hmm', 'okay', 'got it', 'let me check', " +
+            "but keep it subtle and not in every sentence. Do not overdo it. " +
+            "Vary your rhythm a bit so you do not sound like you are reading a script. " +
+
+            "Conversation rules: ask one clear question at a time. Keep turns short. Avoid long explanations. " +
+            "If the caller goes quiet, gently prompt with one simple question, then wait. " +
+            "Do not say 'you can respond now'. " +
+
             "At the very start of the call, you must say exactly this opening, once, and only once: " +
             `"${opening}" ` +
-            "After the opening, behave like a real human on the phone. " +
-            "Keep responses natural and concise. Ask one clear question at a time. " +
-            "Adapt to the caller’s answers. Do not repeat the opening. " +
-            "Do not say 'you can respond now'. " +
-            "If the caller chooses a doctor appointment scenario, roleplay as a clinic receptionist and naturally gather: reason, day, time, name, phone number. " +
-            "Confirm details before ending the call."
+
+            "Scenario selection: if they name a scenario, do that scenario. If they say 'pick one', choose a very easy scenario. " +
+            "If they choose a doctor appointment scenario, roleplay as a clinic receptionist and naturally gather: reason, preferred day, preferred time, name, phone number. " +
+            "Confirm details before wrapping up. " +
+
+            "Ending and feedback: when the scenario reaches a natural endpoint, do three things in order. " +
+            "First, wrap up the roleplay naturally in one or two sentences. " +
+            "Second, give brief feedback with one specific positive and one specific constructive tip. " +
+            "Third, ask: 'Would you like to try that again, or practice a different scenario?'"
         }
       };
 
@@ -109,9 +126,7 @@ wss.on("connection", (twilioWs) => {
         // Make the AI speak first immediately.
         sendJson(openaiWs, {
           type: "response.create",
-          response: {
-            modalities: ["audio", "text"]
-          }
+          response: { modalities: ["audio", "text"] }
         });
         return;
       }
@@ -125,10 +140,6 @@ wss.on("connection", (twilioWs) => {
           streamSid,
           media: { payload: msg.delta }
         });
-        return;
-      }
-
-      if (msg.type === "response.completed") {
         return;
       }
     });
@@ -167,7 +178,6 @@ wss.on("connection", (twilioWs) => {
       if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
       if (!openaiReady) return;
 
-      // Forward caller audio to OpenAI
       sendJson(openaiWs, {
         type: "input_audio_buffer.append",
         audio: msg.media.payload
