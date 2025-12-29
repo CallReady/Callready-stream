@@ -46,7 +46,6 @@ wss.on("connection", (twilioWs) => {
   let openaiWs = null;
   let openaiReady = false;
 
-  let warned = false;
   let warningTimer = null;
   let hardStopTimer = null;
 
@@ -80,6 +79,7 @@ wss.on("connection", (twilioWs) => {
           input_audio_format: "g711_ulaw",
           output_audio_format: "g711_ulaw",
           turn_detection: { type: "server_vad" },
+
           instructions:
             "You are CallReady, a friendly and upbeat AI phone conversation practice partner for teens and young adults. " +
             "Your job is to simulate realistic, everyday phone calls while keeping the tone supportive and low pressure. " +
@@ -106,7 +106,7 @@ wss.on("connection", (twilioWs) => {
             "Respond with care and seriousness. Encourage reaching out to a trusted person. In the United States, suggest calling or texting 988. " +
 
             "Time limit: the practice session is limited to five minutes. Keep things moving. " +
-            "When you hear a time warning, quickly wrap up the scenario, give feedback, then end politely. " +
+            "When you hear a time warning, quickly wrap up the scenario, then do confidence mirror and brief feedback, then close. " +
 
             "Opening behavior: at the very start of the call, say exactly this opening once and only once: " +
             `"${opening}" ` +
@@ -115,10 +115,13 @@ wss.on("connection", (twilioWs) => {
             "For a doctor appointment scenario, roleplay as a clinic receptionist and naturally gather: reason, preferred day, preferred time, name, and phone number, " +
             "while reminding them they can make details up. Confirm details before wrapping up. " +
 
-            "Ending and feedback: when a scenario reaches a natural endpoint, wrap up the roleplay briefly. " +
-            "Then give short feedback with one specific positive observation and one gentle improvement suggestion. " +
-            "Finally, ask if they would like to try the same scenario again or explore a different one. " +
-            "When the session is ending due to time, invite them to call again, or visit callready.live to sign up for unlimited use, texts with feedback after the session, " +
+            "Confidence mirror and feedback: when a scenario reaches a natural endpoint, do four things in order. " +
+            "First, wrap up the roleplay briefly in one or two sentences. " +
+            "Second, do a confidence mirror in one sentence that names what the caller successfully did, using plain language and evidence from the call. " +
+            "Do not exaggerate, do not sound like a pep talk. Example style: 'You clearly explained what you needed and answered the questions without rushing.' " +
+            "Third, give brief feedback with one specific positive and one specific constructive tip. " +
+            "Fourth, ask if they would like to try the same scenario again or explore a different one. " +
+            "When the session is ending due to time, also invite them to call again, or visit callready.live to sign up for unlimited use, texts with feedback after the session, " +
             "and the ability to remember where they left off next time they call."
         }
       };
@@ -133,46 +136,38 @@ wss.on("connection", (twilioWs) => {
       if (msg.type === "session.created" || msg.type === "session.updated") {
         openaiReady = true;
 
-        // Make the AI speak first immediately.
         sendJson(openaiWs, {
           type: "response.create",
           response: { modalities: ["audio", "text"] }
         });
 
-        // Start the 5 minute timers once the AI is ready.
         if (!warningTimer) {
           warningTimer = setTimeout(() => {
-            warned = true;
-
-            // Ask the AI to wrap up because time is almost up.
-            // This prompt is short so it does not sound robotic.
             sendJson(openaiWs, {
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
                 instructions:
-                  "Quick time check, we have about 15 seconds left. Wrap up, give brief feedback, invite them to call again or visit callready.live."
+                  "Quick time check, we have about 15 seconds left. Wrap up the scenario now. Then do confidence mirror and brief feedback. Then invite them to call again or visit callready.live."
               }
             });
-          }, 285000); // 4:45
+          }, 285000);
         }
 
         if (!hardStopTimer) {
           hardStopTimer = setTimeout(() => {
-            // Hard stop at 5:00. Close sockets to end the stream.
             try {
               if (twilioWs && twilioWs.readyState === WebSocket.OPEN) twilioWs.close();
             } catch {}
             try {
               if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
             } catch {}
-          }, 300000); // 5:00
+          }, 300000);
         }
 
         return;
       }
 
-      // Forward OpenAI audio back to Twilio
       if (msg.type === "response.audio.delta") {
         if (!streamSid) return;
 
