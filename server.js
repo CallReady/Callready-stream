@@ -5,7 +5,6 @@ const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
 
 const PORT = process.env.PORT || 10000;
-
 const VOICE = "Polly.Salli";
 
 function esc(s) {
@@ -29,24 +28,8 @@ function say(text) {
   return `<Say voice="${VOICE}">${esc(text)}</Say>`;
 }
 
-function pauseSeconds(len = 1) {
-  return `<Pause length="${len}"/>`;
-}
-
-function gatherBlock({ action, timeout = 7, promptText, method = "POST", input = "speech dtmf" }) {
-  return `
-<Gather input="${input}" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="${timeout}" action="${action}" method="${method}">
-  ${say(promptText)}
-</Gather>`;
-}
-
 function safeFailTwiML() {
-  return twiml(
-    [
-      say("Sorry, something went wrong on my end. Please call back and try again."),
-      "<Hangup/>"
-    ].join("\n")
-  );
+  return twiml([say("Sorry, something went wrong. Please call back and try again."), "<Hangup/>"].join("\n"));
 }
 
 function safeHandler(fn) {
@@ -58,6 +41,32 @@ function safeHandler(fn) {
       res.type("text/xml").send(safeFailTwiML());
     }
   };
+}
+
+function chooseForMeIntent(text) {
+  const t = (text || "").toLowerCase().trim();
+  if (!t) return false;
+  const phrases = [
+    "choose for me",
+    "you choose",
+    "pick for me",
+    "surprise me",
+    "anything",
+    "whatever",
+    "i don't know",
+    "you decide",
+    "doesn't matter",
+    "choose one",
+    "pick one"
+  ];
+  return phrases.some((p) => t.includes(p));
+}
+
+function scenarioFromText(text) {
+  const t = (text || "").toLowerCase();
+  if (t.includes("doctor") || t.includes("appointment") || t.includes("clinic")) return "doctor";
+  if (t.includes("job") || t.includes("application") || t.includes("interview")) return "job";
+  return "easy";
 }
 
 function buildScenario(name) {
@@ -81,12 +90,6 @@ function buildScenario(name) {
           afterUser: () => "Okay. What time of day usually works best for you, mornings or afternoons?",
           helpIfQuiet:
             "You could say, Afternoons usually work best. Or, Mornings are better for me."
-        },
-        {
-          afterUser: () =>
-            "Perfect. If I ask for details like a name or date of birth, you can make something up for practice. What day were you thinking?",
-          helpIfQuiet:
-            "You could say, How about Thursday? Or, Any day next week works."
         }
       ],
       wrapUp:
@@ -145,56 +148,23 @@ function buildScenario(name) {
   };
 }
 
-function chooseForMeIntent(text) {
-  const t = (text || "").toLowerCase().trim();
-  if (!t) return false;
-  const phrases = [
-    "choose for me",
-    "you choose",
-    "pick for me",
-    "surprise me",
-    "anything",
-    "whatever",
-    "i don't know",
-    "you decide",
-    "doesn't matter",
-    "choose one",
-    "pick one"
-  ];
-  return phrases.some((p) => t.includes(p));
-}
-
-function scenarioFromText(text) {
-  const t = (text || "").toLowerCase();
-  if (t.includes("doctor") || t.includes("appointment") || t.includes("clinic")) return "doctor";
-  if (t.includes("job") || t.includes("application") || t.includes("interview")) return "job";
-  return "easy";
-}
-
 function entry(req, res) {
   const opener =
     "Welcome to CallReady. A safe place to practice real phone calls before they matter. " +
-    "I am an AI practice partner, so there is no pressure and no judgment. " +
-    "Quick note, this is a beta, so you might notice an occasional glitch. " +
-    "Would you like to choose a scenario, or should I choose an easy one for you? " +
-    "You can say doctor appointment, job follow up, or choose for me. You can also press any key.";
+    "This is a beta, so you might notice an occasional glitch. " +
+    "Choose a scenario by saying doctor appointment, job follow up, or say choose for me. " +
+    "You can also press any key at any time.";
 
   const xml = twiml(
     [
-      say(opener),
-      gatherBlock({
-        action: "/choose",
-        timeout: 8,
-        promptText: "Go ahead.",
-        input: "speech dtmf"
-      }),
-      say("I did not catch that. Say a scenario, or say choose for me, or press any key."),
-      gatherBlock({
-        action: "/choose",
-        timeout: 8,
-        promptText: "Go ahead.",
-        input: "speech dtmf"
-      }),
+      `<Gather input="speech dtmf" bargeIn="true" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="10" action="/choose" method="POST">
+        ${say(opener)}
+        ${say("Go ahead.")}
+      </Gather>`,
+      say("I did not catch that. Please say a scenario, or say choose for me, or press any key."),
+      `<Gather input="speech dtmf" bargeIn="true" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="10" action="/choose" method="POST">
+        ${say("Go ahead.")}
+      </Gather>`,
       say("No worries. Please call back when you are ready to practice. Goodbye."),
       "<Hangup/>"
     ].join("\n")
@@ -206,136 +176,132 @@ function entry(req, res) {
 app.post("/twiml", safeHandler((req, res) => entry(req, res)));
 app.post("/voice", safeHandler((req, res) => entry(req, res)));
 
-app.post("/choose", safeHandler((req, res) => {
-  const speech = (req.body.SpeechResult || "").trim();
-  const digits = (req.body.Digits || "").trim();
+app.post(
+  "/choose",
+  safeHandler((req, res) => {
+    const speech = (req.body.SpeechResult || "").trim();
+    const digits = (req.body.Digits || "").trim();
 
-  let picked = "easy";
-  if (digits) {
-    picked = "easy";
-  } else if (chooseForMeIntent(speech)) {
-    picked = "easy";
-  } else {
-    picked = scenarioFromText(speech);
-  }
+    let picked = "easy";
 
-  const scenario = buildScenario(picked);
+    if (digits) {
+      picked = "easy";
+    } else if (chooseForMeIntent(speech)) {
+      picked = "easy";
+    } else {
+      picked = scenarioFromText(speech);
+    }
 
-  const intro =
-    scenario.intro +
-    " Here is how it works. I speak as the other person. Then you respond. " +
-    "If you go quiet, I can offer a suggestion. Ready?";
+    const scenario = buildScenario(picked);
 
-  const xml = twiml(
-    [
-      say(intro),
-      pauseSeconds(1),
-      say("Ring ring."),
-      pauseSeconds(1),
-      say(scenario.openingLine),
-      pauseSeconds(1),
+    const intro =
+      scenario.intro +
+      " I will speak as the other person on the call. Then you respond. " +
+      "If you go quiet, I can offer a suggestion. Ready?";
 
-      `<Gather input="speech" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="9" action="/step?s=${encodeURIComponent(
-        picked
-      )}&i=0" method="POST"></Gather>
-${say("I did not catch that. If you want a quick suggestion, say yes. Or just start talking.")}
-<Gather input="speech dtmf" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="7" action="/quiet?s=${encodeURIComponent(
-        picked
-      )}&i=0" method="POST"></Gather>
-${say("Okay. Please call back when you are ready. Goodbye.")}
-<Hangup/>`
-    ].join("\n")
-  );
-
-  res.type("text/xml").send(xml);
-}));
-
-app.post("/quiet", safeHandler((req, res) => {
-  const s = req.query.s || "easy";
-  const i = parseInt(req.query.i || "0", 10);
-  const scenario = buildScenario(s);
-  const speech = (req.body.SpeechResult || "").toLowerCase();
-  const digits = (req.body.Digits || "").trim();
-
-  const wantsHelp = Boolean(digits || speech.includes("yes") || speech.includes("help") || speech.includes("sure"));
-
-  const helpLine = scenario.steps[i]
-    ? scenario.steps[i].helpIfQuiet
-    : "You can start with, Hi, I am calling about something quick.";
-
-  const xml = twiml(
-    [
-      wantsHelp ? say("Sure. Here is one simple way to say it.") : say("No problem. Take your time."),
-      pauseSeconds(1),
-      wantsHelp ? say(helpLine) : "",
-      pauseSeconds(1),
-      say("Whenever you are ready, go ahead."),
-
-      `<Gather input="speech" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="10" action="/step?s=${encodeURIComponent(
-        s
-      )}&i=${i}" method="POST"></Gather>
-${say("I am still here. If you want help, say yes.")}
-<Gather input="speech dtmf" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="7" action="/quiet?s=${encodeURIComponent(
-        s
-      )}&i=${i}" method="POST"></Gather>
-${say("Okay. We can stop here. Call back anytime to practice again. Goodbye.")}
-<Hangup/>`
-    ].join("\n")
-  );
-
-  res.type("text/xml").send(xml);
-}));
-
-app.post("/step", safeHandler((req, res) => {
-  const s = req.query.s || "easy";
-  const i = parseInt(req.query.i || "0", 10);
-  const scenario = buildScenario(s);
-
-  if (!scenario.steps[i]) {
     const xml = twiml(
       [
-        pauseSeconds(1),
-        say("Nice work."),
-        pauseSeconds(1),
-        say(scenario.wrapUp),
-        pauseSeconds(1),
-        gatherBlock({
-          action: "/choose",
-          timeout: 8,
-          promptText: "Say try again, or say doctor appointment, or job follow up. Or press any key.",
-          input: "speech dtmf"
-        }),
-        say("No worries. Call back anytime. Goodbye."),
+        say(intro),
+        say("Ring ring."),
+        say(scenario.openingLine),
+        `<Gather input="speech" bargeIn="true" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="10" action="/step?s=${encodeURIComponent(
+          picked
+        )}&i=0" method="POST">
+        </Gather>`,
+        say("I did not catch that. If you want a quick suggestion, say yes. Or just start talking."),
+        `<Gather input="speech dtmf" bargeIn="true" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="8" action="/quiet?s=${encodeURIComponent(
+          picked
+        )}&i=0" method="POST"></Gather>`,
+        say("Okay. Please call back when you are ready. Goodbye."),
         "<Hangup/>"
       ].join("\n")
     );
+
     res.type("text/xml").send(xml);
-    return;
-  }
+  })
+);
 
-  const agentLine = scenario.steps[i].afterUser(req.body.SpeechResult || "");
-  const nextIndex = i + 1;
+app.post(
+  "/quiet",
+  safeHandler((req, res) => {
+    const s = req.query.s || "easy";
+    const i = parseInt(req.query.i || "0", 10);
+    const scenario = buildScenario(s);
 
-  const xml = twiml(
-    [
-      pauseSeconds(1),
-      say(agentLine),
-      pauseSeconds(1),
+    const speech = (req.body.SpeechResult || "").toLowerCase().trim();
+    const digits = (req.body.Digits || "").trim();
 
-      `<Gather input="speech" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="9" action="/step?s=${encodeURIComponent(
-        s
-      )}&i=${nextIndex}" method="POST"></Gather>
-${say("If you want help with what to say, say yes. Or just start talking.")}
-<Gather input="speech dtmf" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="7" action="/quiet?s=${encodeURIComponent(
-        s
-      )}&i=${nextIndex}" method="POST"></Gather>
-${say("Okay. We can stop here. Call back anytime to practice again. Goodbye.")}
-<Hangup/>`
-    ].join("\n")
-  );
+    const wantsHelp = Boolean(digits || speech.includes("yes") || speech.includes("help") || speech.includes("sure"));
 
-  res.type("text/xml").send(xml);
-}));
+    const helpLine = scenario.steps[i]
+      ? scenario.steps[i].helpIfQuiet
+      : "You can start with, Hi, I am calling about something quick.";
+
+    const xml = twiml(
+      [
+        wantsHelp ? say("Sure. Here is one simple way to say it.") : say("No problem. Take your time."),
+        wantsHelp ? say(helpLine) : "",
+        say("Whenever you are ready, go ahead."),
+        `<Gather input="speech" bargeIn="true" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="12" action="/step?s=${encodeURIComponent(
+          s
+        )}&i=${i}" method="POST"></Gather>`,
+        say("I am still here. If you want help, say yes."),
+        `<Gather input="speech dtmf" bargeIn="true" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="8" action="/quiet?s=${encodeURIComponent(
+          s
+        )}&i=${i}" method="POST"></Gather>`,
+        say("Okay. We can stop here. Call back anytime to practice again. Goodbye."),
+        "<Hangup/>"
+      ].join("\n")
+    );
+
+    res.type("text/xml").send(xml);
+  })
+);
+
+app.post(
+  "/step",
+  safeHandler((req, res) => {
+    const s = req.query.s || "easy";
+    const i = parseInt(req.query.i || "0", 10);
+    const scenario = buildScenario(s);
+
+    if (!scenario.steps[i]) {
+      const xml = twiml(
+        [
+          say("Nice work."),
+          say(scenario.wrapUp),
+          `<Gather input="speech dtmf" bargeIn="true" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="10" action="/choose" method="POST">
+            ${say("Say try again, or say doctor appointment, or job follow up. Or press any key.")}
+          </Gather>`,
+          say("No worries. Call back anytime. Goodbye."),
+          "<Hangup/>"
+        ].join("\n")
+      );
+      res.type("text/xml").send(xml);
+      return;
+    }
+
+    const agentLine = scenario.steps[i].afterUser(req.body.SpeechResult || "");
+    const nextIndex = i + 1;
+
+    const xml = twiml(
+      [
+        say(agentLine),
+        `<Gather input="speech" bargeIn="true" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="10" action="/step?s=${encodeURIComponent(
+          s
+        )}&i=${nextIndex}" method="POST"></Gather>`,
+        say("If you want help with what to say, say yes. Or just start talking."),
+        `<Gather input="speech dtmf" bargeIn="true" language="en-US" speechModel="phone_call" speechTimeout="auto" timeout="8" action="/quiet?s=${encodeURIComponent(
+          s
+        )}&i=${nextIndex}" method="POST"></Gather>`,
+        say("Okay. We can stop here. Call back anytime to practice again. Goodbye."),
+        "<Hangup/>"
+      ].join("\n")
+    );
+
+    res.type("text/xml").send(xml);
+  })
+);
 
 app.get("/", (req, res) => {
   res.status(200).send("CallReady is running.");
