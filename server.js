@@ -1,412 +1,312 @@
 const express = require("express");
-const http = require("http");
-const WebSocket = require("ws");
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+// In memory call state for v1
+// callSid -> { startedAtMs, messages: [{role, content}], lastQuestion, scenarioLocked }
+const calls = new Map();
 
-process.on("uncaughtException", (err) => {
-  console.log("uncaughtException:", err && err.message ? err.message : err);
-});
+function xmlEscape(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
 
-process.on("unhandledRejection", (err) => {
-  console.log("unhandledRejection:", err && err.message ? err.message : err);
-});
+function nowMs() {
+  return Date.now();
+}
 
-app.get("/", (req, res) => {
-  res.type("text/plain").send("CallReady stream server is running.");
-});
+function isLikelyChooseForMe(text) {
+  const t = (text || "").toLowerCase();
+  return (
+    t.includes("you choose") ||
+    t.includes("you pick") ||
+    t.includes("surprise") ||
+    t.includes("any") ||
+    t.includes("doesn't matter") ||
+    t.trim() === "choose" ||
+    t.trim() === "pick"
+  );
+}
 
-app.post("/twiml", (req, res) => {
-  const twiml =
+function looksLikeScenarioRequest(text) {
+  const t = (text || "").toLowerCase();
+  const keywords = [
+    "doctor",
+    "appointment",
+    "clinic",
+    "dentist",
+    "school",
+    "office",
+    "teacher",
+    "job",
+    "interview",
+    "manager",
+    "pizza",
+    "restaurant",
+    "order",
+    "bank",
+    "pharmacy",
+    "refill",
+    "haircut",
+    "salon",
+    "hotel",
+    "reservation"
+  ];
+  return keywords.some((k) => t.includes(k));
+}
+
+function systemPrompt() {
+  return (
+    "You are CallReady, a supportive phone call practice partner for teens and young adults. " +
+    "Language lock: speak only in American English. Never switch languages. " +
+    "Tone: friendly, upbeat, calm, and human. Use occasional small fillers like 'okay' or 'got it' sparingly. " +
+    "Turn taking: ask exactly one question per turn, then stop. Keep responses short, like a real receptionist or staff member. " +
+    "Do not ask multiple questions at once. " +
+    "Privacy: never ask for real personal information unless you also say they can make it up for practice. " +
+    "Content boundaries: never discuss sexual or inappropriate topics for teens. " +
+    "Self harm safety: if the caller expresses thoughts of self harm, stop roleplay and encourage immediate help, include 988 in the US, and suggest talking to a trusted adult. " +
+    "Scenario handling: if the caller requests a specific scenario, do it. If they ask you to choose, pick an easy, realistic scenario. " +
+    "End condition: when the scenario goal is completed, transition to a wrap up. In wrap up, give a brief confidence mirror (what they did well), one gentle tip, and ask if they want to try again or a different scenario. " +
+    "Do not keep asking questions once the scenario is complete."
+  );
+}
+
+async function openaiChat(messages) {
+  // Minimal fetch call to OpenAI Responses API
+  // Using a stable text model. You can swap later.
+  const res = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + OPENAI_API_KEY,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "gpt-4.1-mini",
+      input: messages.map((m) => ({
+        role: m.role,
+        content: [{ type: "input_text", text: m.content }]
+      }))
+    })
+  });
+
+  const data = await res.json();
+
+  // Extract text safely
+  let text = "";
+  try {
+    const out = data.output || [];
+    for (const item of out) {
+      const content = item.content || [];
+      for (const c of content) {
+        if (c.type === "output_text" && c.text) text += c.text;
+      }
+    }
+  } catch {
+    text = "";
+  }
+
+  if (!text) {
+    text = "Sorry, I had a little glitch. Want to try that again? What kind of call do you want to practice?";
+  }
+
+  return text.trim();
+}
+
+function twimlSayGather({ sayText, actionUrl, gatherTimeoutSeconds = 6 }) {
+  // Twilio <Gather> with speech input
+  // Keep it simple for v1
+  return (
     '<?xml version="1.0" encoding="UTF-8"?>' +
     "<Response>" +
-    "<Pause length=\"1\" />" +
-    "<Connect>" +
-    "<Stream url=\"wss://callready-stream.onrender.com/stream\" />" +
-    "</Connect>" +
-    "</Response>";
+    "<Say voice=\"Polly.Joanna\">" +
+    xmlEscape(sayText) +
+    "</Say>" +
+    "<Gather input=\"speech\" action=\"" +
+    xmlEscape(actionUrl) +
+    "\" method=\"POST\" speechTimeout=\"auto\" timeout=\"" +
+    String(gatherTimeoutSeconds) +
+    "\" />" +
+    "<Say voice=\"Polly.Joanna\">No rush. If you want help, you can say, help me.</Say>" +
+    "<Gather input=\"speech\" action=\"" +
+    xmlEscape(actionUrl) +
+    "\" method=\"POST\" speechTimeout=\"auto\" timeout=\"" +
+    String(gatherTimeoutSeconds) +
+    "\" />" +
+    "<Say voice=\"Polly.Joanna\">Okay, feel free to call back when you are ready.</Say>" +
+    "<Hangup/>" +
+    "</Response>"
+  );
+}
 
-  res.type("text/xml").send(twiml);
+function twimlSayHangup(sayText) {
+  return (
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+    "<Response>" +
+    "<Say voice=\"Polly.Joanna\">" +
+    xmlEscape(sayText) +
+    "</Say>" +
+    "<Hangup/>" +
+    "</Response>"
+  );
+}
+
+app.get("/", (req, res) => {
+  res.type("text/plain").send("CallReady Gather server is running.");
 });
 
-function safeJsonParse(data) {
+app.post("/voice", (req, res) => {
+  const callSid = req.body.CallSid || "unknown";
+  const startedAtMs = nowMs();
+
+  const opening =
+    "Welcome to CallReady, a safe place to practice real phone calls before they matter. " +
+    "Quick note, this is a beta release, so you might notice an occasional glitch. " +
+    "I am an AI agent and this is practice, so there is no reason to feel self conscious. " +
+    "Do you want to choose a type of call to practice, like calling a doctor's office to schedule an appointment, " +
+    "or would you like me to pick an easy scenario to start?";
+
+  const messages = [
+    { role: "system", content: systemPrompt() },
+    { role: "assistant", content: opening }
+  ];
+
+  calls.set(callSid, {
+    startedAtMs,
+    messages,
+    lastQuestion: "Do you want to choose a type of call, or would you like me to pick one?",
+    scenarioLocked: false
+  });
+
+  const baseUrl = (process.env.PUBLIC_BASE_URL || "").trim();
+  const actionUrl = baseUrl ? baseUrl + "/turn" : "/turn";
+
+  res.type("text/xml").send(
+    twimlSayGather({
+      sayText: opening,
+      actionUrl
+    })
+  );
+});
+
+app.post("/turn", async (req, res) => {
+  const callSid = req.body.CallSid || "unknown";
+  const speech = (req.body.SpeechResult || "").trim();
+
+  let state = calls.get(callSid);
+  if (!state) {
+    // If state missing, restart
+    const baseUrl = (process.env.PUBLIC_BASE_URL || "").trim();
+    const actionUrl = baseUrl ? baseUrl + "/turn" : "/turn";
+    const restart =
+      "Sorry, I lost the thread for a second. Do you want to choose a call scenario, or would you like me to pick one?";
+    calls.set(callSid, {
+      startedAtMs: nowMs(),
+      messages: [{ role: "system", content: systemPrompt() }, { role: "assistant", content: restart }],
+      lastQuestion: restart,
+      scenarioLocked: false
+    });
+    res.type("text/xml").send(twimlSayGather({ sayText: restart, actionUrl }));
+    return;
+  }
+
+  const elapsedMs = nowMs() - state.startedAtMs;
+  if (elapsedMs >= 5 * 60 * 1000) {
+    const wrap =
+      "Time is up for this practice session. You did a nice job showing up and sticking with it. " +
+      "One small tip for next time is to slow down and say your purpose in one clear sentence. " +
+      "Feel free to call again, or visit callready.live to sign up for unlimited use, texts with feedback after sessions, and remembering where you left off.";
+    res.type("text/xml").send(twimlSayHangup(wrap));
+    calls.delete(callSid);
+    return;
+  }
+
+  const baseUrl = (process.env.PUBLIC_BASE_URL || "").trim();
+  const actionUrl = baseUrl ? baseUrl + "/turn" : "/turn";
+
+  // Handle silence or no speech captured
+  if (!speech) {
+    const nudge =
+      "No rush. Want a little help thinking of what to say? " +
+      "You can say, you choose, or you can tell me a type of call, like doctor, job interview, or ordering food. " +
+      "What would you like to practice?";
+    state.messages.push({ role: "assistant", content: nudge });
+    state.lastQuestion = "What would you like to practice?";
+    res.type("text/xml").send(twimlSayGather({ sayText: nudge, actionUrl }));
+    return;
+  }
+
+  // Add user message
+  state.messages.push({ role: "user", content: speech });
+
+  // If we are still at scenario selection, lock scenario choice
+  if (!state.scenarioLocked) {
+    if (isLikelyChooseForMe(speech) || speech.toLowerCase().includes("help me") || speech.toLowerCase().includes("i don't know")) {
+      state.messages.push({
+        role: "assistant",
+        content:
+          "Okay. I will pick an easy one. Ring ring. Hello, thanks for calling. How can I help you today?"
+      });
+      state.scenarioLocked = true;
+      const sayText = "Okay. I will pick an easy one. Ring ring. Hello, thanks for calling. How can I help you today?";
+      res.type("text/xml").send(twimlSayGather({ sayText, actionUrl }));
+      return;
+    }
+
+    if (looksLikeScenarioRequest(speech)) {
+      // Let the model run with it, but we cue it to begin the scenario like a real call
+      state.messages.push({
+        role: "assistant",
+        content:
+          "Great. Ring ring. Hello, thanks for calling. How can I help you today?"
+      });
+      state.scenarioLocked = true;
+
+      const sayText = "Great. Ring ring. Hello, thanks for calling. How can I help you today?";
+      res.type("text/xml").send(twimlSayGather({ sayText, actionUrl }));
+      return;
+    }
+
+    // If unclear, ask again simply
+    const clarify =
+      "Got it. Do you want to pick a scenario, like doctor, school office, job interview, or ordering food, " +
+      "or should I pick one for you?";
+    state.messages.push({ role: "assistant", content: clarify });
+    state.lastQuestion = "Do you want to pick a scenario, or should I pick?";
+    res.type("text/xml").send(twimlSayGather({ sayText: clarify, actionUrl }));
+    return;
+  }
+
+  // Normal AI turn after scenario started
+  const modelMessages = [
+    { role: "system", content: systemPrompt() },
+    ...state.messages
+  ];
+
+  let aiText = "";
   try {
-    return JSON.parse(data.toString());
+    aiText = await openaiChat(modelMessages);
   } catch {
-    return null;
-  }
-}
-
-function sendJson(ws, obj) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(obj));
-  }
-}
-
-wss.on("connection", (twilioWs) => {
-  let streamSid = null;
-
-  let openaiWs = null;
-  let openaiReady = false;
-  let openaiConnecting = false;
-
-  let openingSent = false;
-
-  // When true, we are waiting for caller input
-  let awaitingUser = false;
-
-  // Silence help
-  let silenceTimer = null;
-  let silenceHelpUsed = false;
-
-  // Prevent double responses for one user utterance
-  let pendingUserResponse = false;
-
-  // 5 minute limit
-  let warningTimer = null;
-  let hardStopTimer = null;
-  let timeWarningPending = false;
-
-  let reconnectAttempts = 0;
-
-  function clearSilenceTimer() {
-    if (silenceTimer) {
-      clearTimeout(silenceTimer);
-      silenceTimer = null;
-    }
+    aiText = "Sorry, I hit a little glitch. Want to try that again? What would you say next?";
   }
 
-  function startAwaitingUser() {
-    awaitingUser = true;
-    silenceHelpUsed = false;
-    clearSilenceTimer();
-
-    silenceTimer = setTimeout(() => {
-      if (!openaiReady || !openaiWs) return;
-      if (!awaitingUser) return;
-      if (silenceHelpUsed) return;
-
-      silenceHelpUsed = true;
-      awaitingUser = false;
-
-      sendJson(openaiWs, {
-        type: "response.create",
-        response: {
-          modalities: ["audio", "text"],
-          max_output_tokens: 170,
-          instructions:
-            "Speak only in American English. " +
-            "The caller is quiet. Ask kindly if they want help thinking of what to say. " +
-            "Offer exactly two short example phrases they could use. " +
-            "Then repeat your last question in a simpler way. " +
-            "Ask exactly one question, then stop talking and wait."
-        }
-      });
-    }, 7000);
+  // Keep the stored history trimmed
+  state.messages.push({ role: "assistant", content: aiText });
+  if (state.messages.length > 24) {
+    // keep system + last 22 messages
+    state.messages = [state.messages[0], ...state.messages.slice(-22)];
   }
 
-  function sendOpeningOnce() {
-    if (!openaiReady || !openaiWs) return;
-    if (openingSent) return;
-
-    openingSent = true;
-    awaitingUser = false;
-    clearSilenceTimer();
-
-    const openingText =
-      "Welcome to CallReady. A safe place to practice real phone calls before they matter. " +
-      "Quick note, this is a beta release, so you might notice an occasional glitch. " +
-      "I am an AI agent who talks with you like a real person would, so there is no reason to feel self conscious. " +
-      "Do you want to choose a type of call to practice, like calling a doctor's office, " +
-      "or would you like me to pick an easy scenario to start?";
-
-    sendJson(openaiWs, {
-      type: "response.create",
-      response: {
-        modalities: ["audio", "text"],
-        max_output_tokens: 260,
-        instructions:
-          "Speak only in American English. Never switch languages. " +
-          "Say the following opening exactly as written. Do not add anything. " +
-          "After the final question, stop speaking and wait. " +
-          "Opening: " + openingText
-      }
-    });
-  }
-
-  function requestTimeWarningWhenSafe() {
-    if (!openaiReady || !openaiWs) return;
-
-    // If we are not awaiting user, let the next response.done trigger it
-    timeWarningPending = true;
-
-    if (awaitingUser) {
-      // If we are waiting already, we can deliver it immediately
-      timeWarningPending = false;
-      awaitingUser = false;
-      clearSilenceTimer();
-
-      sendJson(openaiWs, {
-        type: "response.create",
-        response: {
-          modalities: ["audio", "text"],
-          max_output_tokens: 160,
-          instructions:
-            "Speak only in American English. " +
-            "Quick time check, we have about 15 seconds left. Wrap up the scenario now. " +
-            "Then do confidence mirror and brief feedback. " +
-            "Then invite them to call again or visit callready.live."
-        }
-      });
-    }
-  }
-
-  function createModelReplyAfterUser() {
-    if (!openaiReady || !openaiWs) return;
-
-    awaitingUser = false;
-    clearSilenceTimer();
-
-    sendJson(openaiWs, {
-      type: "response.create",
-      response: {
-        modalities: ["audio", "text"],
-        max_output_tokens: 190,
-        instructions:
-          "Speak only in American English. " +
-          "You are CallReady. Continue the roleplay naturally. " +
-          "Do not assume anything the caller did not say. " +
-          "Ask exactly one relevant question, then stop talking and wait. " +
-          "Never ask for real personal information unless you also say they can make it up for practice. " +
-          "Never discuss sexual or inappropriate topics for teens. " +
-          "If the caller expresses self harm thoughts, stop roleplay and encourage help including 988 in the US."
-      }
-    });
-  }
-
-  function connectToOpenAI() {
-    if (!OPENAI_API_KEY) {
-      console.log("Missing OPENAI_API_KEY");
-      return;
-    }
-    if (openaiConnecting) return;
-
-    openaiConnecting = true;
-
-    openaiWs = new WebSocket("wss://api.openai.com/v1/realtime?model=gpt-realtime", {
-      headers: {
-        Authorization: "Bearer " + OPENAI_API_KEY,
-        "OpenAI-Beta": "realtime=v1"
-      }
-    });
-
-    openaiWs.on("open", () => {
-      openaiConnecting = false;
-      openaiReady = false;
-      reconnectAttempts = 0;
-
-      openingSent = false;
-      awaitingUser = false;
-      silenceHelpUsed = false;
-      pendingUserResponse = false;
-      timeWarningPending = false;
-      clearSilenceTimer();
-
-      const systemInstructions =
-        "Language lock: You must speak only in American English at all times. Never switch languages. " +
-        "If the caller uses another language, politely continue in English. " +
-
-        "You are CallReady, a supportive AI phone conversation practice partner for teens and young adults. " +
-        "Keep everything calm, human, upbeat, and low pressure. " +
-
-        "Critical: Never assume the caller spoke. Never move forward unless you actually heard them. " +
-        "Ask exactly one question per turn, then stop talking and wait. " +
-
-        "If the caller goes quiet, you may offer help once: ask if they want help, give two short example phrases, " +
-        "then repeat your last question, and wait. " +
-
-        "Privacy: never ask for real personal information unless you also say they can make it up for practice. " +
-        "Content boundaries: never discuss sexual or inappropriate topics for teens. Redirect to a safe scenario. " +
-        "Self harm safety: if the caller expresses self harm thoughts, stop roleplay and encourage help including 988 in the US. " +
-
-        "Only use 'ring ring' when a practice scenario begins, not in the CallReady opening. " +
-
-        "When a scenario ends, do a brief confidence mirror (one sentence naming what the caller did well), " +
-        "one gentle tip, then ask if they want to try again or a different scenario. " +
-        "If time is up, invite them to call again or visit callready.live.";
-
-      sendJson(openaiWs, {
-        type: "session.update",
-        session: {
-          modalities: ["audio", "text"],
-          voice: "marin",
-          input_audio_format: "g711_ulaw",
-          output_audio_format: "g711_ulaw",
-          turn_detection: {
-            type: "server_vad",
-            threshold: 0.6,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 650,
-            create_response: false,
-            interrupt_response: false
-          },
-          instructions: systemInstructions
-        }
-      });
-    });
-
-    openaiWs.on("message", (data) => {
-      const msg = safeJsonParse(data);
-      if (!msg) return;
-
-      if (msg.type === "session.created" || msg.type === "session.updated") {
-        openaiReady = true;
-
-        sendOpeningOnce();
-
-        if (warningTimer) clearTimeout(warningTimer);
-        if (hardStopTimer) clearTimeout(hardStopTimer);
-
-        warningTimer = setTimeout(() => requestTimeWarningWhenSafe(), 285000);
-        hardStopTimer = setTimeout(() => {
-          try {
-            if (twilioWs && twilioWs.readyState === WebSocket.OPEN) twilioWs.close();
-          } catch {}
-          try {
-            if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
-          } catch {}
-        }, 300000);
-
-        return;
-      }
-
-      // Forward AI audio to Twilio
-      if (msg.type === "response.audio.delta") {
-        awaitingUser = false;
-        clearSilenceTimer();
-
-        if (streamSid) {
-          sendJson(twilioWs, {
-            event: "media",
-            streamSid: streamSid,
-            media: { payload: msg.delta }
-          });
-        }
-        return;
-      }
-
-      // When AI finishes a turn, start waiting for user
-      if (msg.type === "response.done") {
-        // If we owe the time warning, do it now after a clean stop
-        if (timeWarningPending) {
-          timeWarningPending = false;
-          sendJson(openaiWs, {
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              max_output_tokens: 160,
-              instructions:
-                "Speak only in American English. " +
-                "Quick time check, we have about 15 seconds left. Wrap up the scenario now. " +
-                "Then do confidence mirror and brief feedback. " +
-                "Then invite them to call again or visit callready.live."
-            }
-          });
-          return;
-        }
-
-        startAwaitingUser();
-        return;
-      }
-
-      // VAD signals: user finished speaking
-      if (msg.type === "input_audio_buffer.speech_stopped" || msg.type === "input_audio_buffer.committed") {
-        // Debounce, only create one reply per user turn
-        if (pendingUserResponse) return;
-        pendingUserResponse = true;
-
-        setTimeout(() => {
-          pendingUserResponse = false;
-        }, 400);
-
-        createModelReplyAfterUser();
-        return;
-      }
-    });
-
-    openaiWs.on("close", () => {
-      openaiReady = false;
-      openaiConnecting = false;
-
-      clearSilenceTimer();
-      openingSent = false;
-      awaitingUser = false;
-
-      if (twilioWs.readyState === WebSocket.OPEN && reconnectAttempts < 2) {
-        reconnectAttempts += 1;
-        setTimeout(() => connectToOpenAI(), 900);
-      }
-    });
-
-    openaiWs.on("error", (err) => {
-      console.log("OpenAI WebSocket error:", err && err.message ? err.message : "unknown");
-    });
-  }
-
-  connectToOpenAI();
-
-  twilioWs.on("message", (data) => {
-    const msg = safeJsonParse(data);
-    if (!msg) return;
-
-    if (msg.event === "start") {
-      streamSid = msg.start.streamSid;
-
-      openingSent = false;
-      awaitingUser = false;
-      silenceHelpUsed = false;
-      pendingUserResponse = false;
-      timeWarningPending = false;
-      clearSilenceTimer();
-
-      return;
-    }
-
-    if (msg.event === "media") {
-      // Caller audio comes in constantly, do not treat that as "they answered"
-      if (!openaiReady || !openaiWs) return;
-
-      sendJson(openaiWs, {
-        type: "input_audio_buffer.append",
-        audio: msg.media.payload
-      });
-
-      return;
-    }
-  });
-
-  twilioWs.on("close", () => {
-    clearSilenceTimer();
-    if (warningTimer) clearTimeout(warningTimer);
-    if (hardStopTimer) clearTimeout(hardStopTimer);
-
-    if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
-      openaiWs.close();
-    }
-  });
-
-  twilioWs.on("error", (err) => {
-    console.log("Twilio WebSocket error:", err && err.message ? err.message : "unknown");
-  });
+  res.type("text/xml").send(twimlSayGather({ sayText: aiText, actionUrl }));
 });
 
 const port = process.env.PORT || 3000;
-server.listen(port, () => {
+app.listen(port, () => {
   console.log("Listening on port " + port);
 });
