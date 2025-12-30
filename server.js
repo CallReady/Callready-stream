@@ -24,6 +24,10 @@ function escapeXml(str) {
     .replace(/'/g, "&apos;");
 }
 
+function ssml(text) {
+  return `<speak>${text}</speak>`;
+}
+
 function getSession(callSid) {
   if (!sessions.has(callSid)) {
     sessions.set(callSid, {
@@ -81,21 +85,47 @@ function hasSexualContent(text) {
   return signals.some((s) => t.includes(s));
 }
 
-const CRISIS_MESSAGE =
-  "It sounds like you might be dealing with thoughts of self harm. I am really sorry you are going through that. " +
-  "If you are in immediate danger, call 911 right now. If you are in the United States, you can call or text 988 for the Suicide and Crisis Lifeline. " +
-  "If you are outside the United States, contact your local emergency number or a trusted person right away. " +
-  "If you can, tell a trusted adult or someone near you what is going on. I am going to end this practice call now.";
+const CRISIS_MESSAGE = ssml(
+  "It sounds like you might be dealing with thoughts of self harm." +
+  '<break time="300ms"/>' +
+  "I am really sorry you are going through that." +
+  '<break time="300ms"/>' +
+  "If you are in immediate danger, call 911 right now." +
+  '<break time="300ms"/>' +
+  "If you are in the United States, you can call or text 988 for the Suicide and Crisis Lifeline." +
+  '<break time="300ms"/>' +
+  "I am going to end this practice call now."
+);
 
-const OPENING =
-  "Welcome to CallReady. A safe place to practice real phone calls before they matter. " +
-  "Quick note, this is a beta release, so you might notice an occasional glitch. " +
-  "Do you want to choose a type of call to practice, like calling a doctor's office to schedule an appointment, " +
-  "or would you like me to pick an easy scenario to start?";
+const OPENING = ssml(
+  "Welcome to CallReady." +
+  '<break time="300ms"/>' +
+  "A safe place to practice real phone calls before they matter." +
+  '<break time="400ms"/>' +
+  "Just so you know," +
+  '<break time="200ms"/>' +
+  "this is a beta release," +
+  '<break time="200ms"/>' +
+  "so you might notice an occasional glitch." +
+  '<break time="400ms"/>' +
+  "Do you want to choose a type of call to practice," +
+  '<break time="200ms"/>' +
+  "like calling a doctor’s office to schedule an appointment," +
+  '<break time="300ms"/>' +
+  "or would you like me to pick an easy scenario to start?"
+);
 
-const WRAP_UP =
-  "That is time for today. Nice work sticking with it. " +
-  "Call back any time to practice again, or visit callready dot live to learn more. Goodbye.";
+const WRAP_UP = ssml(
+  "That is time for today." +
+  '<break time="300ms"/>' +
+  "Nice work sticking with it." +
+  '<break time="300ms"/>' +
+  "You can call back any time to practice again," +
+  '<break time="200ms"/>' +
+  "or visit callready dot live to learn more." +
+  '<break time="300ms"/>' +
+  "Goodbye."
+);
 
 function pickScenario() {
   const scenarios = [
@@ -108,30 +138,41 @@ function pickScenario() {
   return scenarios[Math.floor(Math.random() * scenarios.length)];
 }
 
-function twimlSpeakAndGather(text, reprompt) {
-  const sayText = escapeXml(text);
+function twimlSpeakAndGather(ssmlText, reprompt) {
   const rep = escapeXml(reprompt || "Go ahead, I am listening.");
 
   return (
     '<?xml version="1.0" encoding="UTF-8"?>' +
     "<Response>" +
-    '<Say voice="Polly.Salli">' + sayText + "</Say>" +
+    '<Say voice="Polly.Salli">' + ssmlText + "</Say>" +
     '<Gather input="speech dtmf" action="/gather" method="POST" timeout="6" speechTimeout="auto">' +
-    '<Say voice="Polly.Salli">' + rep + "</Say>" +
+    '<Say voice="Polly.Salli">' +
+    ssml(
+      "Take your time." +
+      '<break time="200ms"/>' +
+      rep
+    ) +
+    "</Say>" +
     "</Gather>" +
     '<Say voice="Polly.Salli">' +
-    escapeXml("I did not catch anything. If you want help, say help me. Or say choose for me.") +
+    ssml(
+      "I did not catch anything." +
+      '<break time="200ms"/>' +
+      "If you want help, say help me." +
+      '<break time="200ms"/>' +
+      "Or say choose for me."
+    ) +
     "</Say>" +
     '<Redirect method="POST">/gather</Redirect>' +
     "</Response>"
   );
 }
 
-function twimlSayHangup(text) {
+function twimlSayHangup(ssmlText) {
   return (
     '<?xml version="1.0" encoding="UTF-8"?>' +
     "<Response>" +
-    '<Say voice="Polly.Salli">' + escapeXml(text) + "</Say>" +
+    '<Say voice="Polly.Salli">' + ssmlText + "</Say>" +
     "<Hangup/>" +
     "</Response>"
   );
@@ -169,8 +210,15 @@ app.post("/gather", (req, res) => {
   if (!userText) {
     res.type("text/xml").send(
       twimlSpeakAndGather(
-        "No worries. If you want, say help me for examples. Or tell me what kind of call you want to practice.",
-        "I am listening."
+        ssml(
+          "No worries." +
+          '<break time="200ms"/>' +
+          "If you want," +
+          '<break time="150ms"/>' +
+          "say help me for examples," +
+          '<break time="200ms"/>' +
+          "or tell me what kind of call you want to practice."
+        )
       )
     );
     return;
@@ -184,8 +232,15 @@ app.post("/gather", (req, res) => {
   if (hasSexualContent(userText)) {
     res.type("text/xml").send(
       twimlSpeakAndGather(
-        "I cannot help with anything sexual or inappropriate. Let us stick to everyday phone calls like appointments, ordering food, or calling a store. Do you want to choose a scenario, or should I pick one?",
-        "Go ahead."
+        ssml(
+          "I cannot help with anything sexual or inappropriate." +
+          '<break time="300ms"/>' +
+          "Let us stick to everyday phone calls." +
+          '<break time="300ms"/>' +
+          "Do you want to choose a scenario," +
+          '<break time="200ms"/>' +
+          "or should I pick one?"
+        )
       )
     );
     return;
@@ -203,9 +258,21 @@ app.post("/gather", (req, res) => {
     sess.state = "practice";
     sess.turns = 0;
 
-    const start =
-      "Great. Ring ring. Hello, thanks for calling. How can I help you today? " +
-      "For practice, we are doing " + sess.scenario + ". Go ahead.";
+    const start = ssml(
+      "Great." +
+      '<break time="300ms"/>' +
+      "Ring ring." +
+      '<break time="300ms"/>' +
+      "Hello, thanks for calling." +
+      '<break time="200ms"/>' +
+      "How can I help you today?" +
+      '<break time="400ms"/>' +
+      "For practice," +
+      '<break time="150ms"/>' +
+      "we are doing " + escapeXml(sess.scenario) + "." +
+      '<break time="300ms"/>' +
+      "Go ahead."
+    );
 
     res.type("text/xml").send(twimlSpeakAndGather(start));
     return;
@@ -214,8 +281,21 @@ app.post("/gather", (req, res) => {
   if (lower.includes("help me") || lower.includes("what should i say")) {
     res.type("text/xml").send(
       twimlSpeakAndGather(
-        "Totally okay. Here are two options you can try. Option one. Hi, I would like to schedule an appointment. Option two. Hi, I have a quick question. Pick one and say it out loud.",
-        "Try one of those options."
+        ssml(
+          "That is totally okay." +
+          '<break time="300ms"/>' +
+          "Here are two options you can try." +
+          '<break time="300ms"/>' +
+          "Option one." +
+          '<break time="150ms"/>' +
+          "Hi, I would like to schedule an appointment." +
+          '<break time="300ms"/>' +
+          "Option two." +
+          '<break time="150ms"/>' +
+          "Hi, I have a quick question." +
+          '<break time="300ms"/>' +
+          "Pick one and say it out loud."
+        )
       )
     );
     return;
@@ -226,24 +306,56 @@ app.post("/gather", (req, res) => {
   let reply = "";
 
   if (sess.turns === 1) {
-    reply =
-      "Okay, thanks. Just so you know, if I ask for details like your name or date of birth, you can make something up for practice. " +
-      "What day were you hoping for?";
+    reply = ssml(
+      "Okay, thanks." +
+      '<break time="200ms"/>' +
+      "Just so you know," +
+      '<break time="150ms"/>' +
+      "if I ask for details like your name or date of birth," +
+      '<break time="200ms"/>' +
+      "you can make something up for practice." +
+      '<break time="300ms"/>' +
+      "What day were you hoping for?"
+    );
   } else if (sess.turns === 2) {
-    reply =
-      "Got it. And what time of day works best, morning or afternoon?";
+    reply = ssml(
+      "Got it." +
+      '<break time="200ms"/>' +
+      "And what time of day works best," +
+      '<break time="150ms"/>' +
+      "morning or afternoon?"
+    );
   } else if (sess.turns === 3) {
-    reply =
-      "Perfect. And what is the reason for the appointment? You can keep it general, and you can make up details if you want.";
+    reply = ssml(
+      "Perfect." +
+      '<break time="200ms"/>' +
+      "And what is the reason for the appointment?" +
+      '<break time="200ms"/>' +
+      "You can keep it general."
+    );
   } else if (sess.turns === 4) {
-    reply =
-      "Thanks. Let me repeat that back quickly. " +
-      "Now, before we wrap up, how did that feel for you on a scale of one to five?";
+    reply = ssml(
+      "Thanks." +
+      '<break time="300ms"/>' +
+      "Before we wrap up," +
+      '<break time="200ms"/>' +
+      "how did that feel for you," +
+      '<break time="150ms"/>' +
+      "on a scale of one to five?"
+    );
   } else {
-    reply =
-      "Nice work. You stayed clear and polite through the call. " +
-      "One small improvement is to slow down your first sentence just a bit. " +
-      "Do you want to try again, or practice a different scenario?";
+    reply = ssml(
+      "Nice work." +
+      '<break time="300ms"/>' +
+      "You stayed clear and polite through the call." +
+      '<break time="300ms"/>' +
+      "One small improvement is to slow down your first sentence just a bit." +
+      '<break time="400ms"/>' +
+      "Do you want to try again," +
+      '<break time="200ms"/>' +
+      "or practice a different scenario?"
+    );
+
     sess.state = "choose";
     sess.scenario = null;
     sess.turns = 0;
