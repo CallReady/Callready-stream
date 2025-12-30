@@ -23,7 +23,7 @@ ${content}
 </Response>`;
 }
 
-app.post("/twiml", (req, res) => {
+function handleEntry(req, res) {
   const opener =
     "Welcome to CallReady. A safe place to practice real phone calls before they matter. " +
     "I am an AI practice partner, so there is no pressure and no judgment. " +
@@ -39,7 +39,10 @@ ${escapeForTwilio("I did not hear anything. Please say choose one for me, or tel
 `);
 
   res.type("text/xml").send(xml);
-});
+}
+
+app.post("/twiml", handleEntry);
+app.post("/voice", handleEntry);
 
 app.post("/choice", (req, res) => {
   const speech = (req.body.SpeechResult || "").toLowerCase();
