@@ -58,13 +58,21 @@ wss.on("connection", (twilioWs) => {
 
   let openingSent = false;
 
+  // AI speaking detection
   let aiSpeaking = false;
   let lastAiAudioAt = 0;
 
+  // These protect against falsely declaring "AI finished" mid sentence
+  let lastResponseStartedAt = 0;
+  const AI_FINISH_GAP_MS = 2400; // must be this quiet to consider AI done
+  const MIN_RESPONSE_DURATION_MS = 3500; // response must have been going at least this long
+
+  // Silence helper after AI finishes and we are truly waiting on user
   let awaitingUser = false;
   let silenceTimer = null;
   let silenceHelpUsed = false;
 
+  // 5 minute limit
   let warningTimer = null;
   let hardStopTimer = null;
   let timeWarningPending = false;
@@ -78,20 +86,90 @@ wss.on("connection", (twilioWs) => {
     }
   }
 
-  function forceAiTurn(extraInstructions) {
+  function startAwaitingUser() {
+    awaitingUser = true;
+    silenceHelpUsed = false;
+    clearSilenceTimer();
+
+    silenceTimer = setTimeout(() => {
+      if (!openaiReady || !openaiWs) return;
+      if (!awaitingUser) return;
+      if (silenceHelpUsed) return;
+
+      silenceHelpUsed = true;
+      awaitingUser = false;
+
+      sendJson(openaiWs, {
+        type: "response.create",
+        response: {
+          modalities: ["audio", "text"],
+          max_output_tokens: 160,
+          instructions:
+            "Speak only in American English. " +
+            "The caller is quiet. Ask kindly if they want help thinking of what to say. " +
+            "Offer exactly two short example phrases they could use. " +
+            "Then repeat your last question in a simpler way. " +
+            "Ask exactly one question and then stop talking."
+        }
+      });
+      lastResponseStartedAt = Date.now();
+      aiSpeaking = true;
+    }, 7000);
+  }
+
+  function forceTimeWarning() {
     if (!openaiReady || !openaiWs) return;
 
     sendJson(openaiWs, {
       type: "response.create",
       response: {
         modalities: ["audio", "text"],
-        max_output_tokens: 170,
+        max_output_tokens: 150,
         instructions:
-          (extraInstructions ? extraInstructions + " " : "") +
-          "Important: ask at most one question in this response. " +
-          "End the response immediately after that single question."
+          "Speak only in American English. " +
+          "Quick time check, we have about 15 seconds left. Wrap up the scenario now. " +
+          "Then do confidence mirror and brief feedback. " +
+          "Then invite them to call again or visit callready.live."
       }
     });
+
+    lastResponseStartedAt = Date.now();
+    aiSpeaking = true;
+  }
+
+  function requestTimeWarningWhenSafe() {
+    if (!openaiReady || !openaiWs) return;
+
+    if (aiSpeaking) {
+      timeWarningPending = true;
+      return;
+    }
+
+    forceTimeWarning();
+  }
+
+  function aiFinishWatcherTick() {
+    if (!openaiReady) return;
+
+    const now = Date.now();
+
+    if (!aiSpeaking) return;
+
+    const quietFor = now - lastAiAudioAt;
+    const responseAge = now - lastResponseStartedAt;
+
+    // Do not end a response too early, avoid cutting off the opener mid word
+    if (quietFor > AI_FINISH_GAP_MS && responseAge > MIN_RESPONSE_DURATION_MS) {
+      aiSpeaking = false;
+
+      // Now we are truly waiting on caller
+      startAwaitingUser();
+
+      if (timeWarningPending) {
+        timeWarningPending = false;
+        forceTimeWarning();
+      }
+    }
   }
 
   function sendOpeningOnce() {
@@ -107,75 +185,27 @@ wss.on("connection", (twilioWs) => {
       "Do you want to choose a type of call to practice, like calling a doctor's office, " +
       "or would you like me to pick an easy scenario to start?";
 
+    // Cancel any accidental in progress responses before starting the opening
+    sendJson(openaiWs, { type: "response.cancel" });
+
     sendJson(openaiWs, {
       type: "response.create",
       response: {
         modalities: ["audio", "text"],
-        max_output_tokens: 220,
+        max_output_tokens: 260,
         instructions:
-          "Speak only in American English. Do not switch languages. " +
-          "Say the following opening text exactly as written, word for word, then stop and wait. " +
-          "Opening text: " + openingText
+          "Speak only in American English. Never switch languages. " +
+          "Say the following opening exactly as written. Do not add anything. " +
+          "After you ask the final question, stop speaking and wait in silence. " +
+          "Never assume the caller answered. " +
+          "Opening: " + openingText
       }
     });
-  }
 
-  function startAwaitingUser() {
-    awaitingUser = true;
-    silenceHelpUsed = false;
-
+    lastResponseStartedAt = Date.now();
+    aiSpeaking = true;
+    awaitingUser = false;
     clearSilenceTimer();
-
-    silenceTimer = setTimeout(() => {
-      if (!openaiReady || !openaiWs) return;
-      if (!awaitingUser) return;
-      if (silenceHelpUsed) return;
-
-      silenceHelpUsed = true;
-      awaitingUser = false;
-
-      forceAiTurn(
-        "The caller has been quiet. Ask: 'Want a little help thinking of what to say?' " +
-          "Then offer exactly two short example phrases they could say. " +
-          "Then repeat your last question in a simpler way. " +
-          "Stop and wait."
-      );
-    }, 6500);
-  }
-
-  function requestTimeWarningWhenSafe() {
-    if (!openaiReady || !openaiWs) return;
-
-    if (aiSpeaking) {
-      timeWarningPending = true;
-      return;
-    }
-
-    forceAiTurn(
-      "Quick time check, we have about 15 seconds left. Wrap up the scenario now. " +
-        "Then do confidence mirror and brief feedback. " +
-        "Then invite them to call again or visit callready.live."
-    );
-  }
-
-  function aiFinishWatcherTick() {
-    if (!openaiReady) return;
-
-    const now = Date.now();
-    if (aiSpeaking && now - lastAiAudioAt > 1100) {
-      aiSpeaking = false;
-
-      startAwaitingUser();
-
-      if (timeWarningPending) {
-        timeWarningPending = false;
-        forceAiTurn(
-          "Quick time check, we have about 15 seconds left. Wrap up the scenario now. " +
-            "Then do confidence mirror and brief feedback. " +
-            "Then invite them to call again or visit callready.live."
-        );
-      }
-    }
   }
 
   function connectToOpenAI() {
@@ -198,17 +228,24 @@ wss.on("connection", (twilioWs) => {
       openaiConnecting = false;
       openaiReady = false;
       reconnectAttempts = 0;
+
       openingSent = false;
+      aiSpeaking = false;
+      awaitingUser = false;
+      clearSilenceTimer();
 
       const systemInstructions =
-        "Language: you must speak only in American English at all times. Never switch languages. " +
+        "Language lock: You must speak only in American English at all times. Never switch languages. " +
         "If the caller uses another language, politely continue in English. " +
 
         "You are CallReady, a supportive AI phone conversation practice partner for teens and young adults. " +
         "Keep everything calm, human, upbeat, and low pressure. " +
 
-        "Turn taking is critical. Ask exactly one question per turn, then stop talking and wait. " +
-        "Never ask a second question until the caller answers. " +
+        "Critical rule: Never assume the caller spoke. If you did not hear the caller, you must wait or offer help. " +
+        "Never move the scenario forward without actual caller input. " +
+
+        "Turn taking: Ask exactly one question per turn, then stop talking and wait. " +
+        "Do not ask a second question until the caller answers. " +
 
         "If the caller goes quiet, you may offer help once: ask if they want help, give two short example phrases, " +
         "then repeat your last question, and wait. " +
@@ -221,7 +258,7 @@ wss.on("connection", (twilioWs) => {
 
         "When a scenario ends, do a brief confidence mirror (one sentence naming what the caller did well), " +
         "one gentle tip, then ask if they want to try again or a different scenario. " +
-        "If time is up, invite them to call again or visit callready.live for unlimited use, texts with feedback, and remembering where they left off.";
+        "If time is up, invite them to call again or visit callready.live.";
 
       sendJson(openaiWs, {
         type: "session.update",
@@ -245,6 +282,7 @@ wss.on("connection", (twilioWs) => {
       if (msg.type === "session.created" || msg.type === "session.updated") {
         openaiReady = true;
 
+        // Start the opening deterministically
         sendOpeningOnce();
 
         if (warningTimer) clearTimeout(warningTimer);
@@ -277,6 +315,7 @@ wss.on("connection", (twilioWs) => {
             media: { payload: msg.delta }
           });
         }
+        return;
       }
     });
 
@@ -285,6 +324,7 @@ wss.on("connection", (twilioWs) => {
 
       openaiReady = false;
       openaiConnecting = false;
+
       aiSpeaking = false;
       awaitingUser = false;
       openingSent = false;
@@ -292,7 +332,7 @@ wss.on("connection", (twilioWs) => {
 
       if (twilioWs.readyState === WebSocket.OPEN && reconnectAttempts < 2) {
         reconnectAttempts += 1;
-        setTimeout(() => connectToOpenAI(), 800);
+        setTimeout(() => connectToOpenAI(), 900);
       }
     });
 
