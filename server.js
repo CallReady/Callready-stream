@@ -8,8 +8,7 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
 
-// Keep sessions in memory keyed by CallSid.
-// This resets if your server restarts, but it is stable for MVP.
+// In-memory sessions keyed by CallSid
 const sessions = new Map();
 
 function nowMs() {
@@ -116,14 +115,14 @@ function twimlSpeakAndGather(text, reprompt) {
   return (
     '<?xml version="1.0" encoding="UTF-8"?>' +
     "<Response>" +
-    '<Say voice="alice">' + sayText + "</Say>" +
+    '<Say voice="Polly.Salli">' + sayText + "</Say>" +
     '<Gather input="speech dtmf" action="/gather" method="POST" timeout="6" speechTimeout="auto">' +
-    '<Say voice="alice">' + rep + "</Say>" +
+    '<Say voice="Polly.Salli">' + rep + "</Say>" +
     "</Gather>" +
-    '<Say voice="alice">' +
+    '<Say voice="Polly.Salli">' +
     escapeXml("I did not catch anything. If you want help, say help me. Or say choose for me.") +
     "</Say>" +
-    "<Redirect method=\"POST\">/gather</Redirect>" +
+    '<Redirect method="POST">/gather</Redirect>' +
     "</Response>"
   );
 }
@@ -132,7 +131,7 @@ function twimlSayHangup(text) {
   return (
     '<?xml version="1.0" encoding="UTF-8"?>' +
     "<Response>" +
-    '<Say voice="alice">' + escapeXml(text) + "</Say>" +
+    '<Say voice="Polly.Salli">' + escapeXml(text) + "</Say>" +
     "<Hangup/>" +
     "</Response>"
   );
@@ -215,15 +214,13 @@ app.post("/gather", (req, res) => {
   if (lower.includes("help me") || lower.includes("what should i say")) {
     res.type("text/xml").send(
       twimlSpeakAndGather(
-        "Totally okay. Here are two options you can try. Option one: Hi, I would like to schedule an appointment. Option two: Hi, I have a quick question. Pick one and say it out loud.",
+        "Totally okay. Here are two options you can try. Option one. Hi, I would like to schedule an appointment. Option two. Hi, I have a quick question. Pick one and say it out loud.",
         "Try one of those options."
       )
     );
     return;
   }
 
-  // Practice logic: stable, scripted, one question at a time.
-  // This is intentionally simple and predictable.
   sess.turns += 1;
 
   let reply = "";
@@ -244,8 +241,8 @@ app.post("/gather", (req, res) => {
       "Now, before we wrap up, how did that feel for you on a scale of one to five?";
   } else {
     reply =
-      "Nice work. You kept it clear and polite, and you stayed in the conversation. " +
-      "One small improvement is to speak a little slower on your first sentence. " +
+      "Nice work. You stayed clear and polite through the call. " +
+      "One small improvement is to slow down your first sentence just a bit. " +
       "Do you want to try again, or practice a different scenario?";
     sess.state = "choose";
     sess.scenario = null;
