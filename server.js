@@ -9,7 +9,7 @@ app.use(express.urlencoded({ extended: false }));
 // callSid -> { startedAtMs, messages: [{role, content}], scenarioLocked }
 const calls = new Map();
 
-const TTS_VOICE = "Polly.Amy";
+const TTS_VOICE = "Polly.Salli";
 
 function xmlEscape(s) {
   return String(s || "")
