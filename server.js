@@ -154,7 +154,7 @@ wss.on("connection", (twilioWs) => {
       reconnectAttempts = 0;
 
       const opening =
-        "Welcome to CallReady, a place to practice real phone calls without the pressure. " +
+        "Welcome to CallReady. A safe place to practice real phone calls before they matter. " +
         "Quick note, this is a beta release, so you might notice an occasional glitch. " +
         "I’m an AI agent who talks with you like a real person would, so there’s no reason to feel self conscious. " +
         "Do you want to choose a type of call to practice, like calling a doctor’s office, " +
@@ -200,7 +200,10 @@ wss.on("connection", (twilioWs) => {
 
       if (msg.type === "session.created" || msg.type === "session.updated") {
         openaiReady = true;
-        sendJson(openaiWs, { type: "response.create", response: { modalities: ["audio", "text"] } });
+        sendJson(openaiWs, {
+          type: "response.create",
+          response: { modalities: ["audio", "text"] }
+        });
 
         warningTimer = setTimeout(requestTimeWarningWhenSafe, 285000);
         hardStopTimer = setTimeout(() => {
