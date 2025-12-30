@@ -316,4 +316,3 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log("CallReady server running on port " + PORT);
 });
-```0
