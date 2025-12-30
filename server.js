@@ -10,14 +10,6 @@ app.use(express.urlencoded({ extended: false }));
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-process.on("uncaughtException", (err) => {
-  console.log("uncaughtException:", err && err.message ? err.message : err);
-});
-
-process.on("unhandledRejection", (err) => {
-  console.log("unhandledRejection:", err && err.message ? err.message : err);
-});
-
 app.get("/", (req, res) => {
   res.type("text/plain").send("CallReady stream server is running.");
 });
@@ -54,25 +46,20 @@ wss.on("connection", (twilioWs) => {
 
   let openaiWs = null;
   let openaiReady = false;
-  let openaiConnecting = false;
-
-  let aiSpeaking = false;
-  let awaitingUser = false;
 
   let silenceTimer = null;
-  let silenceHelpUsed = false;
+  let helpUsedForThisPause = false;
 
-  let warningTimer = null;
-  let hardStopTimer = null;
-  let timeWarningRequested = false;
-
-  let reconnectAttempts = 0;
+  let lastAiAudioTime = 0;
+  let aiSpeaking = false;
 
   console.log("Twilio WebSocket connected");
 
   function clearSilenceTimer() {
-    if (silenceTimer) clearTimeout(silenceTimer);
-    silenceTimer = null;
+    if (silenceTimer) {
+      clearTimeout(silenceTimer);
+      silenceTimer = null;
+    }
   }
 
   function startSilenceTimer() {
@@ -80,78 +67,46 @@ wss.on("connection", (twilioWs) => {
 
     silenceTimer = setTimeout(() => {
       if (!openaiReady || !openaiWs) return;
-      if (!awaitingUser) return;
-      if (silenceHelpUsed) return;
+      if (helpUsedForThisPause) return;
 
-      silenceHelpUsed = true;
-      awaitingUser = false;
+      helpUsedForThisPause = true;
 
       sendJson(openaiWs, {
         type: "response.create",
         response: {
           modalities: ["audio", "text"],
           instructions:
-            "The caller is quiet. Ask kindly if they want help thinking of what to say. " +
+            "The caller has been quiet. Gently ask if they want help thinking of what to say. " +
             "Offer exactly two short example phrases they could use. " +
-            "Then repeat your last question in a simpler way and wait."
+            "Then repeat your last question in a simpler way and stop talking to wait."
         }
       });
-    }, 7000);
+    }, 6000);
   }
 
-  function markAiFinishedSpeaking() {
-    aiSpeaking = false;
-    awaitingUser = true;
-    startSilenceTimer();
+  function aiFinishedSpeakingCheck() {
+    const now = Date.now();
 
-    if (timeWarningRequested) {
-      timeWarningRequested = false;
-      sendJson(openaiWs, {
-        type: "response.create",
-        response: {
-          modalities: ["audio", "text"],
-          instructions:
-            "Quick time check, we have about 15 seconds left. Wrap up the scenario now. Then do confidence mirror and brief feedback. Then invite them to call again or visit callready.live."
-        }
-      });
+    if (aiSpeaking && now - lastAiAudioTime > 1200) {
+      aiSpeaking = false;
+      helpUsedForThisPause = false;
+      startSilenceTimer();
     }
-  }
-
-  function requestTimeWarningWhenSafe() {
-    if (!openaiReady || !openaiWs) return;
-
-    if (aiSpeaking) {
-      timeWarningRequested = true;
-      return;
-    }
-
-    sendJson(openaiWs, {
-      type: "response.create",
-      response: {
-        modalities: ["audio", "text"],
-        instructions:
-          "Quick time check, we have about 15 seconds left. Wrap up the scenario now. Then do confidence mirror and brief feedback. Then invite them to call again or visit callready.live."
-      }
-    });
   }
 
   function connectToOpenAI() {
-    if (!OPENAI_API_KEY) return;
-    if (openaiConnecting) return;
-
-    openaiConnecting = true;
-
-    openaiWs = new WebSocket("wss://api.openai.com/v1/realtime?model=gpt-realtime", {
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "OpenAI-Beta": "realtime=v1"
+    openaiWs = new WebSocket(
+      "wss://api.openai.com/v1/realtime?model=gpt-realtime",
+      {
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "OpenAI-Beta": "realtime=v1"
+        }
       }
-    });
+    );
 
     openaiWs.on("open", () => {
-      openaiConnecting = false;
       openaiReady = false;
-      reconnectAttempts = 0;
 
       const opening =
         "Welcome to CallReady. A safe place to practice real phone calls before they matter. " +
@@ -160,7 +115,7 @@ wss.on("connection", (twilioWs) => {
         "Do you want to choose a type of call to practice, like calling a doctor’s office, " +
         "or would you like me to pick an easy scenario to start?";
 
-      const sessionUpdate = {
+      sendJson(openaiWs, {
         type: "session.update",
         session: {
           modalities: ["audio", "text"],
@@ -168,30 +123,18 @@ wss.on("connection", (twilioWs) => {
           input_audio_format: "g711_ulaw",
           output_audio_format: "g711_ulaw",
           turn_detection: { type: "server_vad" },
-
           instructions:
             "You are CallReady, a supportive AI phone conversation practice partner for teens and young adults. " +
-            "Keep everything calm, human, and low pressure. " +
-
-            "Ask one question at a time. After asking, stop and wait. " +
-            "If the caller is quiet, offer help once, then wait. " +
-
+            "Ask one question at a time and then wait. " +
+            "If the caller is quiet, offer help once and then wait. " +
             "Never ask for real personal information without saying they can make it up. " +
-            "Never discuss sexual or inappropriate topics. " +
-            "If the caller expresses self harm thoughts, stop roleplay and encourage help, including 988 in the US. " +
-
-            "At the very start of the call, say this opening once and only once: " +
+            "Never discuss sexual topics. " +
+            "If self harm language appears, stop roleplay and encourage help including 988 in the US. " +
+            "At the very start of the call, say exactly this opening once and only once: " +
             `"${opening}" ` +
-
-            "Only use 'ring ring' when a practice scenario actually begins, not in the opening. " +
-
-            "When the scenario ends, briefly summarize what the caller did well, give one gentle tip, " +
-            "then ask if they want to try again or a different scenario. " +
-            "End by inviting them to call again or visit callready.live."
+            "Only say 'ring ring' when a practice scenario actually begins."
         }
-      };
-
-      sendJson(openaiWs, sessionUpdate);
+      });
     });
 
     openaiWs.on("message", (data) => {
@@ -200,22 +143,17 @@ wss.on("connection", (twilioWs) => {
 
       if (msg.type === "session.created" || msg.type === "session.updated") {
         openaiReady = true;
+
         sendJson(openaiWs, {
           type: "response.create",
           response: { modalities: ["audio", "text"] }
         });
-
-        warningTimer = setTimeout(requestTimeWarningWhenSafe, 285000);
-        hardStopTimer = setTimeout(() => {
-          if (twilioWs.readyState === WebSocket.OPEN) twilioWs.close();
-          if (openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
-        }, 300000);
         return;
       }
 
       if (msg.type === "response.audio.delta") {
         aiSpeaking = true;
-        awaitingUser = false;
+        lastAiAudioTime = Date.now();
         clearSilenceTimer();
 
         sendJson(twilioWs, {
@@ -224,11 +162,9 @@ wss.on("connection", (twilioWs) => {
           media: { payload: msg.delta }
         });
       }
-
-      if (msg.type === "response.audio.done" || msg.type === "response.done") {
-        markAiFinishedSpeaking();
-      }
     });
+
+    setInterval(aiFinishedSpeakingCheck, 500);
   }
 
   connectToOpenAI();
@@ -239,18 +175,27 @@ wss.on("connection", (twilioWs) => {
 
     if (msg.event === "start") {
       streamSid = msg.start.streamSid;
-      silenceHelpUsed = false;
+      helpUsedForThisPause = false;
+      return;
     }
 
     if (msg.event === "media") {
-      awaitingUser = false;
       clearSilenceTimer();
-      silenceHelpUsed = false;
+      helpUsedForThisPause = false;
+
+      if (!openaiReady || !openaiWs) return;
 
       sendJson(openaiWs, {
         type: "input_audio_buffer.append",
         audio: msg.media.payload
       });
+    }
+  });
+
+  twilioWs.on("close", () => {
+    clearSilenceTimer();
+    if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+      openaiWs.close();
     }
   });
 });
