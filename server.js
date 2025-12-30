@@ -93,10 +93,12 @@ wss.on("connection", (twilioWs) => {
 
   let reconnectAttempts = 0;
 
+  // Turn control
   let openingInProgress = true;
   let aiSpeaking = false;
   let pendingUserReply = false;
 
+  // Transcript buffer (caller)
   let currentUserTranscript = "";
 
   function createOpening() {
@@ -117,10 +119,11 @@ wss.on("connection", (twilioWs) => {
       type: "response.create",
       response: {
         modalities: ["audio", "text"],
-        max_output_tokens: 240,
+        max_output_tokens: 260,
         instructions:
-          "Speak only in American English. Say the opening naturally. After the final question, stop. " +
-          "Also provide a matching text transcript. " +
+          "Speak only in American English. Say the opening naturally and completely. " +
+          "After the final question, stop speaking and wait. " +
+          "Also provide matching text. " +
           "Opening: " + opening
       }
     });
@@ -135,7 +138,7 @@ wss.on("connection", (twilioWs) => {
       type: "response.create",
       response: {
         modalities: ["audio", "text"],
-        max_output_tokens: 220,
+        max_output_tokens: 230,
         instructions:
           "Speak only in American English. " +
           "You are CallReady, a supportive phone call practice partner for teens and young adults. " +
@@ -161,7 +164,7 @@ wss.on("connection", (twilioWs) => {
       type: "response.create",
       response: {
         modalities: ["audio", "text"],
-        max_output_tokens: 260,
+        max_output_tokens: 300,
         instructions:
           "Speak only in American English. Say this message calmly and clearly, then ask the final question and stop. " +
           "Also provide matching text. " +
@@ -196,7 +199,6 @@ wss.on("connection", (twilioWs) => {
       openingInProgress = true;
       aiSpeaking = false;
       pendingUserReply = false;
-
       currentUserTranscript = "";
 
       const systemInstructions =
@@ -220,7 +222,7 @@ wss.on("connection", (twilioWs) => {
             type: "server_vad",
             threshold: 0.6,
             prefix_padding_ms: 300,
-            silence_duration_ms: 750,
+            silence_duration_ms: 900,
             create_response: false,
             interrupt_response: false
           },
@@ -240,6 +242,7 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
+      // Forward AI audio to Twilio
       if (msg.type === "response.audio.delta") {
         if (streamSid) {
           sendJson(twilioWs, {
@@ -251,17 +254,20 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
+      // Caller transcript for safety check
       if (msg.type === "conversation.item.input_audio_transcription.completed") {
         if (msg.transcript) currentUserTranscript += " " + msg.transcript;
         return;
       }
 
+      // AI finished speaking
       if (msg.type === "response.done") {
         aiSpeaking = false;
         openingInProgress = false;
         return;
       }
 
+      // User finished talking, now we respond (or crisis override)
       if (msg.type === "input_audio_buffer.speech_stopped" || msg.type === "input_audio_buffer.committed") {
         if (openingInProgress) return;
         if (aiSpeaking) return;
@@ -313,6 +319,12 @@ wss.on("connection", (twilioWs) => {
 
     if (msg.event === "media") {
       if (!openaiReady || !openaiWs) return;
+
+      // Key stability change:
+      // While the AI is speaking (including the opener), do not forward caller audio.
+      // This prevents the opener getting cut off by background noise.
+      if (aiSpeaking) return;
+
       sendJson(openaiWs, { type: "input_audio_buffer.append", audio: msg.media.payload });
     }
   });
