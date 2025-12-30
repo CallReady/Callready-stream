@@ -56,6 +56,8 @@ wss.on("connection", (twilioWs) => {
   let openaiReady = false;
   let openaiConnecting = false;
 
+  let openingSent = false;
+
   let aiSpeaking = false;
   let lastAiAudioAt = 0;
 
@@ -83,11 +85,37 @@ wss.on("connection", (twilioWs) => {
       type: "response.create",
       response: {
         modalities: ["audio", "text"],
-        max_output_tokens: 140,
+        max_output_tokens: 170,
         instructions:
           (extraInstructions ? extraInstructions + " " : "") +
           "Important: ask at most one question in this response. " +
           "End the response immediately after that single question."
+      }
+    });
+  }
+
+  function sendOpeningOnce() {
+    if (!openaiReady || !openaiWs) return;
+    if (openingSent) return;
+
+    openingSent = true;
+
+    const openingText =
+      "Welcome to CallReady. A safe place to practice real phone calls before they matter. " +
+      "Quick note, this is a beta release, so you might notice an occasional glitch. " +
+      "I am an AI agent who talks with you like a real person would, so there is no reason to feel self conscious. " +
+      "Do you want to choose a type of call to practice, like calling a doctor's office, " +
+      "or would you like me to pick an easy scenario to start?";
+
+    sendJson(openaiWs, {
+      type: "response.create",
+      response: {
+        modalities: ["audio", "text"],
+        max_output_tokens: 220,
+        instructions:
+          "Speak only in American English. Do not switch languages. " +
+          "Say the following opening text exactly as written, word for word, then stop and wait. " +
+          "Opening text: " + openingText
       }
     });
   }
@@ -170,29 +198,30 @@ wss.on("connection", (twilioWs) => {
       openaiConnecting = false;
       openaiReady = false;
       reconnectAttempts = 0;
-
-      const opening =
-        "Welcome to CallReady. A safe place to practice real phone calls before they matter. " +
-        "Quick note, this is a beta release, so you might notice an occasional glitch. " +
-        "I am an AI agent who talks with you like a real person would, so there is no reason to feel self conscious. " +
-        "Do you want to choose a type of call to practice, like calling a doctor's office, " +
-        "or would you like me to pick an easy scenario to start?";
+      openingSent = false;
 
       const systemInstructions =
         "Language: you must speak only in American English at all times. Never switch languages. " +
         "If the caller uses another language, politely continue in English. " +
+
         "You are CallReady, a supportive AI phone conversation practice partner for teens and young adults. " +
         "Keep everything calm, human, upbeat, and low pressure. " +
+
         "Turn taking is critical. Ask exactly one question per turn, then stop talking and wait. " +
         "Never ask a second question until the caller answers. " +
+
         "If the caller goes quiet, you may offer help once: ask if they want help, give two short example phrases, " +
         "then repeat your last question, and wait. " +
+
         "Privacy: never ask for real personal information unless you also say they can make it up for practice. " +
         "Content boundaries: never discuss sexual or inappropriate topics for teens. Redirect to a safe scenario. " +
         "Self harm safety: if the caller expresses self harm thoughts, stop roleplay and encourage help including 988 in the US. " +
+
         "Only use 'ring ring' when a practice scenario begins, not in the CallReady opening. " +
-        "At the very start of the call, say this opening once and only once: " +
-        opening;
+
+        "When a scenario ends, do a brief confidence mirror (one sentence naming what the caller did well), " +
+        "one gentle tip, then ask if they want to try again or a different scenario. " +
+        "If time is up, invite them to call again or visit callready.live for unlimited use, texts with feedback, and remembering where they left off.";
 
       sendJson(openaiWs, {
         type: "session.update",
@@ -216,7 +245,7 @@ wss.on("connection", (twilioWs) => {
       if (msg.type === "session.created" || msg.type === "session.updated") {
         openaiReady = true;
 
-        forceAiTurn(null);
+        sendOpeningOnce();
 
         if (warningTimer) clearTimeout(warningTimer);
         if (hardStopTimer) clearTimeout(hardStopTimer);
@@ -258,6 +287,7 @@ wss.on("connection", (twilioWs) => {
       openaiConnecting = false;
       aiSpeaking = false;
       awaitingUser = false;
+      openingSent = false;
       clearSilenceTimer();
 
       if (twilioWs.readyState === WebSocket.OPEN && reconnectAttempts < 2) {
@@ -300,6 +330,8 @@ wss.on("connection", (twilioWs) => {
         type: "input_audio_buffer.append",
         audio: msg.media.payload
       });
+
+      return;
     }
   });
 
@@ -311,6 +343,10 @@ wss.on("connection", (twilioWs) => {
     if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
       openaiWs.close();
     }
+  });
+
+  twilioWs.on("error", (err) => {
+    console.log("Twilio WebSocket error:", err && err.message ? err.message : "unknown");
   });
 });
 
