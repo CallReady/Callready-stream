@@ -192,8 +192,8 @@ wss.on("connection", (twilioWs) => {
             instructions:
               "Speak this exactly, naturally, then stop speaking:\n" +
               "Welcome to CallReady, a safe place to practice real phone calls before they matter. " +
-              "I am an AI agent who can talk with you like a real person would, so no reason to be self-conscious. " +
-              "Quick note, this is a beta release, so there may still be some glitches. " +
+              "I am an AI agent who can talk with you like a real person would, so there's no reason to be self-conscious or nervous. " +
+              "Quick note, this is a beta release, so there may still be some glitches. If i freeze, saying hello will usually get me back on track." +
               "Do you want to choose a type of call to practice, or should I choose an easy scenario to start?",
           },
         });
