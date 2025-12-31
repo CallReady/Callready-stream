@@ -417,4 +417,3 @@ server.listen(PORT, () => {
   console.log(nowIso(), `Server listening on ${PORT}`, "version:", CALLREADY_VERSION);
   console.log(nowIso(), "POST /voice, WS /media");
 });
-```0
