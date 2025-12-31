@@ -193,4 +193,297 @@ wss.on("connection", (twilioWs) => {
   }
 
   function openaiSend(obj) {
-    if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN
+    if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
+    openaiWs.send(JSON.stringify(obj));
+  }
+
+  function cancelOpenAIResponseIfAny() {
+    try {
+      openaiSend({ type: "response.cancel" });
+    } catch {}
+  }
+
+  function scheduleHangupSoonAfterAudio(reason) {
+    // Wait briefly after the last audio delta to avoid clipping the final words.
+    const now = Date.now();
+    const msSinceLastAudio = lastAiAudioAtMs ? now - lastAiAudioAtMs : 0;
+
+    // If we just sent audio, wait ~900ms. If not, hang up quickly.
+    const waitMs = msSinceLastAudio < 900 ? 900 - msSinceLastAudio : 50;
+
+    setTimeout(async () => {
+      await endTwilioCall(reason);
+      closeAll("Session complete");
+    }, waitMs);
+  }
+
+  function startOneMinuteTimer() {
+    clearSessionTimer();
+
+    // 1 minute for fast testing
+    sessionTimer = setTimeout(() => {
+      try {
+        timeLimitReached = true;
+
+        console.log(nowIso(), "1-minute limit reached, triggering final message");
+
+        // Ensure we do not block the final message due to the "wait for speech" gate.
+        waitingForFirstCallerSpeech = false;
+        sawSpeechStarted = true;
+
+        // Stop anything in progress, and clear any audio buffer.
+        cancelOpenAIResponseIfAny();
+        openaiSend({ type: "input_audio_buffer.clear" });
+
+        timeLimitFinalResponseInFlight = true;
+
+        openaiSend({
+          type: "response.create",
+          response: {
+            modalities: ["audio", "text"],
+            instructions:
+              "Speak this naturally, then stop speaking:\n" +
+              "It looks like we have reached the end of our available time for this session. " +
+              "Please visit callready.live to find out how to get more time, including the ability to have me remember what we did today each time you call, " +
+              "and even get texts after each session to remind you what you accomplished and what to work on. " +
+              "Thanks for calling today, and I look forward to our next session!",
+          },
+        });
+      } catch (err) {
+        console.log(
+          nowIso(),
+          "Timer final message error:",
+          err && err.message ? err.message : err
+        );
+      }
+    }, 1 * 60 * 1000);
+  }
+
+  function startOpenAIRealtime() {
+    if (!OPENAI_API_KEY) {
+      console.error("Missing OPENAI_API_KEY");
+      closeAll("Missing OPENAI_API_KEY");
+      return;
+    }
+
+    const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(
+      OPENAI_REALTIME_MODEL
+    )}`;
+
+    openaiWs = new WebSocket(url, {
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "OpenAI-Beta": "realtime=v1",
+      },
+    });
+
+    openaiWs.on("open", () => {
+      openaiReady = true;
+      console.log(nowIso(), "OpenAI WS open");
+
+      // VAD OFF for opener so it cannot be interrupted.
+      openaiSend({
+        type: "session.update",
+        session: {
+          voice: OPENAI_VOICE,
+          input_audio_format: "g711_ulaw",
+          output_audio_format: "g711_ulaw",
+          turn_detection: null,
+          temperature: 0.7,
+          modalities: ["audio", "text"],
+          instructions: SYSTEM_INSTRUCTIONS,
+        },
+      });
+
+      if (!openerSent) {
+        openerSent = true;
+        console.log(nowIso(), "Sending opener");
+
+        openaiSend({
+          type: "response.create",
+          response: {
+            modalities: ["audio", "text"],
+            instructions:
+              "Speak this exactly, naturally, then stop speaking:\n" +
+              "Welcome to CallReady, a safe place to practice real phone calls before they matter. " +
+              "I am an AI agent who can talk with you like a real person would, so no reason to be self-conscious. " +
+              "Quick note, this is a beta release, so there may still be some glitches. " +
+              "Are you ready to practice?",
+          },
+        });
+      }
+    });
+
+    openaiWs.on("message", async (data) => {
+      const msg = safeJsonParse(data.toString());
+      if (!msg) return;
+
+      // Forward AI audio to Twilio
+      if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
+        lastAiAudioAtMs = Date.now();
+
+        // If we are still waiting for first caller speech, cancel any attempt to speak.
+        if (
+          turnDetectionEnabled &&
+          waitingForFirstCallerSpeech &&
+          !sawSpeechStarted &&
+          !timeLimitReached
+        ) {
+          console.log(nowIso(), "Blocking AI speech before caller speaks");
+          cancelOpenAIResponseIfAny();
+          return;
+        }
+
+        twilioSend({
+          event: "media",
+          streamSid,
+          media: { payload: msg.delta },
+        });
+        return;
+      }
+
+      // Detect actual speech start from caller (OpenAI VAD event)
+      if (msg.type === "input_audio_buffer.speech_started") {
+        sawSpeechStarted = true;
+        if (waitingForFirstCallerSpeech) {
+          waitingForFirstCallerSpeech = false;
+          console.log(nowIso(), "Caller speech detected, AI may respond now");
+        }
+        return;
+      }
+
+      // If OpenAI tries to create a response before speech, cancel it.
+      if (msg.type === "response.created") {
+        if (
+          turnDetectionEnabled &&
+          waitingForFirstCallerSpeech &&
+          !sawSpeechStarted &&
+          !timeLimitReached
+        ) {
+          console.log(
+            nowIso(),
+            "Cancelling response.created before caller speaks"
+          );
+          cancelOpenAIResponseIfAny();
+        }
+        return;
+      }
+
+      // When the opener finishes, enable VAD, clear buffer, and begin waiting for real speech
+      if (msg.type === "response.done" && openerSent && !turnDetectionEnabled) {
+        turnDetectionEnabled = true;
+        waitingForFirstCallerSpeech = true;
+        sawSpeechStarted = false;
+
+        console.log(nowIso(), "Opener done, enabling VAD and clearing buffer");
+
+        openaiSend({ type: "input_audio_buffer.clear" });
+
+        openaiSend({
+          type: "session.update",
+          session: {
+            turn_detection: { type: "server_vad" },
+          },
+        });
+
+        // Start the 1-minute timer when practice begins (right after opener).
+        startOneMinuteTimer();
+
+        return;
+      }
+
+      // If the time-limit message finished, end the call, but avoid clipping the last audio.
+      if (msg.type === "response.done" && timeLimitFinalResponseInFlight) {
+        timeLimitFinalResponseInFlight = false;
+        scheduleHangupSoonAfterAudio("Time limit reached");
+        return;
+      }
+
+      if (msg.type === "error") {
+        console.log(nowIso(), "OpenAI error event:", msg.error || msg);
+        closeAll("OpenAI error");
+        return;
+      }
+    });
+
+    openaiWs.on("close", () => {
+      console.log(nowIso(), "OpenAI WS closed");
+      openaiReady = false;
+      closeAll("OpenAI closed");
+    });
+
+    openaiWs.on("error", (err) => {
+      console.log(
+        nowIso(),
+        "OpenAI WS error:",
+        err && err.message ? err.message : err
+      );
+      openaiReady = false;
+      closeAll("OpenAI WS error");
+    });
+  }
+
+  twilioWs.on("message", (data) => {
+    const msg = safeJsonParse(data.toString());
+    if (!msg) return;
+
+    if (msg.event === "start") {
+      streamSid = msg.start && msg.start.streamSid ? msg.start.streamSid : null;
+      callSid = msg.start && msg.start.callSid ? msg.start.callSid : null;
+
+      console.log(
+        nowIso(),
+        "Twilio stream start:",
+        streamSid || "(no streamSid)",
+        "callSid:",
+        callSid || "(no callSid)"
+      );
+
+      startOpenAIRealtime();
+      return;
+    }
+
+    if (msg.event === "media") {
+      // Do not forward audio until we enabled VAD after opener.
+      if (!turnDetectionEnabled) return;
+
+      if (openaiReady && msg.media && msg.media.payload) {
+        openaiSend({
+          type: "input_audio_buffer.append",
+          audio: msg.media.payload,
+        });
+      }
+      return;
+    }
+
+    if (msg.event === "stop") {
+      console.log(nowIso(), "Twilio stream stop");
+      closeAll("Twilio stop");
+      return;
+    }
+  });
+
+  twilioWs.on("close", () => {
+    console.log(nowIso(), "Twilio WS closed");
+    closeAll("Twilio WS closed");
+  });
+
+  twilioWs.on("error", (err) => {
+    console.log(
+      nowIso(),
+      "Twilio WS error:",
+      err && err.message ? err.message : err
+    );
+    closeAll("Twilio WS error");
+  });
+});
+
+server.listen(PORT, () => {
+  console.log(
+    nowIso(),
+    `Server listening on ${PORT}`,
+    "version:",
+    CALLREADY_VERSION
+  );
+  console.log(nowIso(), "POST /voice, WS /media");
+});
