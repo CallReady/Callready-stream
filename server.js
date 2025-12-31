@@ -18,7 +18,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-timerclose-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-timerclose-2";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -102,7 +102,12 @@ wss.on("connection", (twilioWs) => {
 
   let closingInProgress = false;
   let closingRequested = false;
-  let hangupAfterCurrentResponse = false;
+
+  // We only end the call after the specific response that contains the goodbye finishes.
+  let lastResponseId = null;
+  let closingResponseId = null;
+  let goodbyeDetected = false;
+  let goodbyeResponseId = null;
 
   let aiTextBuffer = "";
 
@@ -172,21 +177,26 @@ wss.on("connection", (twilioWs) => {
 
   function requestClosingScript(reason) {
     if (closingRequested) return;
+
     closingRequested = true;
     closingInProgress = true;
-    hangupAfterCurrentResponse = true;
+    closingResponseId = null;
 
     console.log(nowIso(), reason, "sending closing script");
 
-    // Force close to bypass turn lock and caller gating.
-    // Also cancel any active response first, but do not die if cancel is not active.
+    // Make sure nothing blocks the closing response.
+    requireCallerSpeechBeforeNextAI = false;
+    sawCallerSpeechSinceLastAIDone = true;
+
+    // Cancel any active response, ignore if none.
     cancelOpenAIResponseIfAny();
 
     openaiSend({
       type: "response.create",
       response: {
         modalities: ["audio", "text"],
-        instructions: "Speak this exactly, naturally, then stop speaking:\n" + CLOSING_SCRIPT,
+        instructions:
+          "Speak this exactly, naturally, then stop speaking:\n" + CLOSING_SCRIPT,
       },
     });
   }
@@ -210,13 +220,26 @@ wss.on("connection", (twilioWs) => {
       aiTextBuffer = aiTextBuffer.slice(-3000);
     }
 
-    if (aiTextBuffer.includes(GOODBYE_TRIGGER)) {
-      console.log(nowIso(), "Goodbye trigger detected in AI text");
-      hangupAfterCurrentResponse = true;
-
-      // If we detect it mid-stream, do not end immediately,
-      // we end when the response is done so the caller hears it.
+    if (!goodbyeDetected && aiTextBuffer.includes(GOODBYE_TRIGGER)) {
+      goodbyeDetected = true;
+      goodbyeResponseId = lastResponseId;
+      console.log(nowIso(), "Goodbye trigger detected in AI text, responseId:", goodbyeResponseId || "(unknown)");
     }
+  }
+
+  function extractResponseIdFromCreated(msg) {
+    // Realtime payloads vary. We try the common fields.
+    if (msg && msg.response && msg.response.id) return msg.response.id;
+    if (msg && msg.response_id) return msg.response_id;
+    if (msg && msg.id) return msg.id;
+    return null;
+  }
+
+  function extractResponseIdFromDone(msg) {
+    if (msg && msg.response && msg.response.id) return msg.response.id;
+    if (msg && msg.response_id) return msg.response_id;
+    if (msg && msg.id) return msg.id;
+    return null;
   }
 
   function startOpenAIRealtime() {
@@ -309,7 +332,6 @@ wss.on("connection", (twilioWs) => {
       if (!msg) return;
 
       // Capture AI text for goodbye trigger detection.
-      // Different realtime builds may use different event names, so we listen for several.
       if (msg.type === "response.text.delta" && msg.delta) {
         appendAiTextAndCheckHangup(msg.delta);
       }
@@ -318,6 +340,43 @@ wss.on("connection", (twilioWs) => {
       }
       if (msg.type === "response.audio_transcript.delta" && msg.delta) {
         appendAiTextAndCheckHangup(msg.delta);
+      }
+
+      // Track response ids so we only hang up after the correct response completes.
+      if (msg.type === "response.created") {
+        const rid = extractResponseIdFromCreated(msg);
+        if (rid) lastResponseId = rid;
+
+        // If we just requested closing and have not latched the closing response id yet, latch it now.
+        if (closingInProgress && !closingResponseId && rid) {
+          closingResponseId = rid;
+          console.log(nowIso(), "Closing response created, responseId:", closingResponseId);
+        }
+
+        // Gating: only apply to normal conversation, never apply to closing.
+        if (
+          !closingInProgress &&
+          turnDetectionEnabled &&
+          waitingForFirstCallerSpeech &&
+          !sawSpeechStarted
+        ) {
+          console.log(nowIso(), "Cancelling response.created before caller speaks");
+          cancelOpenAIResponseIfAny();
+          return;
+        }
+
+        if (
+          !closingInProgress &&
+          turnDetectionEnabled &&
+          requireCallerSpeechBeforeNextAI &&
+          !sawCallerSpeechSinceLastAIDone
+        ) {
+          console.log(nowIso(), "Cancelling response.created due to turn lock");
+          cancelOpenAIResponseIfAny();
+          return;
+        }
+
+        return;
       }
 
       // Forward AI audio to Twilio
@@ -375,33 +434,6 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
-      // If OpenAI tries to create a response before speech, cancel it.
-      if (msg.type === "response.created") {
-        if (
-          !closingInProgress &&
-          turnDetectionEnabled &&
-          waitingForFirstCallerSpeech &&
-          !sawSpeechStarted
-        ) {
-          console.log(nowIso(), "Cancelling response.created before caller speaks");
-          cancelOpenAIResponseIfAny();
-          return;
-        }
-
-        if (
-          !closingInProgress &&
-          turnDetectionEnabled &&
-          requireCallerSpeechBeforeNextAI &&
-          !sawCallerSpeechSinceLastAIDone
-        ) {
-          console.log(nowIso(), "Cancelling response.created due to turn lock");
-          cancelOpenAIResponseIfAny();
-          return;
-        }
-
-        return;
-      }
-
       // When the opener finishes, enable VAD, clear buffer, and begin waiting for real speech
       if (msg.type === "response.done" && openerSent && !turnDetectionEnabled) {
         turnDetectionEnabled = true;
@@ -426,14 +458,25 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
-      // After any other AI response completes, require caller speech before the next AI response
+      // After any other AI response completes, require caller speech before the next AI response,
+      // and only hang up if the completed response is the closing response or contains the goodbye.
       if (msg.type === "response.done" && turnDetectionEnabled) {
-        // If we just finished the closing script (or goodbye was detected), end the call now.
-        if (hangupAfterCurrentResponse) {
-          console.log(nowIso(), "AI response done and hangupAfterCurrentResponse=true, ending call");
-          // Try REST hangup first. Either way, close sockets right after.
-          endCallViaTwilioRest("Hangup after AI goodbye").finally(() => {
-            closeAll("Hangup after AI goodbye");
+        const doneId = extractResponseIdFromDone(msg) || lastResponseId;
+
+        // If we sent the closing script, end the call only after that closing response finishes.
+        if (closingInProgress && closingResponseId && doneId === closingResponseId) {
+          console.log(nowIso(), "Closing response done, ending call now");
+          endCallViaTwilioRest("Closing script complete").finally(() => {
+            closeAll("Hangup after closing script");
+          });
+          return;
+        }
+
+        // If we detected the goodbye trigger in AI text, end the call after the response that contained it finishes.
+        if (goodbyeDetected && goodbyeResponseId && doneId === goodbyeResponseId) {
+          console.log(nowIso(), "Goodbye response done, ending call now");
+          endCallViaTwilioRest("Goodbye trigger complete").finally(() => {
+            closeAll("Hangup after goodbye trigger");
           });
           return;
         }
@@ -442,12 +485,6 @@ wss.on("connection", (twilioWs) => {
         if (!closingInProgress) {
           requireCallerSpeechBeforeNextAI = true;
           sawCallerSpeechSinceLastAIDone = false;
-        }
-
-        // If we were in closing mode but did not hang up for some reason, drop out of closing mode.
-        // This should not normally happen because closing script includes the goodbye trigger.
-        if (closingInProgress) {
-          closingInProgress = false;
         }
 
         return;
