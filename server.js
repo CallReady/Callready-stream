@@ -17,7 +17,7 @@ const OPENAI_REALTIME_MODEL =
   process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview";
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
-const CALLREADY_VERSION = "realtime-vadfix-opener-3-ready-ringring-turnlock-1";
+const CALLREADY_VERSION = "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options";
 
 function safeJsonParse(str) {
   try {
@@ -163,7 +163,21 @@ wss.on("connection", (twilioWs) => {
             "Instead, once the scenario is chosen and setup is clear, ask: \"Are you ready to start?\"\n" +
             "Wait for yes.\n" +
             "Then say \"Ring ring.\" and immediately answer the call as the other person.\n" +
-            "In roleplay, you speak first after \"Ring ring.\"\n",
+            "In roleplay, you speak first after \"Ring ring.\"\n" +
+            "\n" +
+            "Scenario completion rule:\n" +
+            "When the scenario is complete, you must do this in the SAME spoken turn with no pause for caller input:\n" +
+            "1) Say: \"Okay, that wraps the scenario.\"\n" +
+            "2) Immediately ask exactly one question:\n" +
+            "\"Would you like some feedback on how you did, try that scenario again, or try something different?\"\n" +
+            "Then stop speaking and wait.\n" +
+            "\n" +
+            "If they ask for feedback:\n" +
+            "Keep it about 30 to 45 seconds.\n" +
+            "Give two specific strengths, two specific improvements as actionable suggestions, and one short model line they can repeat next time.\n" +
+            "Then ask exactly one question:\n" +
+            "\"Do you want to try that scenario again, try a different scenario, or end the call?\"\n" +
+            "Then stop speaking and wait.\n",
         },
       });
 
@@ -203,7 +217,7 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-        // Turn lock: after any AI response completes, we require caller speech to unlock
+        // Turn lock: after any AI response completes, require caller speech to unlock
         if (
           turnDetectionEnabled &&
           requireCallerSpeechBeforeNextAI &&
@@ -306,7 +320,11 @@ wss.on("connection", (twilioWs) => {
     });
 
     openaiWs.on("error", (err) => {
-      console.log(nowIso(), "OpenAI WS error:", err && err.message ? err.message : err);
+      console.log(
+        nowIso(),
+        "OpenAI WS error:",
+        err && err.message ? err.message : err
+      );
       openaiReady = false;
       closeAll("OpenAI WS error");
     });
@@ -355,6 +373,11 @@ wss.on("connection", (twilioWs) => {
 });
 
 server.listen(PORT, () => {
-  console.log(nowIso(), `Server listening on ${PORT}`, "version:", CALLREADY_VERSION);
+  console.log(
+    nowIso(),
+    `Server listening on ${PORT}`,
+    "version:",
+    CALLREADY_VERSION
+  );
   console.log(nowIso(), "POST /voice, WS /media");
 });
