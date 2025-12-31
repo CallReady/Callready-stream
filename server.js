@@ -18,21 +18,19 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-timerclose-2-gracehangup";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-timerclose-3-fixedhangup";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 
 const CLOSING_SCRIPT =
-  "It looks like our time for this session is about up. If you'd like more time, the ability to remember precious sessions, or recieve a text summary of our session and what to work on next, please visit callready.live. Thanks for using CallReady and I look forward to our next session. Goodbye!";
+  "Oops! It looks like our time for this session is about up. If you'd like more time, the ability to remember previous sessions, or recieve a text summary of our session and what to work on next, please visit callready.live. Thanks for using CallReady and I look forward to our next session. Goodbye!";
 
 const GOODBYE_TRIGGER =
   "Thanks for using CallReady and I look forward to our next session. Goodbye!";
 
-// Hangup timing: let Twilio finish playing buffered audio.
-// If it still cuts off, increase POST_AUDIO_GRACE_MS to 4500.
-const POST_AUDIO_GRACE_MS = 3500;
-const MIN_GOODBYE_HANGUP_DELAY_MS = 1500;
+// Tune this. Start with 30000, then shorten to find the sweet spot.
+const HANGUP_AFTER_CLOSING_MS = 30000;
 
 function safeJsonParse(str) {
   try {
@@ -108,13 +106,9 @@ wss.on("connection", (twilioWs) => {
   let closingInProgress = false;
   let closingRequested = false;
 
-  let aiTextBuffer = "";
-  let goodbyeDetected = false;
+  let closingHangupTimer = null;
 
-  // Hangup grace timing
-  let lastAiAudioDeltaAtMs = 0;
-  let goodbyeHangupScheduled = false;
-  let closingFallbackTimer = null;
+  let aiTextBuffer = "";
 
   // Cancel throttling
   let lastCancelAtMs = 0;
@@ -131,7 +125,7 @@ wss.on("connection", (twilioWs) => {
     } catch {}
 
     try {
-      if (closingFallbackTimer) clearTimeout(closingFallbackTimer);
+      if (closingHangupTimer) clearTimeout(closingHangupTimer);
     } catch {}
 
     try {
@@ -199,35 +193,10 @@ wss.on("connection", (twilioWs) => {
       aiTextBuffer = aiTextBuffer.slice(-3000);
     }
 
-    if (!goodbyeDetected && aiTextBuffer.includes(GOODBYE_TRIGGER)) {
-      goodbyeDetected = true;
-      console.log(nowIso(), "Goodbye trigger detected in AI text");
+    if (aiTextBuffer.includes(GOODBYE_TRIGGER)) {
+      // We still log it, but we do NOT use this to end the call anymore.
+      console.log(nowIso(), "Goodbye trigger detected in AI text (log only)");
     }
-  }
-
-  function scheduleHangupAfterGrace(reason) {
-    if (goodbyeHangupScheduled) return;
-    goodbyeHangupScheduled = true;
-
-    try {
-      if (closingFallbackTimer) clearTimeout(closingFallbackTimer);
-    } catch {}
-
-    const now = Date.now();
-    const sinceLastAudio = lastAiAudioDeltaAtMs ? now - lastAiAudioDeltaAtMs : 0;
-
-    const delay = Math.max(
-      MIN_GOODBYE_HANGUP_DELAY_MS,
-      POST_AUDIO_GRACE_MS - sinceLastAudio
-    );
-
-    console.log(nowIso(), reason, "hangup scheduled after ms:", delay);
-
-    setTimeout(() => {
-      endCallViaTwilioRest(reason).finally(() => {
-        closeAll("Hangup after goodbye");
-      });
-    }, delay);
   }
 
   function requestClosingScript(reason) {
@@ -237,15 +206,26 @@ wss.on("connection", (twilioWs) => {
 
     console.log(nowIso(), reason, "sending closing script");
 
-    // Cancel any active response first. If none active, OpenAI can emit a non fatal error.
+    // Cancel any active response first.
     cancelOpenAIResponseIfAnyOnce("closing requested");
 
-    // Fallback in case we never detect goodbye text for any reason.
-    // We still allow time for the closing audio to play before hanging up.
-    closingFallbackTimer = setTimeout(() => {
-      console.log(nowIso(), "Fallback hangup timer fired");
-      scheduleHangupAfterGrace("Fallback hangup after closing");
-    }, 8000);
+    // Fixed hangup timer: do not end earlier than this.
+    closingHangupTimer = setTimeout(() => {
+      console.log(
+        nowIso(),
+        "Closing hangup timer fired, ending call now. delayMs:",
+        HANGUP_AFTER_CLOSING_MS
+      );
+      endCallViaTwilioRest("Fixed delay after closing script").finally(() => {
+        closeAll("Hangup after closing fixed delay");
+      });
+    }, HANGUP_AFTER_CLOSING_MS);
+
+    console.log(
+      nowIso(),
+      "Closing hangup scheduled after ms:",
+      HANGUP_AFTER_CLOSING_MS
+    );
 
     openaiSend({
       type: "response.create",
@@ -356,7 +336,7 @@ wss.on("connection", (twilioWs) => {
       const msg = safeJsonParse(data.toString());
       if (!msg) return;
 
-      // Capture AI text for goodbye trigger detection.
+      // Capture AI text for logging
       if (msg.type === "response.text.delta" && msg.delta) {
         appendAiTextAndCheckGoodbye(msg.delta);
       }
@@ -392,8 +372,6 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-        lastAiAudioDeltaAtMs = Date.now();
-
         twilioSend({
           event: "media",
           streamSid,
@@ -411,12 +389,10 @@ wss.on("connection", (twilioWs) => {
           console.log(nowIso(), "Caller speech detected, AI may respond now");
         }
 
-        // Start session timer on first real caller speech after VAD is enabled
         if (turnDetectionEnabled) {
           maybeStartSessionTimer();
         }
 
-        // Unlock turn lock
         if (requireCallerSpeechBeforeNextAI) {
           sawCallerSpeechSinceLastAIDone = true;
           console.log(nowIso(), "Caller speech detected, unlocking turn lock");
@@ -450,9 +426,7 @@ wss.on("connection", (twilioWs) => {
         }
 
         if (closingInProgress) {
-          if (!goodbyeHangupScheduled) {
-            console.log(nowIso(), "Closing response created");
-          }
+          console.log(nowIso(), "Closing response created");
         }
 
         return;
@@ -483,21 +457,12 @@ wss.on("connection", (twilioWs) => {
 
       // After any other AI response completes
       if (msg.type === "response.done" && turnDetectionEnabled) {
-        // If we are closing, do not hang up immediately, schedule hangup after grace.
+        // During closing, do not do anything here. Hangup is handled by the fixed timer.
         if (closingInProgress) {
-          if (goodbyeDetected) {
-            console.log(nowIso(), "Closing response done and goodbye detected");
-            scheduleHangupAfterGrace("Hangup after goodbye detected");
-          } else {
-            console.log(
-              nowIso(),
-              "Closing response done but goodbye trigger not detected, relying on fallback hangup"
-            );
-          }
+          console.log(nowIso(), "Closing response done (hangup handled by fixed timer)");
           return;
         }
 
-        // Normal turn lock: require caller speech before allowing next AI response.
         requireCallerSpeechBeforeNextAI = true;
         sawCallerSpeechSinceLastAIDone = false;
         console.log(nowIso(), "Turn lock armed");
@@ -565,7 +530,6 @@ wss.on("connection", (twilioWs) => {
       if (!turnDetectionEnabled) return;
 
       if (openaiReady && msg.media && msg.media.payload) {
-        // If caller audio arrives, consider turn lock unlocked even before VAD speech_started.
         if (requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
           sawCallerSpeechSinceLastAIDone = true;
           console.log(nowIso(), "Caller audio received, unlocking turn lock");
