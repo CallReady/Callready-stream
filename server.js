@@ -18,7 +18,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-timeout-hangup-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-timeout-hangup-3-audiogate";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -51,7 +51,7 @@ const GOODBYE_SENTENCE =
   "Thanks for using CallReady and I look forward to our next session. Goodbye!";
 
 const TIMEOUT_SCRIPT =
-  'It looks like our time for this session is about up. If you\'d like more time, the ability to remember precious sessions, or recieve a text summary of our session and what to work on next, please visit callready.live. Thanks for using CallReady and I look forward to our next session. Goodbye!';
+  "It looks like our time for this session is about up. If you'd like more time, the ability to remember precious sessions, or recieve a text summary of our session and what to work on next, please visit callready.live. Thanks for using CallReady and I look forward to our next session. Goodbye!";
 
 const GOODBYE_NORM = normalizeText(GOODBYE_SENTENCE);
 
@@ -98,25 +98,22 @@ wss.on("connection", (twilioWs) => {
 
   let openerSent = false;
 
-  // We keep turn detection off during the opener, then enable it.
   let turnDetectionEnabled = false;
 
-  // After enabling VAD, we do NOT allow the AI to speak until we detect actual caller speech.
   let waitingForFirstCallerSpeech = true;
   let sawSpeechStarted = false;
 
-  // Turn lock:
-  // After any AI response is done, require caller speech before allowing another AI response.
   let requireCallerSpeechBeforeNextAI = false;
   let sawCallerSpeechSinceLastAIDone = false;
 
-  // 1-minute timer and forced closing message
   let oneMinuteTimer = null;
   let forcedClosingInProgress = false;
 
-  // Track response text so we can detect the goodbye sentence
   let currentResponseText = "";
   let goodbyeDetectedInThisResponse = false;
+
+  // New: only hang up if we actually sent audio to Twilio for that same response
+  let audioSentInThisResponse = false;
 
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
@@ -195,15 +192,14 @@ wss.on("connection", (twilioWs) => {
 
       console.log(nowIso(), "1-minute timer fired, sending closing script");
 
-      // Cancel any in-flight response so the closing message is not competing.
       cancelOpenAIResponseIfAny();
 
-      // Force a closing message, exactly as provided.
       openaiSend({
         type: "response.create",
         response: {
           modalities: ["audio", "text"],
-          instructions: "Speak this exactly, naturally, then stop speaking:\n" + TIMEOUT_SCRIPT,
+          instructions:
+            "Speak this exactly, naturally, then stop speaking:\n" + TIMEOUT_SCRIPT,
         },
       });
     }, 60 * 1000);
@@ -231,7 +227,6 @@ wss.on("connection", (twilioWs) => {
       openaiReady = true;
       console.log(nowIso(), "OpenAI WS open");
 
-      // VAD OFF for opener so it cannot be interrupted.
       openaiSend({
         type: "session.update",
         session: {
@@ -298,7 +293,6 @@ wss.on("connection", (twilioWs) => {
       const msg = safeJsonParse(data.toString());
       if (!msg) return;
 
-      // Capture text as it streams so we can detect goodbye
       if (msg.type === "response.text.delta" && typeof msg.delta === "string") {
         currentResponseText += msg.delta;
         const norm = normalizeText(currentResponseText);
@@ -308,10 +302,10 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
-      // Reset per-response trackers
       if (msg.type === "response.created") {
         currentResponseText = "";
         goodbyeDetectedInThisResponse = false;
+        audioSentInThisResponse = false;
 
         if (
           !forcedClosingInProgress &&
@@ -338,9 +332,7 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
-      // Forward AI audio to Twilio
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
-        // Existing gate: block AI speech until we hear caller speech after VAD enabled
         if (
           !forcedClosingInProgress &&
           turnDetectionEnabled &&
@@ -352,7 +344,6 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-        // Turn lock: after any AI response completes, require caller speech to unlock
         if (
           !forcedClosingInProgress &&
           turnDetectionEnabled &&
@@ -364,6 +355,8 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
+        audioSentInThisResponse = true;
+
         twilioSend({
           event: "media",
           streamSid,
@@ -372,7 +365,6 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
-      // Detect actual speech start from caller (OpenAI VAD event)
       if (msg.type === "input_audio_buffer.speech_started") {
         sawSpeechStarted = true;
 
@@ -381,18 +373,15 @@ wss.on("connection", (twilioWs) => {
           console.log(nowIso(), "Caller speech detected, AI may respond now");
         }
 
-        // Unlock turn lock
         sawCallerSpeechSinceLastAIDone = true;
         return;
       }
 
-      // When the opener finishes, enable VAD, clear buffer, and begin waiting for real speech
       if (msg.type === "response.done" && openerSent && !turnDetectionEnabled) {
         turnDetectionEnabled = true;
         waitingForFirstCallerSpeech = true;
         sawSpeechStarted = false;
 
-        // After opener, we want caller to speak next.
         requireCallerSpeechBeforeNextAI = false;
         sawCallerSpeechSinceLastAIDone = false;
 
@@ -407,19 +396,29 @@ wss.on("connection", (twilioWs) => {
           },
         });
 
+        startOneMinuteTimer();
+
         return;
       }
 
-      // After any AI response completes, require caller speech before the next AI response
       if (msg.type === "response.done" && turnDetectionEnabled) {
-        // If the goodbye sentence was spoken in this response, end the call right after speech ends.
-        if (goodbyeDetectedInThisResponse) {
-          console.log(nowIso(), "Goodbye detected, ending call after AI finished speaking");
+        // Only hang up if the goodbye sentence was detected AND we actually sent audio for it.
+        if (goodbyeDetectedInThisResponse && audioSentInThisResponse) {
+          console.log(
+            nowIso(),
+            "Goodbye detected and audio sent, ending call after AI finished speaking"
+          );
           endTwilioCall("Goodbye sentence spoken");
           return;
         }
 
-        // Forced closing message completed, clear flag
+        if (goodbyeDetectedInThisResponse && !audioSentInThisResponse) {
+          console.log(
+            nowIso(),
+            "Goodbye detected in text but no audio was sent, not hanging up"
+          );
+        }
+
         if (forcedClosingInProgress) {
           forcedClosingInProgress = false;
         }
@@ -470,12 +469,10 @@ wss.on("connection", (twilioWs) => {
       );
 
       startOpenAIRealtime();
-      startOneMinuteTimer();
       return;
     }
 
     if (msg.event === "media") {
-      // Do not forward audio until we enabled VAD after opener.
       if (!turnDetectionEnabled) return;
 
       if (openaiReady && msg.media && msg.media.payload) {
