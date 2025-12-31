@@ -18,15 +18,16 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-timeout-hangup-3-audiogate";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-timer-close-1";
 
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 
-const twilioClient =
-  TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN
-    ? twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-    : null;
+const CLOSING_SCRIPT =
+  'It looks like our time for this session is about up. If you\'d like more time, the ability to remember precious sessions, or recieve a text summary of our session and what to work on next, please visit callready.live. Thanks for using CallReady and I look forward to our next session. Goodbye!';
+
+const HANGUP_TRIGGER_SENTENCE =
+  "Thanks for using CallReady and I look forward to our next session. Goodbye!";
 
 function safeJsonParse(str) {
   try {
@@ -39,21 +40,6 @@ function safeJsonParse(str) {
 function nowIso() {
   return new Date().toISOString();
 }
-
-function normalizeText(s) {
-  return String(s || "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-const GOODBYE_SENTENCE =
-  "Thanks for using CallReady and I look forward to our next session. Goodbye!";
-
-const TIMEOUT_SCRIPT =
-  "It looks like our time for this session is about up. If you'd like more time, the ability to remember precious sessions, or recieve a text summary of our session and what to work on next, please visit callready.live. Thanks for using CallReady and I look forward to our next session. Goodbye!";
-
-const GOODBYE_NORM = normalizeText(GOODBYE_SENTENCE);
 
 app.get("/", (req, res) => res.status(200).send("CallReady server up"));
 app.get("/health", (req, res) =>
@@ -98,22 +84,25 @@ wss.on("connection", (twilioWs) => {
 
   let openerSent = false;
 
+  // We keep turn detection off during the opener, then enable it.
   let turnDetectionEnabled = false;
 
+  // After enabling VAD, we do NOT allow the AI to speak until we detect actual caller speech.
   let waitingForFirstCallerSpeech = true;
   let sawSpeechStarted = false;
 
+  // Turn lock:
+  // After any AI response is done, require caller speech before allowing another AI response.
   let requireCallerSpeechBeforeNextAI = false;
   let sawCallerSpeechSinceLastAIDone = false;
 
-  let oneMinuteTimer = null;
-  let forcedClosingInProgress = false;
+  // Timer and closing control
+  let sessionTimer = null;
+  let closingInProgress = false;
+  let closeRequested = false;
 
-  let currentResponseText = "";
-  let goodbyeDetectedInThisResponse = false;
-
-  // New: only hang up if we actually sent audio to Twilio for that same response
-  let audioSentInThisResponse = false;
+  // Track text per response so we can hang up only after it is actually spoken
+  const responseTextById = Object.create(null);
 
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
@@ -123,7 +112,7 @@ wss.on("connection", (twilioWs) => {
     console.log(nowIso(), "Closing:", reason);
 
     try {
-      if (oneMinuteTimer) clearTimeout(oneMinuteTimer);
+      if (sessionTimer) clearTimeout(sessionTimer);
     } catch {}
 
     try {
@@ -144,64 +133,79 @@ wss.on("connection", (twilioWs) => {
     openaiWs.send(JSON.stringify(obj));
   }
 
-  function cancelOpenAIResponseIfAny() {
-    try {
-      openaiSend({ type: "response.cancel" });
-    } catch {}
-  }
-
-  async function endTwilioCall(reason) {
-    console.log(nowIso(), "Ending Twilio call:", reason);
-
+  async function endCallViaRest(reason) {
     if (!callSid) {
-      console.log(nowIso(), "No callSid available, cannot end call via REST");
-      closeAll("No callSid to end call");
-      return;
+      console.log(nowIso(), "No callSid available, cannot end via REST:", reason);
+      return false;
     }
 
-    if (!twilioClient) {
+    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
       console.log(
         nowIso(),
-        "Missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN, cannot end call via REST"
+        "TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN missing, cannot end call via REST."
       );
-      closeAll("Missing Twilio REST credentials");
-      return;
+      return false;
     }
 
     try {
-      await twilioClient.calls(callSid).update({ status: "completed" });
-      closeAll("Call completed via Twilio REST");
+      const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+      await client.calls(callSid).update({ status: "completed" });
+      console.log(nowIso(), "Call ended via Twilio REST:", callSid, "reason:", reason);
+      return true;
     } catch (err) {
       console.log(
         nowIso(),
         "Failed to end call via Twilio REST:",
         err && err.message ? err.message : err
       );
-      closeAll("Failed to end call via Twilio REST");
+      return false;
     }
   }
 
+  function requestHangupAfterAI(reason) {
+    if (closeRequested) return;
+    closeRequested = true;
+
+    console.log(nowIso(), "Hangup trigger detected, will end call:", reason);
+
+    // Try Twilio REST first. If it fails, fall back to closing websockets.
+    endCallViaRest(reason).then((ok) => {
+      if (!ok) {
+        console.log(nowIso(), "Falling back to closing websockets to end call.");
+      }
+      // Give Twilio a moment to deliver the last audio chunk, then close.
+      setTimeout(() => closeAll("Hangup complete"), 350);
+    });
+  }
+
+  function sendClosingScript() {
+    if (closingInProgress) return;
+    if (!openaiReady) {
+      console.log(nowIso(), "Timer fired but OpenAI not ready, skipping closing script");
+      return;
+    }
+
+    closingInProgress = true;
+
+    // Important: Do not hang up here.
+    // Just force the AI to speak the closing message even if turn lock is active.
+    console.log(nowIso(), "1-minute timer fired, sending closing script");
+
+    openaiSend({
+      type: "response.create",
+      response: {
+        modalities: ["audio", "text"],
+        // This must be exact.
+        instructions:
+          "Speak this exactly, naturally, then stop speaking:\n" + CLOSING_SCRIPT,
+      },
+    });
+  }
+
   function startOneMinuteTimer() {
-    if (oneMinuteTimer) return;
-
-    oneMinuteTimer = setTimeout(() => {
-      if (closing) return;
-      if (!openaiReady) return;
-
-      forcedClosingInProgress = true;
-
-      console.log(nowIso(), "1-minute timer fired, sending closing script");
-
-      cancelOpenAIResponseIfAny();
-
-      openaiSend({
-        type: "response.create",
-        response: {
-          modalities: ["audio", "text"],
-          instructions:
-            "Speak this exactly, naturally, then stop speaking:\n" + TIMEOUT_SCRIPT,
-        },
-      });
+    if (sessionTimer) return;
+    sessionTimer = setTimeout(() => {
+      sendClosingScript();
     }, 60 * 1000);
   }
 
@@ -227,6 +231,7 @@ wss.on("connection", (twilioWs) => {
       openaiReady = true;
       console.log(nowIso(), "OpenAI WS open");
 
+      // VAD OFF for opener so it cannot be interrupted.
       openaiSend({
         type: "session.update",
         session: {
@@ -293,69 +298,44 @@ wss.on("connection", (twilioWs) => {
       const msg = safeJsonParse(data.toString());
       if (!msg) return;
 
+      // Capture text deltas for hangup detection.
+      // Realtime can use different event names depending on the model build.
       if (msg.type === "response.text.delta" && typeof msg.delta === "string") {
-        currentResponseText += msg.delta;
-        const norm = normalizeText(currentResponseText);
-        if (norm.includes(GOODBYE_NORM)) {
-          goodbyeDetectedInThisResponse = true;
-        }
+        const id = msg.response_id || msg.response?.id || msg.id || "unknown";
+        responseTextById[id] = (responseTextById[id] || "") + msg.delta;
+        return;
+      }
+      if (msg.type === "response.output_text.delta" && typeof msg.delta === "string") {
+        const id = msg.response_id || msg.response?.id || msg.id || "unknown";
+        responseTextById[id] = (responseTextById[id] || "") + msg.delta;
         return;
       }
 
-      if (msg.type === "response.created") {
-        currentResponseText = "";
-        goodbyeDetectedInThisResponse = false;
-        audioSentInThisResponse = false;
-
-        if (
-          !forcedClosingInProgress &&
-          turnDetectionEnabled &&
-          waitingForFirstCallerSpeech &&
-          !sawSpeechStarted
-        ) {
-          console.log(nowIso(), "Cancelling response.created before caller speaks");
-          cancelOpenAIResponseIfAny();
-          return;
-        }
-
-        if (
-          !forcedClosingInProgress &&
-          turnDetectionEnabled &&
-          requireCallerSpeechBeforeNextAI &&
-          !sawCallerSpeechSinceLastAIDone
-        ) {
-          console.log(nowIso(), "Cancelling response.created due to turn lock");
-          cancelOpenAIResponseIfAny();
-          return;
-        }
-
-        return;
-      }
-
+      // Forward AI audio to Twilio
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
+        // Existing gate: block AI speech until we hear caller speech after VAD enabled
+        // Exception: allow closing script to speak even if caller has not spoken yet.
         if (
-          !forcedClosingInProgress &&
+          !closingInProgress &&
           turnDetectionEnabled &&
           waitingForFirstCallerSpeech &&
           !sawSpeechStarted
         ) {
           console.log(nowIso(), "Blocking AI speech before caller speaks");
-          cancelOpenAIResponseIfAny();
           return;
         }
 
+        // Turn lock: after any AI response completes, require caller speech to unlock
+        // Exception: allow closing script to speak even if turn lock is active.
         if (
-          !forcedClosingInProgress &&
+          !closingInProgress &&
           turnDetectionEnabled &&
           requireCallerSpeechBeforeNextAI &&
           !sawCallerSpeechSinceLastAIDone
         ) {
           console.log(nowIso(), "Turn lock active, blocking AI until caller speaks");
-          cancelOpenAIResponseIfAny();
           return;
         }
-
-        audioSentInThisResponse = true;
 
         twilioSend({
           event: "media",
@@ -365,6 +345,7 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
+      // Detect actual speech start from caller (OpenAI VAD event)
       if (msg.type === "input_audio_buffer.speech_started") {
         sawSpeechStarted = true;
 
@@ -373,15 +354,18 @@ wss.on("connection", (twilioWs) => {
           console.log(nowIso(), "Caller speech detected, AI may respond now");
         }
 
+        // Unlock turn lock
         sawCallerSpeechSinceLastAIDone = true;
         return;
       }
 
+      // When the opener finishes, enable VAD, clear buffer, and begin waiting for real speech
       if (msg.type === "response.done" && openerSent && !turnDetectionEnabled) {
         turnDetectionEnabled = true;
         waitingForFirstCallerSpeech = true;
         sawSpeechStarted = false;
 
+        // After opener, we want caller to speak next.
         requireCallerSpeechBeforeNextAI = false;
         sawCallerSpeechSinceLastAIDone = false;
 
@@ -396,31 +380,29 @@ wss.on("connection", (twilioWs) => {
           },
         });
 
+        // Start the 60 second session timer here.
         startOneMinuteTimer();
 
         return;
       }
 
+      // After any other AI response completes, require caller speech before the next AI response
       if (msg.type === "response.done" && turnDetectionEnabled) {
-        // Only hang up if the goodbye sentence was detected AND we actually sent audio for it.
-        if (goodbyeDetectedInThisResponse && audioSentInThisResponse) {
-          console.log(
-            nowIso(),
-            "Goodbye detected and audio sent, ending call after AI finished speaking"
-          );
-          endTwilioCall("Goodbye sentence spoken");
+        // If this response contained the hangup trigger sentence, end call now.
+        // We only do this after response.done so we know the AI has finished speaking.
+        const id = msg.response_id || msg.response?.id || msg.id || "unknown";
+        const fullText = responseTextById[id] || "";
+        if (fullText.includes(HANGUP_TRIGGER_SENTENCE)) {
+          requestHangupAfterAI("Hangup trigger sentence completed");
           return;
         }
 
-        if (goodbyeDetectedInThisResponse && !audioSentInThisResponse) {
-          console.log(
-            nowIso(),
-            "Goodbye detected in text but no audio was sent, not hanging up"
-          );
-        }
-
-        if (forcedClosingInProgress) {
-          forcedClosingInProgress = false;
+        // If we just finished speaking the closing script, keep behavior consistent.
+        if (closingInProgress) {
+          closingInProgress = false;
+          // If the model did not send text deltas, we still want to hang up
+          // only when it actually says the trigger sentence, so do nothing here.
+          // The text detection above is the authoritative trigger.
         }
 
         requireCallerSpeechBeforeNextAI = true;
@@ -429,7 +411,15 @@ wss.on("connection", (twilioWs) => {
       }
 
       if (msg.type === "error") {
-        console.log(nowIso(), "OpenAI error event:", msg.error || msg);
+        const errObj = msg.error || msg;
+
+        // Non fatal, ignore
+        if (errObj && errObj.code === "response_cancel_not_active") {
+          console.log(nowIso(), "OpenAI non-fatal error ignored:", errObj);
+          return;
+        }
+
+        console.log(nowIso(), "OpenAI error event:", errObj);
         closeAll("OpenAI error");
         return;
       }
@@ -473,6 +463,7 @@ wss.on("connection", (twilioWs) => {
     }
 
     if (msg.event === "media") {
+      // Do not forward audio until we enabled VAD after opener.
       if (!turnDetectionEnabled) return;
 
       if (openaiReady && msg.media && msg.media.payload) {
