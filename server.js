@@ -15,7 +15,7 @@ const PUBLIC_WSS_URL = process.env.PUBLIC_WSS_URL;
 
 const OPENAI_REALTIME_MODEL =
   process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview";
-const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
+const OPENAI_VOICE = process.env.OPENAI_VOICE || "shimmer";
 
 const CALLREADY_VERSION = "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options";
 
@@ -142,7 +142,7 @@ wss.on("connection", (twilioWs) => {
       openaiSend({
         type: "session.update",
         session: {
-          voice: OPENAI_VOICE,
+          voice: "shimmer",
           input_audio_format: "g711_ulaw",
           output_audio_format: "g711_ulaw",
           turn_detection: null,
