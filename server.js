@@ -18,7 +18,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-5-timerclose-3";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-6-timerclose-4";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -28,6 +28,10 @@ const CLOSING_SCRIPT =
 
 const GOODBYE_TRIGGER =
   "Thanks for using CallReady and I look forward to our next session. Goodbye!";
+
+// Fallback hangup to ensure the caller actually hears the closing.
+// 16 seconds is usually enough for that script at a calm pace.
+const CLOSING_FALLBACK_HANGUP_MS = 16000;
 
 function safeJsonParse(str) {
   try {
@@ -84,34 +88,33 @@ wss.on("connection", (twilioWs) => {
 
   let openerSent = false;
 
-  // We keep turn detection off during the opener, then enable it.
+  // VAD off for opener, then enable.
   let turnDetectionEnabled = false;
 
-  // After enabling VAD, we do NOT allow the AI to speak until we detect actual caller speech.
+  // Block AI speech until we detect actual caller speech after opener.
   let waitingForFirstCallerSpeech = true;
   let sawSpeechStarted = false;
 
-  // Turn lock, unlocked by Twilio media after an AI response completes.
-  let turnLockArmed = false;
+  // Turn lock: after AI speaks, require caller speech_started before AI can speak again.
   let requireCallerSpeechBeforeNextAI = false;
   let sawCallerSpeechSinceLastAIDone = false;
-  let awaitingCallerAudioForUnlock = false;
 
-  // Closing control
+  // Prevent cancel spam
+  let lastCancelAtMs = 0;
+  const CANCEL_COOLDOWN_MS = 800;
+
+  // Session timer, starts on first real caller speech_started (OpenAI event)
   let sessionTimerStarted = false;
   let sessionTimer = null;
 
+  // Closing control
   let closingInProgress = false;
   let closingRequested = false;
+  let closingFallbackTimer = null;
 
-  // Response id tracking
-  let lastResponseId = null;
-  let closingResponseId = null;
-
-  // Goodbye detection
+  // Goodbye detection (best effort, may not fire in your environment)
   let aiTextBuffer = "";
   let goodbyeDetected = false;
-  let goodbyeResponseId = null;
 
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
@@ -122,6 +125,9 @@ wss.on("connection", (twilioWs) => {
 
     try {
       if (sessionTimer) clearTimeout(sessionTimer);
+    } catch {}
+    try {
+      if (closingFallbackTimer) clearTimeout(closingFallbackTimer);
     } catch {}
 
     try {
@@ -142,7 +148,11 @@ wss.on("connection", (twilioWs) => {
     openaiWs.send(JSON.stringify(obj));
   }
 
-  function cancelOpenAIResponseIfAny() {
+  function cancelOpenAIResponseIfAnyOnce(reason) {
+    const now = Date.now();
+    if (now - lastCancelAtMs < CANCEL_COOLDOWN_MS) return;
+    lastCancelAtMs = now;
+    console.log(nowIso(), "Cancelling response due to:", reason);
     try {
       openaiSend({ type: "response.cancel" });
     } catch {}
@@ -185,56 +195,38 @@ wss.on("connection", (twilioWs) => {
       requestClosingScript("1-minute timer fired,");
     }, 60 * 1000);
 
-    console.log(nowIso(), "Session timer started (60s) after first caller speech");
-  }
-
-  function extractResponseId(msg) {
-    if (msg && msg.response && msg.response.id) return msg.response.id;
-    if (msg && msg.response_id) return msg.response_id;
-    if (msg && msg.id) return msg.id;
-    return null;
+    console.log(nowIso(), "Session timer started (60s) after first caller speech_started");
   }
 
   function appendAiTextAndCheckGoodbye(textChunk) {
     if (!textChunk) return;
 
     aiTextBuffer += textChunk;
-    if (aiTextBuffer.length > 6000) {
-      aiTextBuffer = aiTextBuffer.slice(-3000);
-    }
+    if (aiTextBuffer.length > 6000) aiTextBuffer = aiTextBuffer.slice(-3000);
 
     if (!goodbyeDetected && aiTextBuffer.includes(GOODBYE_TRIGGER)) {
       goodbyeDetected = true;
-      goodbyeResponseId = lastResponseId;
-      console.log(
-        nowIso(),
-        "Goodbye trigger detected in AI text, responseId:",
-        goodbyeResponseId || "(unknown)"
-      );
+      console.log(nowIso(), "Goodbye trigger detected in AI text");
     }
   }
 
   function requestClosingScript(reason) {
     if (closingRequested) return;
-
     closingRequested = true;
     closingInProgress = true;
-    closingResponseId = null;
 
-    // Reset goodbye tracking for the closing response
+    // During closing, do not enforce turn lock at all.
+    requireCallerSpeechBeforeNextAI = false;
+    sawCallerSpeechSinceLastAIDone = true;
+
+    // Reset goodbye detection for this closing attempt
     aiTextBuffer = "";
     goodbyeDetected = false;
-    goodbyeResponseId = null;
 
     console.log(nowIso(), reason, "sending closing script");
 
-    // Bypass turn lock and caller gating for closing.
-    turnLockArmed = false;
-    requireCallerSpeechBeforeNextAI = false;
-    sawCallerSpeechSinceLastAIDone = true;
-    awaitingCallerAudioForUnlock = false;
-
-    cancelOpenAIResponseIfAny();
+    // Cancel anything active so closing takes over, with cooldown.
+    cancelOpenAIResponseIfAnyOnce("closing requested");
 
     openaiSend({
       type: "response.create",
@@ -244,6 +236,19 @@ wss.on("connection", (twilioWs) => {
           "Speak this exactly, naturally, then stop speaking:\n" + CLOSING_SCRIPT,
       },
     });
+
+    // Fallback hangup to guarantee the session ends after the closing audio is heard.
+    // This is necessary because text or transcript deltas are not reliable in your logs.
+    try {
+      if (closingFallbackTimer) clearTimeout(closingFallbackTimer);
+    } catch {}
+
+    closingFallbackTimer = setTimeout(() => {
+      console.log(nowIso(), "Closing fallback hangup fired");
+      endCallViaTwilioRest("Fallback hangup after closing audio").finally(() => {
+        closeAll("Fallback hangup after closing audio");
+      });
+    }, CLOSING_FALLBACK_HANGUP_MS);
   }
 
   function startOpenAIRealtime() {
@@ -268,7 +273,6 @@ wss.on("connection", (twilioWs) => {
       openaiReady = true;
       console.log(nowIso(), "OpenAI WS open");
 
-      // VAD OFF for opener so it cannot be interrupted.
       openaiSend({
         type: "session.update",
         session: {
@@ -335,7 +339,7 @@ wss.on("connection", (twilioWs) => {
       const msg = safeJsonParse(data.toString());
       if (!msg) return;
 
-      // Capture AI text for goodbye detection.
+      // Best effort goodbye detection
       if (msg.type === "response.text.delta" && msg.delta) {
         appendAiTextAndCheckGoodbye(msg.delta);
       }
@@ -346,51 +350,16 @@ wss.on("connection", (twilioWs) => {
         appendAiTextAndCheckGoodbye(msg.delta);
       }
 
-      if (msg.type === "response.created") {
-        const rid = extractResponseId(msg);
-        if (rid) lastResponseId = rid;
-
-        if (closingInProgress && !closingResponseId && rid) {
-          closingResponseId = rid;
-          console.log(nowIso(), "Closing response created, responseId:", closingResponseId);
-        }
-
-        if (!closingInProgress) {
-          if (turnDetectionEnabled && waitingForFirstCallerSpeech && !sawSpeechStarted) {
-            console.log(nowIso(), "Cancelling response.created before caller speaks");
-            cancelOpenAIResponseIfAny();
-            return;
-          }
-
-          if (
-            turnLockArmed &&
-            requireCallerSpeechBeforeNextAI &&
-            !sawCallerSpeechSinceLastAIDone
-          ) {
-            console.log(nowIso(), "Cancelling response.created due to turn lock");
-            cancelOpenAIResponseIfAny();
-            return;
-          }
-        }
-
-        return;
-      }
-
+      // Forward AI audio to Twilio
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
         if (!closingInProgress) {
           if (turnDetectionEnabled && waitingForFirstCallerSpeech && !sawSpeechStarted) {
-            console.log(nowIso(), "Blocking AI speech before caller speaks");
-            cancelOpenAIResponseIfAny();
+            cancelOpenAIResponseIfAnyOnce("AI spoke before first caller speech");
             return;
           }
 
-          if (
-            turnLockArmed &&
-            requireCallerSpeechBeforeNextAI &&
-            !sawCallerSpeechSinceLastAIDone
-          ) {
-            console.log(nowIso(), "Turn lock active, blocking AI until caller speaks");
-            cancelOpenAIResponseIfAny();
+          if (turnDetectionEnabled && requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
+            cancelOpenAIResponseIfAnyOnce("turn lock active");
             return;
           }
         }
@@ -403,7 +372,7 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
-      // OpenAI VAD event: this is the correct moment to start the timer.
+      // OpenAI VAD caller speech detection (this is the reliable event)
       if (msg.type === "input_audio_buffer.speech_started") {
         sawSpeechStarted = true;
 
@@ -416,21 +385,19 @@ wss.on("connection", (twilioWs) => {
           maybeStartSessionTimer();
         }
 
+        // Unlock turn lock
         sawCallerSpeechSinceLastAIDone = true;
-        awaitingCallerAudioForUnlock = false;
         return;
       }
 
-      // Opener done: enable VAD
+      // Opener done, enable VAD
       if (msg.type === "response.done" && openerSent && !turnDetectionEnabled) {
         turnDetectionEnabled = true;
         waitingForFirstCallerSpeech = true;
         sawSpeechStarted = false;
 
-        turnLockArmed = false;
         requireCallerSpeechBeforeNextAI = false;
         sawCallerSpeechSinceLastAIDone = false;
-        awaitingCallerAudioForUnlock = false;
 
         console.log(nowIso(), "Opener done, enabling VAD and clearing buffer");
 
@@ -446,58 +413,26 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
+      // After any AI response completes, arm turn lock, unless closing is in progress.
       if (msg.type === "response.done" && turnDetectionEnabled) {
-        const doneId = extractResponseId(msg) || lastResponseId;
-
-        // Closing: ONLY hang up if goodbye phrase was detected for this response.
-        if (closingInProgress && closingResponseId && doneId === closingResponseId) {
-          if (goodbyeDetected && goodbyeResponseId && goodbyeResponseId === closingResponseId) {
-            console.log(nowIso(), "Closing response done with goodbye detected, ending call shortly");
-
-            // Short delay so Twilio can flush buffered audio.
+        if (closingInProgress) {
+          // If we do detect goodbye text, end early after a short delay.
+          if (goodbyeDetected) {
+            console.log(nowIso(), "Closing response done and goodbye detected, ending call shortly");
             setTimeout(() => {
-              endCallViaTwilioRest("Closing script complete").finally(() => {
-                closeAll("Hangup after closing script");
+              endCallViaTwilioRest("Goodbye detected").finally(() => {
+                closeAll("Hangup after goodbye detected");
               });
             }, 900);
-
-            return;
+          } else {
+            console.log(nowIso(), "Closing response done but goodbye trigger not detected, relying on fallback hangup");
           }
-
-          console.log(
-            nowIso(),
-            "Closing response done but goodbye trigger not detected, not hanging up"
-          );
-
-          closingInProgress = false;
           return;
         }
 
-        // Non-closing goodbye: hang up after the response that contained it.
-        if (goodbyeDetected && goodbyeResponseId && doneId === goodbyeResponseId) {
-          console.log(nowIso(), "Goodbye response done, ending call shortly");
-
-          setTimeout(() => {
-            endCallViaTwilioRest("Goodbye trigger complete").finally(() => {
-              closeAll("Hangup after goodbye trigger");
-            });
-          }, 900);
-
-          return;
-        }
-
-        // Normal turn lock behavior
-        if (!closingInProgress) {
-          if (!turnLockArmed) {
-            turnLockArmed = true;
-            console.log(nowIso(), "Turn lock armed");
-          }
-
-          requireCallerSpeechBeforeNextAI = true;
-          sawCallerSpeechSinceLastAIDone = false;
-          awaitingCallerAudioForUnlock = true;
-        }
-
+        requireCallerSpeechBeforeNextAI = true;
+        sawCallerSpeechSinceLastAIDone = false;
+        console.log(nowIso(), "Turn lock armed");
         return;
       }
 
@@ -560,12 +495,9 @@ wss.on("connection", (twilioWs) => {
     if (msg.event === "media") {
       if (!turnDetectionEnabled) return;
 
-      // Unlock turn lock on any caller audio after an AI response is done.
-      if (!closingInProgress && awaitingCallerAudioForUnlock) {
-        awaitingCallerAudioForUnlock = false;
-        sawCallerSpeechSinceLastAIDone = true;
-        console.log(nowIso(), "Caller audio received, unlocking turn lock");
-      }
+      // During closing, do not send more caller audio to OpenAI.
+      // This prevents the caller from interrupting the closing message.
+      if (closingInProgress) return;
 
       if (openaiReady && msg.media && msg.media.payload) {
         openaiSend({
