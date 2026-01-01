@@ -19,7 +19,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-optin-gather-4-closing-audio-wait";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-optin-gather-5-closing-playout-buffer";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -29,6 +29,12 @@ const TWILIO_SMS_FROM =
   process.env.TWILIO_SMS_FROM ||
   process.env.TWILIO_PHONE_NUMBER ||
   process.env.TWILIO_FROM_NUMBER;
+
+// Closing timing knobs (start high, tune down)
+const CLOSING_PLAYOUT_BUFFER_MS =
+  parseInt(process.env.CLOSING_PLAYOUT_BUFFER_MS || "9000", 10); // wait after AI says it is done
+const CLOSING_AUDIO_START_FALLBACK_MS =
+  parseInt(process.env.CLOSING_AUDIO_START_FALLBACK_MS || "2500", 10); // if no closing audio arrives, redirect anyway
 
 // AI says only a smooth transition, then we hand off to Twilio Gather for the opt-in language.
 const AI_CLOSING_TRANSITION =
@@ -51,11 +57,11 @@ const GATHER_RETRY_PROMPT =
 const IN_CALL_CONFIRM_YES =
   "Thanks. You are opted in to receive text messages from CallReady. " +
   "Message and data rates may apply. You can opt out any time by replying STOP. " +
-  "Thanks for practicing today. Have a great day!.";
+  "Thanks for practicing today. Have a great day.";
 
 const IN_CALL_CONFIRM_NO =
   "No problem. You will not receive text messages from CallReady. " +
-  "Thanks for practicing with us today. We'll hope to hear from you again soon! Have a great day!.";
+  "Thanks for practicing with us today. We'll hope to hear from you again soon. Have a great day.";
 
 // First SMS after opt in
 const OPTIN_CONFIRM_SMS =
@@ -435,17 +441,14 @@ wss.on("connection", (twilioWs) => {
   function scheduleRedirectAfterClosingAudioPlays(reason) {
     if (closingRedirectTimer) return;
 
-    // This is the key: let Twilio actually play the transition before redirecting to Gather.
-    const PLAYOUT_BUFFER_MS = 4000;
-
     closingRedirectTimer = setTimeout(() => {
       redirectCallToGather(reason);
-    }, PLAYOUT_BUFFER_MS);
+    }, CLOSING_PLAYOUT_BUFFER_MS);
 
     console.log(
       nowIso(),
       "Closing: redirect scheduled after playout buffer ms:",
-      PLAYOUT_BUFFER_MS
+      CLOSING_PLAYOUT_BUFFER_MS
     );
   }
 
@@ -483,7 +486,7 @@ wss.on("connection", (twilioWs) => {
       if (closingAudioStarted) return;
       console.log(nowIso(), "Closing: no audio deltas arrived, redirecting anyway (fallback)");
       redirectCallToGather("Closing transition fallback (no audio)");
-    }, 2000);
+    }, CLOSING_AUDIO_START_FALLBACK_MS);
 
     openaiSend({
       type: "response.create",
