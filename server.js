@@ -12,43 +12,51 @@ const PORT = process.env.PORT || 10000;
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const PUBLIC_WSS_URL = process.env.PUBLIC_WSS_URL;
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 
 const OPENAI_REALTIME_MODEL =
   process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview";
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-timerclose-5-audiostart-hangup-sms-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-optin-gather-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
 
-// Fixed: removed curly quote and extra trailing quote
-const CLOSING_SCRIPT =
-  "Oops! It looks like our time for this session is about up. You did something important today by practicing, and that counts, even if it felt awkward or imperfect. I am going to send you a short text with a quick note about what went well and one thing you can work on next. If you would like more time, longer practice sessions, or for me to remember past sessions, you can visit callready.live whenever you are ready. Thanks for using CallReady. I look forward to our next session. Goodbye!";
+// This must be a Twilio SMS-capable number, in E.164, like +1855...
+const TWILIO_SMS_FROM =
+  process.env.TWILIO_SMS_FROM || process.env.TWILIO_PHONE_NUMBER || process.env.TWILIO_FROM_NUMBER;
 
-const GOODBYE_TRIGGER =
-  "Thanks for using CallReady and I look forward to our next session. Goodbye!";
+// Spoken by AI at the end, just before we hand off to Gather
+const AI_OPTIN_PROMPT =
+  "Okay, that wraps the scenario. " +
+  "Before we hang up, you can choose to receive text messages from CallReady. " +
+  "If you opt in, we can text you short reminders about what you practiced and what to work on next. " +
+  "To agree to receive text messages from CallReady, press 1 now. " +
+  "If you do not want text messages, press 2 now.";
 
-// Tune this. This delay starts when the FIRST closing audio delta is forwarded to Twilio.
-const HANGUP_AFTER_CLOSING_MS = 30000;
+// Optional retry prompt spoken by Twilio Gather
+const GATHER_RETRY_PROMPT =
+  "I did not get a response. Press 1 to receive texts, or press 2 to skip.";
 
-// Fallback if closing audio never arrives
-const HANGUP_FALLBACK_AFTER_REQUEST_MS = 30000;
+// In-call follow ups
+const IN_CALL_CONFIRM_YES =
+  "Thanks. You are opted in to receive text messages from CallReady. " +
+  "Message and data rates may apply. You can opt out any time by replying STOP. " +
+  "Thanks for practicing today. Goodbye.";
 
-// SMS timing and body
-const SMS_SEND_DELAY_MS = 7000;
+const IN_CALL_CONFIRM_NO =
+  "No problem. You will not receive text messages from CallReady. " +
+  "Thanks for practicing today. Goodbye.";
 
+// First SMS after opt in
+const OPTIN_CONFIRM_SMS =
+  "CallReady: You are opted in to receive texts about your practice sessions. Msg and data rates may apply. Reply STOP to opt out, HELP for help.";
+
+// Placeholder session summary SMS, not sent unless you choose to later
 const SMS_TRIAL_TEXT =
-  "Hi, this is CallReady.\n\n" +
-  "Nice work practicing today. Showing up and trying the call is already progress.\n\n" +
-  "What went well:\n" +
-  "You stayed engaged and kept the conversation moving, even when it felt uncomfortable.\n\n" +
-  "One thing to work on next time:\n" +
-  "Pause for a breath before responding, then speak a little more slowly.\n\n" +
-  "If you want more practice time, session summaries, or progress over multiple calls, you can learn more at callready.live.\n\n" +
-  "Practice is the point. Progress comes with time.";
+  "Hi, this is CallReady.\n\nNice work practicing today. Showing up counts, even if it felt awkward.\n\nWhat went well:\nYou kept going and stayed engaged.\n\nOne thing to work on next:\nPause, then speak a little more slowly.\n\nWant more time, session memory, or summaries? callready.live";
 
 function safeJsonParse(str) {
   try {
@@ -60,6 +68,15 @@ function safeJsonParse(str) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function hasTwilioRest() {
+  return !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN);
+}
+
+function twilioClient() {
+  if (!hasTwilioRest()) return null;
+  return twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 }
 
 app.get("/", (req, res) => res.status(200).send("CallReady server up"));
@@ -92,15 +109,117 @@ app.post("/voice", (req, res) => {
   }
 });
 
+// Gather endpoint (Twilio will request this after we redirect the call via REST)
+app.post("/gather", (req, res) => {
+  try {
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const retry = (req.query && req.query.retry) ? String(req.query.retry) : "0";
+    const isRetry = retry === "1";
+
+    const gather = vr.gather({
+      numDigits: 1,
+      timeout: 7,
+      action: "/gather-result",
+      method: "POST"
+    });
+
+    if (isRetry) {
+      gather.say(GATHER_RETRY_PROMPT);
+    } else {
+      gather.say("To agree to receive text messages from CallReady, press 1 now. If you do not want text messages, press 2 now.");
+    }
+
+    // If no input, Gather will fall through to here.
+    // We retry once, then default to no.
+    if (!isRetry) {
+      vr.redirect({ method: "POST" }, "/gather?retry=1");
+    } else {
+      vr.say(IN_CALL_CONFIRM_NO);
+      vr.hangup();
+    }
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("Error building /gather TwiML:", err);
+    res.status(500).send("Error");
+  }
+});
+
+app.post("/gather-result", async (req, res) => {
+  try {
+    const digits = (req.body && req.body.Digits) ? String(req.body.Digits) : "";
+    const from = (req.body && req.body.From) ? String(req.body.From) : "";
+    const callSid = (req.body && req.body.CallSid) ? String(req.body.CallSid) : "";
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const pressed1 = digits === "1";
+
+    if (pressed1) {
+      console.log(
+        nowIso(),
+        "SMS opt-in received",
+        JSON.stringify({
+          from,
+          callSid,
+          digits,
+          consent_version: "sms_optin_v1",
+          source: "DTMF during call"
+        })
+      );
+
+      vr.say(IN_CALL_CONFIRM_YES);
+
+      // Send opt-in confirmation SMS immediately
+      const client = twilioClient();
+      if (!client) {
+        console.log(nowIso(), "Cannot send SMS, missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN");
+      } else if (!TWILIO_SMS_FROM) {
+        console.log(nowIso(), "Cannot send SMS, missing TWILIO_SMS_FROM (or TWILIO_PHONE_NUMBER)");
+      } else if (!from) {
+        console.log(nowIso(), "Cannot send SMS, missing caller From number");
+      } else {
+        try {
+          await client.messages.create({
+            to: from,
+            from: TWILIO_SMS_FROM,
+            body: OPTIN_CONFIRM_SMS
+          });
+          console.log(nowIso(), "Opt-in confirmation SMS sent to", from);
+
+          // Optional placeholder summary SMS. Leave off for now unless you want it.
+          // await client.messages.create({
+          //   to: from,
+          //   from: TWILIO_SMS_FROM,
+          //   body: SMS_TRIAL_TEXT
+          // });
+        } catch (e) {
+          console.log(nowIso(), "SMS send error:", e && e.message ? e.message : e);
+        }
+      }
+
+      vr.hangup();
+    } else {
+      vr.say(IN_CALL_CONFIRM_NO);
+      vr.hangup();
+    }
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("Error building /gather-result TwiML:", err);
+    res.status(500).send("Error");
+  }
+});
+
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: "/media" });
 
 wss.on("connection", (twilioWs) => {
   let streamSid = null;
   let callSid = null;
-
-  // Added: caller number for SMS
-  let callerNumber = null;
 
   let openaiWs = null;
   let openaiReady = false;
@@ -120,35 +239,39 @@ wss.on("connection", (twilioWs) => {
   let requireCallerSpeechBeforeNextAI = false;
   let sawCallerSpeechSinceLastAIDone = false;
 
-  // Closing control
+  // Session timer
   let sessionTimerStarted = false;
   let sessionTimer = null;
 
+  // Closing control
   let closingInProgress = false;
   let closingRequested = false;
-
-  // Hangup timers
-  let closingHangupTimer = null; // hangup after audio start
-  let closingFallbackTimer = null; // hangup if closing audio never arrives
+  let gatherRedirectRequested = false;
 
   // When true, we stop forwarding Twilio audio to OpenAI.
   let suppressCallerAudioToOpenAI = false;
 
-  // Track whether we have heard any closing audio deltas
-  let closingAudioDeltaCount = 0;
-  let closingFirstAudioAtMs = 0;
-
-  let aiTextBuffer = "";
-
   // Cancel throttling
   let lastCancelAtMs = 0;
 
-  // Added: SMS control
-  let smsEligible = false;
-  let smsSent = false;
-  let smsTimer = null;
-
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
+
+  function closeAll(reason) {
+    if (closing) return;
+    closing = true;
+    console.log(nowIso(), "Closing:", reason);
+
+    try {
+      if (sessionTimer) clearTimeout(sessionTimer);
+    } catch {}
+
+    try {
+      if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
+    } catch {}
+    try {
+      if (twilioWs && twilioWs.readyState === WebSocket.OPEN) twilioWs.close();
+    } catch {}
+  }
 
   function twilioSend(obj) {
     if (twilioWs.readyState !== WebSocket.OPEN) return;
@@ -160,98 +283,6 @@ wss.on("connection", (twilioWs) => {
     openaiWs.send(JSON.stringify(obj));
   }
 
-  async function sendSmsOnce(reason) {
-    if (smsSent) return;
-    if (!smsEligible) return;
-
-    smsSent = true;
-
-    if (!callerNumber) {
-      console.log(nowIso(), "SMS not sent, missing callerNumber. reason:", reason);
-      return;
-    }
-    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
-      console.log(
-        nowIso(),
-        "SMS not sent, missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN. reason:",
-        reason
-      );
-      return;
-    }
-    if (!TWILIO_PHONE_NUMBER) {
-      console.log(nowIso(), "SMS not sent, missing TWILIO_PHONE_NUMBER. reason:", reason);
-      return;
-    }
-
-    try {
-      const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
-      const msg = await client.messages.create({
-        from: TWILIO_PHONE_NUMBER,
-        to: callerNumber,
-        body: SMS_TRIAL_TEXT,
-      });
-      console.log(
-        nowIso(),
-        "SMS sent",
-        "to:",
-        callerNumber,
-        "sid:",
-        msg && msg.sid ? msg.sid : "(no sid)"
-      );
-    } catch (err) {
-      console.log(
-        nowIso(),
-        "SMS send error:",
-        err && err.message ? err.message : err
-      );
-    }
-  }
-
-  function scheduleSmsAfterCallEnd(reason) {
-    if (smsSent) return;
-    if (!smsEligible) return;
-    if (smsTimer) return;
-
-    console.log(nowIso(), "Scheduling SMS in ms:", SMS_SEND_DELAY_MS, "reason:", reason);
-    smsTimer = setTimeout(() => {
-      sendSmsOnce("scheduled after call end");
-    }, SMS_SEND_DELAY_MS);
-  }
-
-  function closeAll(reason) {
-    if (closing) return;
-    closing = true;
-    console.log(nowIso(), "Closing:", reason);
-
-    // Added: schedule SMS at the moment we are closing down
-    scheduleSmsAfterCallEnd("closeAll: " + reason);
-
-    try {
-      if (sessionTimer) clearTimeout(sessionTimer);
-    } catch {}
-
-    try {
-      if (closingHangupTimer) clearTimeout(closingHangupTimer);
-    } catch {}
-
-    try {
-      if (closingFallbackTimer) clearTimeout(closingFallbackTimer);
-    } catch {}
-
-    try {
-      if (smsTimer) {
-        // keep it if already scheduled, do not clear
-      }
-    } catch {}
-
-    try {
-      if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
-    } catch {}
-    try {
-      if (twilioWs && twilioWs.readyState === WebSocket.OPEN) twilioWs.close();
-    } catch {}
-  }
-
   function cancelOpenAIResponseIfAnyOnce(reason) {
     const now = Date.now();
     if (now - lastCancelAtMs < 500) return;
@@ -260,48 +291,6 @@ wss.on("connection", (twilioWs) => {
       console.log(nowIso(), "Cancelling response due to:", reason);
       openaiSend({ type: "response.cancel" });
     } catch {}
-  }
-
-  async function endCallViaTwilioRest(reason) {
-    if (!callSid) {
-      console.log(nowIso(), "Cannot end call via REST, missing callSid", reason);
-      return false;
-    }
-    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
-      console.log(
-        nowIso(),
-        "Cannot end call via REST, missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN",
-        reason
-      );
-      return false;
-    }
-
-    try {
-      const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
-      await client.calls(callSid).update({ status: "completed" });
-      console.log(nowIso(), "Twilio REST ended call", callSid, "reason:", reason);
-      return true;
-    } catch (err) {
-      console.log(
-        nowIso(),
-        "Twilio REST end call error:",
-        err && err.message ? err.message : err
-      );
-      return false;
-    }
-  }
-
-  function appendAiTextAndCheckGoodbye(textChunk) {
-    if (!textChunk) return;
-
-    aiTextBuffer += textChunk;
-    if (aiTextBuffer.length > 6000) {
-      aiTextBuffer = aiTextBuffer.slice(-3000);
-    }
-
-    if (aiTextBuffer.includes(GOODBYE_TRIGGER)) {
-      console.log(nowIso(), "Goodbye trigger detected in AI text (log only)");
-    }
   }
 
   function freezeOpenAIForClosing() {
@@ -316,78 +305,70 @@ wss.on("connection", (twilioWs) => {
     openaiSend({
       type: "session.update",
       session: {
-        turn_detection: null,
-      },
+        turn_detection: null
+      }
     });
 
     console.log(nowIso(), "Closing: froze VAD and suppressed caller audio to OpenAI");
   }
 
-  function scheduleHangupAfterClosingAudioStarts() {
-    if (closingHangupTimer) return;
+  async function redirectCallToGather(reason) {
+    if (gatherRedirectRequested) return;
+    gatherRedirectRequested = true;
 
-    console.log(
-      nowIso(),
-      "Closing hangup scheduled after ms:",
-      HANGUP_AFTER_CLOSING_MS,
-      "starting from first audio delta"
-    );
+    if (!callSid) {
+      console.log(nowIso(), "Cannot redirect to gather, missing callSid", reason);
+      closeAll("Missing callSid for gather redirect");
+      return;
+    }
 
-    closingHangupTimer = setTimeout(() => {
-      console.log(
-        nowIso(),
-        "Closing hangup timer fired, ending call now. delayMs:",
-        HANGUP_AFTER_CLOSING_MS,
-        "closingAudioDeltaCount:",
-        closingAudioDeltaCount
-      );
-      endCallViaTwilioRest("Delay after closing audio start").finally(() => {
-        closeAll("Hangup after closing audio start delay");
+    if (!hasTwilioRest()) {
+      console.log(nowIso(), "Cannot redirect to gather, missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN", reason);
+      closeAll("Missing Twilio REST creds for gather redirect");
+      return;
+    }
+
+    if (!PUBLIC_BASE_URL) {
+      console.log(nowIso(), "Cannot redirect to gather, missing PUBLIC_BASE_URL", reason);
+      closeAll("Missing PUBLIC_BASE_URL for gather redirect");
+      return;
+    }
+
+    try {
+      const client = twilioClient();
+      const gatherUrl = `${PUBLIC_BASE_URL.replace(/\/+$/, "")}/gather?retry=0`;
+
+      await client.calls(callSid).update({
+        url: gatherUrl,
+        method: "POST"
       });
-    }, HANGUP_AFTER_CLOSING_MS);
+
+      console.log(nowIso(), "Redirected call to Gather via Twilio REST", callSid, "reason:", reason);
+
+      // Now that Twilio is in Gather, end the streaming sockets.
+      closeAll("Redirected to Gather");
+    } catch (err) {
+      console.log(nowIso(), "Twilio REST redirect to gather error:", err && err.message ? err.message : err);
+      closeAll("Redirect to Gather failed");
+    }
   }
 
-  function requestClosingScript(reason) {
+  function requestClosingOptIn(reason) {
     if (closingRequested) return;
     closingRequested = true;
     closingInProgress = true;
-    closingAudioDeltaCount = 0;
-    closingFirstAudioAtMs = 0;
 
-    // Added: mark SMS eligible when we decide the session is ending
-    smsEligible = true;
+    console.log(nowIso(), reason, "sending AI closing opt-in prompt");
 
-    console.log(nowIso(), reason, "sending closing script");
-
-    cancelOpenAIResponseIfAnyOnce("closing requested");
+    cancelOpenAIResponseIfAnyOnce("closing opt-in requested");
     freezeOpenAIForClosing();
-
-    closingFallbackTimer = setTimeout(() => {
-      console.log(
-        nowIso(),
-        "Closing fallback timer fired, ending call now. delayMs:",
-        HANGUP_FALLBACK_AFTER_REQUEST_MS,
-        "closingAudioDeltaCount:",
-        closingAudioDeltaCount
-      );
-      endCallViaTwilioRest("Fallback delay after closing requested").finally(() => {
-        closeAll("Hangup after closing fallback delay");
-      });
-    }, HANGUP_FALLBACK_AFTER_REQUEST_MS);
-
-    console.log(
-      nowIso(),
-      "Closing fallback hangup scheduled after ms:",
-      HANGUP_FALLBACK_AFTER_REQUEST_MS
-    );
 
     openaiSend({
       type: "response.create",
       response: {
         modalities: ["audio", "text"],
-        instructions:
-          "Speak this exactly, naturally, then stop speaking:\n" + CLOSING_SCRIPT,
-      },
+        instructions: "Speak this exactly, naturally, then stop speaking:\n" + AI_OPTIN_PROMPT
+      }
     });
   }
 
@@ -396,7 +377,7 @@ wss.on("connection", (twilioWs) => {
     sessionTimerStarted = true;
 
     sessionTimer = setTimeout(() => {
-      requestClosingScript("5-minute timer fired,");
+      requestClosingOptIn("Trial timer fired,");
     }, 300 * 1000);
 
     console.log(nowIso(), "Session timer started (300s) after first caller speech_started");
@@ -416,8 +397,8 @@ wss.on("connection", (twilioWs) => {
     openaiWs = new WebSocket(url, {
       headers: {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "OpenAI-Beta": "realtime=v1",
-      },
+        "OpenAI-Beta": "realtime=v1"
+      }
     });
 
     openaiWs.on("open", () => {
@@ -463,8 +444,8 @@ wss.on("connection", (twilioWs) => {
             "Give two specific strengths, two specific improvements as actionable suggestions, and one short model line they can repeat next time.\n" +
             "Then ask exactly one question:\n" +
             "\"Do you want to try that scenario again, try a different scenario, or end the call?\"\n" +
-            "Then stop speaking and wait.\n",
-        },
+            "Then stop speaking and wait.\n"
+        }
       });
 
       if (!openerSent) {
@@ -479,10 +460,10 @@ wss.on("connection", (twilioWs) => {
               "Speak this exactly, naturally, then stop speaking:\n" +
               "Welcome to CallReady, a safe place to practice real phone calls before they matter. " +
               "I am an AI helper who can talk with you like a real person would, so there's no reason to be self-conscious or nervous. " +
-              "Quick note, this is a beta release, so there may still be some glitches. If i freeze, saying hello will usually get me back on track." +
-              "You can always say i don't know or help me if you're not sure what to say next. Before we start, make sure you're in a quiet room." +
-              "Do you want to choose a type of call to practice, or should I choose an easy scenario to start?",
-          },
+              "Quick note, this is a beta release, so there may still be some glitches. If I freeze, saying hello will usually get me back on track. " +
+              "You can always say I don't know or help me if you're not sure what to say next. Before we start, make sure you're in a quiet room. " +
+              "Do you want to choose a type of call to practice, or should I choose an easy scenario to start?"
+          }
         });
       }
     });
@@ -491,36 +472,7 @@ wss.on("connection", (twilioWs) => {
       const msg = safeJsonParse(data.toString());
       if (!msg) return;
 
-      if (msg.type === "response.text.delta" && msg.delta) {
-        appendAiTextAndCheckGoodbye(msg.delta);
-      }
-      if (msg.type === "response.output_text.delta" && msg.delta) {
-        appendAiTextAndCheckGoodbye(msg.delta);
-      }
-      if (msg.type === "response.audio_transcript.delta" && msg.delta) {
-        appendAiTextAndCheckGoodbye(msg.delta);
-      }
-
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
-        if (closingInProgress) {
-          closingAudioDeltaCount += 1;
-
-          if (closingAudioDeltaCount === 1) {
-            closingFirstAudioAtMs = Date.now();
-            console.log(nowIso(), "Closing: first audio delta forwarded to Twilio");
-
-            if (closingFallbackTimer) {
-              try {
-                clearTimeout(closingFallbackTimer);
-              } catch {}
-              closingFallbackTimer = null;
-              console.log(nowIso(), "Closing: cleared fallback hangup timer (audio arrived)");
-            }
-
-            scheduleHangupAfterClosingAudioStarts();
-          }
-        }
-
         if (
           !closingInProgress &&
           turnDetectionEnabled &&
@@ -537,7 +489,6 @@ wss.on("connection", (twilioWs) => {
           requireCallerSpeechBeforeNextAI &&
           !sawCallerSpeechSinceLastAIDone
         ) {
-          console.log(nowIso(), "Turn lock active, blocking AI until caller speaks");
           cancelOpenAIResponseIfAnyOnce("turn lock active");
           return;
         }
@@ -545,7 +496,7 @@ wss.on("connection", (twilioWs) => {
         twilioSend({
           event: "media",
           streamSid,
-          media: { payload: msg.delta },
+          media: { payload: msg.delta }
         });
         return;
       }
@@ -593,10 +544,6 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-        if (closingInProgress) {
-          console.log(nowIso(), "Closing response created");
-        }
-
         return;
       }
 
@@ -615,8 +562,8 @@ wss.on("connection", (twilioWs) => {
         openaiSend({
           type: "session.update",
           session: {
-            turn_detection: { type: "server_vad" },
-          },
+            turn_detection: { type: "server_vad" }
+          }
         });
 
         return;
@@ -624,17 +571,16 @@ wss.on("connection", (twilioWs) => {
 
       if (msg.type === "response.done" && turnDetectionEnabled) {
         if (closingInProgress) {
-          console.log(
-            nowIso(),
-            "Closing response done (hangup handled by audio-start timer), audioDeltasSoFar:",
-            closingAudioDeltaCount
-          );
+          console.log(nowIso(), "AI closing opt-in prompt finished, redirecting call to Gather");
+
+          // Redirect immediately after AI finishes speaking the opt-in prompt.
+          // If you ever notice last syllables being clipped, we can add a short delay here.
+          redirectCallToGather("AI opt-in prompt finished");
           return;
         }
 
         requireCallerSpeechBeforeNextAI = true;
         sawCallerSpeechSinceLastAIDone = false;
-        console.log(nowIso(), "Turn lock armed");
         return;
       }
 
@@ -687,12 +633,8 @@ wss.on("connection", (twilioWs) => {
       streamSid = msg.start && msg.start.streamSid ? msg.start.streamSid : null;
       callSid = msg.start && msg.start.callSid ? msg.start.callSid : null;
 
-      // Added: capture caller number for SMS
-      callerNumber = msg.start && msg.start.from ? msg.start.from : null;
-
       console.log(nowIso(), "Twilio stream start:", streamSid || "(no streamSid)");
       console.log(nowIso(), "Twilio callSid:", callSid || "(no callSid)");
-      console.log(nowIso(), "Twilio callerNumber:", callerNumber || "(no callerNumber)");
 
       startOpenAIRealtime();
       return;
@@ -705,12 +647,11 @@ wss.on("connection", (twilioWs) => {
       if (openaiReady && msg.media && msg.media.payload) {
         if (requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
           sawCallerSpeechSinceLastAIDone = true;
-          console.log(nowIso(), "Caller audio received, unlocking turn lock");
         }
 
         openaiSend({
           type: "input_audio_buffer.append",
-          audio: msg.media.payload,
+          audio: msg.media.payload
         });
       }
       return;
