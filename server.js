@@ -34,7 +34,7 @@ const TWILIO_SMS_FROM =
 const AI_CLOSING_TRANSITION =
   "Oops! It looks like our time for this session is almost up. " +
   "You did something important today by practicing, and that counts, even if it felt awkward or imperfect. " +
-  "One more quick choice before we hang up.";
+  "One more quick choice before we hang up. I'll hand it off to my partner to handle that.";
 
 // Twilio Gather prompt (deterministic opt-in language for compliance)
 const TWILIO_OPTIN_PROMPT =
@@ -51,11 +51,11 @@ const GATHER_RETRY_PROMPT =
 const IN_CALL_CONFIRM_YES =
   "Thanks. You are opted in to receive text messages from CallReady. " +
   "Message and data rates may apply. You can opt out any time by replying STOP. " +
-  "Thanks for practicing today. Goodbye.";
+  "Thanks for practicing today. Have a great day!.";
 
 const IN_CALL_CONFIRM_NO =
   "No problem. You will not receive text messages from CallReady. " +
-  "Thanks for practicing today. Goodbye.";
+  "Thanks for practicing with us today. We'll hope to hear from you again soon! Have a great day!.";
 
 // First SMS after opt in
 const OPTIN_CONFIRM_SMS =
@@ -436,7 +436,7 @@ wss.on("connection", (twilioWs) => {
     if (closingRedirectTimer) return;
 
     // This is the key: let Twilio actually play the transition before redirecting to Gather.
-    const PLAYOUT_BUFFER_MS = 1400;
+    const PLAYOUT_BUFFER_MS = 4000;
 
     closingRedirectTimer = setTimeout(() => {
       redirectCallToGather(reason);
