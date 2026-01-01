@@ -18,7 +18,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-timerclose-4-freezevad";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-timerclose-5-audiostart-hangup";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -29,8 +29,11 @@ const CLOSING_SCRIPT =
 const GOODBYE_TRIGGER =
   "Thanks for using CallReady and I look forward to our next session. Goodbye!";
 
-// Tune this
+// Tune this. This delay starts when the FIRST closing audio delta is forwarded to Twilio.
 const HANGUP_AFTER_CLOSING_MS = 20000;
+
+// Fallback if closing audio never arrives
+const HANGUP_FALLBACK_AFTER_REQUEST_MS = 30000;
 
 function safeJsonParse(str) {
   try {
@@ -106,13 +109,16 @@ wss.on("connection", (twilioWs) => {
   let closingInProgress = false;
   let closingRequested = false;
 
-  let closingHangupTimer = null;
+  // Hangup timers
+  let closingHangupTimer = null; // hangup after audio start
+  let closingFallbackTimer = null; // hangup if audio never arrives
 
   // When true, we stop forwarding Twilio audio to OpenAI.
   let suppressCallerAudioToOpenAI = false;
 
   // Track whether we have heard any closing audio deltas
   let closingAudioDeltaCount = 0;
+  let closingFirstAudioAtMs = 0;
 
   let aiTextBuffer = "";
 
@@ -132,6 +138,10 @@ wss.on("connection", (twilioWs) => {
 
     try {
       if (closingHangupTimer) clearTimeout(closingHangupTimer);
+    } catch {}
+
+    try {
+      if (closingFallbackTimer) clearTimeout(closingFallbackTimer);
     } catch {}
 
     try {
@@ -226,11 +236,36 @@ wss.on("connection", (twilioWs) => {
     console.log(nowIso(), "Closing: froze VAD and suppressed caller audio to OpenAI");
   }
 
+  function scheduleHangupAfterClosingAudioStarts() {
+    if (closingHangupTimer) return;
+
+    console.log(
+      nowIso(),
+      "Closing hangup scheduled after ms:",
+      HANGUP_AFTER_CLOSING_MS,
+      "starting from first audio delta"
+    );
+
+    closingHangupTimer = setTimeout(() => {
+      console.log(
+        nowIso(),
+        "Closing hangup timer fired, ending call now. delayMs:",
+        HANGUP_AFTER_CLOSING_MS,
+        "closingAudioDeltaCount:",
+        closingAudioDeltaCount
+      );
+      endCallViaTwilioRest("Delay after closing audio start").finally(() => {
+        closeAll("Hangup after closing audio start delay");
+      });
+    }, HANGUP_AFTER_CLOSING_MS);
+  }
+
   function requestClosingScript(reason) {
     if (closingRequested) return;
     closingRequested = true;
     closingInProgress = true;
     closingAudioDeltaCount = 0;
+    closingFirstAudioAtMs = 0;
 
     console.log(nowIso(), reason, "sending closing script");
 
@@ -240,24 +275,24 @@ wss.on("connection", (twilioWs) => {
     // Freeze the session so nothing else interferes with the closing.
     freezeOpenAIForClosing();
 
-    // Fixed hangup timer
-    closingHangupTimer = setTimeout(() => {
+    // Fallback hangup in case audio never arrives
+    closingFallbackTimer = setTimeout(() => {
       console.log(
         nowIso(),
-        "Closing hangup timer fired, ending call now. delayMs:",
-        HANGUP_AFTER_CLOSING_MS,
+        "Closing fallback timer fired, ending call now. delayMs:",
+        HANGUP_FALLBACK_AFTER_REQUEST_MS,
         "closingAudioDeltaCount:",
         closingAudioDeltaCount
       );
-      endCallViaTwilioRest("Fixed delay after closing script").finally(() => {
-        closeAll("Hangup after closing fixed delay");
+      endCallViaTwilioRest("Fallback delay after closing requested").finally(() => {
+        closeAll("Hangup after closing fallback delay");
       });
-    }, HANGUP_AFTER_CLOSING_MS);
+    }, HANGUP_FALLBACK_AFTER_REQUEST_MS);
 
     console.log(
       nowIso(),
-      "Closing hangup scheduled after ms:",
-      HANGUP_AFTER_CLOSING_MS
+      "Closing fallback hangup scheduled after ms:",
+      HANGUP_FALLBACK_AFTER_REQUEST_MS
     );
 
     openaiSend({
@@ -386,8 +421,22 @@ wss.on("connection", (twilioWs) => {
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
         if (closingInProgress) {
           closingAudioDeltaCount += 1;
+
           if (closingAudioDeltaCount === 1) {
+            closingFirstAudioAtMs = Date.now();
             console.log(nowIso(), "Closing: first audio delta forwarded to Twilio");
+
+            // Once we have actual audio, we can cancel the fallback timer.
+            if (closingFallbackTimer) {
+              try {
+                clearTimeout(closingFallbackTimer);
+              } catch {}
+              closingFallbackTimer = null;
+              console.log(nowIso(), "Closing: cleared fallback hangup timer (audio arrived)");
+            }
+
+            // Start hangup countdown from audio start.
+            scheduleHangupAfterClosingAudioStarts();
           }
         }
 
@@ -502,7 +551,7 @@ wss.on("connection", (twilioWs) => {
         if (closingInProgress) {
           console.log(
             nowIso(),
-            "Closing response done (hangup handled by fixed timer), audioDeltasSoFar:",
+            "Closing response done (hangup handled by audio-start timer), audioDeltasSoFar:",
             closingAudioDeltaCount
           );
           return;
