@@ -24,13 +24,13 @@ const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 
 const CLOSING_SCRIPT =
-  "It looks like our time for this session is about up. If you'd like more time, the ability to remember precious sessions, or recieve a text summary of our session and what to work on next, please visit callready.live. Thanks for using CallReady and I look forward to our next session. Goodbye!";
+  "Oops! It looks like our time for this session is about up. If you'd like more time, the ability to remember previous sessions, or recieve a text summary of our session and what to work on next, please visit callready.live. Thanks for using CallReady and I look forward to our next session. Goodbye!";
 
 const GOODBYE_TRIGGER =
   "Thanks for using CallReady and I look forward to our next session. Goodbye!";
 
 // Tune this
-const HANGUP_AFTER_CLOSING_MS = 30000;
+const HANGUP_AFTER_CLOSING_MS = 20000;
 
 function safeJsonParse(str) {
   try {
@@ -325,6 +325,7 @@ wss.on("connection", (twilioWs) => {
             "Important realism rule:\n" +
             "The caller cannot dial a number in this simulation.\n" +
             "Never tell the caller to place the call, dial, or start the call.\n" +
+            "If asking for personal information, tell the caller they can make it up if they want.\n" +
             "Instead, once the scenario is chosen and setup is clear, ask: \"Are you ready to start?\"\n" +
             "Wait for yes.\n" +
             "Then say \"Ring ring.\" and immediately answer the call as the other person.\n" +
