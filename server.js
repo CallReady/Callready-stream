@@ -19,18 +19,25 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-optin-gather-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-optin-gather-2-ai-transition-twilio-optin";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 
 // This must be a Twilio SMS-capable number, in E.164, like +1855...
 const TWILIO_SMS_FROM =
-  process.env.TWILIO_SMS_FROM || process.env.TWILIO_PHONE_NUMBER || process.env.TWILIO_FROM_NUMBER;
+  process.env.TWILIO_SMS_FROM ||
+  process.env.TWILIO_PHONE_NUMBER ||
+  process.env.TWILIO_FROM_NUMBER;
 
-// Spoken by AI at the end, just before we hand off to Gather
-const AI_OPTIN_PROMPT =
-  "Okay, that wraps the scenario. " +
+// AI says only a smooth transition, then we hand off to Twilio Gather for the opt-in language.
+const AI_CLOSING_TRANSITION =
+  "Oops! It looks like our time for this session is almost up. " +
+  "You did something important today by practicing, and that counts, even if it felt awkward or imperfect. " +
+  "One more quick choice before we hang up.";
+
+// Twilio Gather prompt (deterministic opt-in language for compliance)
+const TWILIO_OPTIN_PROMPT =
   "Before we hang up, you can choose to receive text messages from CallReady. " +
   "If you opt in, we can text you short reminders about what you practiced and what to work on next. " +
   "To agree to receive text messages from CallReady, press 1 now. " +
@@ -115,20 +122,20 @@ app.post("/gather", (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    const retry = (req.query && req.query.retry) ? String(req.query.retry) : "0";
+    const retry = req.query && req.query.retry ? String(req.query.retry) : "0";
     const isRetry = retry === "1";
 
     const gather = vr.gather({
       numDigits: 1,
       timeout: 7,
       action: "/gather-result",
-      method: "POST"
+      method: "POST",
     });
 
     if (isRetry) {
       gather.say(GATHER_RETRY_PROMPT);
     } else {
-      gather.say("To agree to receive text messages from CallReady, press 1 now. If you do not want text messages, press 2 now.");
+      gather.say(TWILIO_OPTIN_PROMPT);
     }
 
     // If no input, Gather will fall through to here.
@@ -149,9 +156,9 @@ app.post("/gather", (req, res) => {
 
 app.post("/gather-result", async (req, res) => {
   try {
-    const digits = (req.body && req.body.Digits) ? String(req.body.Digits) : "";
-    const from = (req.body && req.body.From) ? String(req.body.From) : "";
-    const callSid = (req.body && req.body.CallSid) ? String(req.body.CallSid) : "";
+    const digits = req.body && req.body.Digits ? String(req.body.Digits) : "";
+    const from = req.body && req.body.From ? String(req.body.From) : "";
+    const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
 
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
@@ -167,7 +174,7 @@ app.post("/gather-result", async (req, res) => {
           callSid,
           digits,
           consent_version: "sms_optin_v1",
-          source: "DTMF during call"
+          source: "DTMF during call",
         })
       );
 
@@ -176,9 +183,15 @@ app.post("/gather-result", async (req, res) => {
       // Send opt-in confirmation SMS immediately
       const client = twilioClient();
       if (!client) {
-        console.log(nowIso(), "Cannot send SMS, missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN");
+        console.log(
+          nowIso(),
+          "Cannot send SMS, missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN"
+        );
       } else if (!TWILIO_SMS_FROM) {
-        console.log(nowIso(), "Cannot send SMS, missing TWILIO_SMS_FROM (or TWILIO_PHONE_NUMBER)");
+        console.log(
+          nowIso(),
+          "Cannot send SMS, missing TWILIO_SMS_FROM (or TWILIO_PHONE_NUMBER)"
+        );
       } else if (!from) {
         console.log(nowIso(), "Cannot send SMS, missing caller From number");
       } else {
@@ -186,7 +199,7 @@ app.post("/gather-result", async (req, res) => {
           await client.messages.create({
             to: from,
             from: TWILIO_SMS_FROM,
-            body: OPTIN_CONFIRM_SMS
+            body: OPTIN_CONFIRM_SMS,
           });
           console.log(nowIso(), "Opt-in confirmation SMS sent to", from);
 
@@ -293,7 +306,9 @@ wss.on("connection", (twilioWs) => {
     } catch {}
   }
 
-  function freezeOpenAIForClosing() {
+  function quietForClosing() {
+    // We only suppress caller audio so the AI transition is less likely to be interrupted.
+    // We do not change session settings here.
     suppressCallerAudioToOpenAI = true;
 
     waitingForFirstCallerSpeech = false;
@@ -301,15 +316,7 @@ wss.on("connection", (twilioWs) => {
     requireCallerSpeechBeforeNextAI = false;
     sawCallerSpeechSinceLastAIDone = true;
 
-    openaiSend({ type: "input_audio_buffer.clear" });
-    openaiSend({
-      type: "session.update",
-      session: {
-        turn_detection: null
-      }
-    });
-
-    console.log(nowIso(), "Closing: froze VAD and suppressed caller audio to OpenAI");
+    console.log(nowIso(), "Closing: suppressed caller audio to OpenAI (handoff to Gather coming)");
   }
 
   async function redirectCallToGather(reason) {
@@ -323,7 +330,11 @@ wss.on("connection", (twilioWs) => {
     }
 
     if (!hasTwilioRest()) {
-      console.log(nowIso(), "Cannot redirect to gather, missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN", reason);
+      console.log(
+        nowIso(),
+        "Cannot redirect to gather, missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN",
+        reason
+      );
       closeAll("Missing Twilio REST creds for gather redirect");
       return;
     }
@@ -340,35 +351,45 @@ wss.on("connection", (twilioWs) => {
 
       await client.calls(callSid).update({
         url: gatherUrl,
-        method: "POST"
+        method: "POST",
       });
 
-      console.log(nowIso(), "Redirected call to Gather via Twilio REST", callSid, "reason:", reason);
+      console.log(
+        nowIso(),
+        "Redirected call to Gather via Twilio REST",
+        callSid,
+        "reason:",
+        reason
+      );
 
       // Now that Twilio is in Gather, end the streaming sockets.
       closeAll("Redirected to Gather");
     } catch (err) {
-      console.log(nowIso(), "Twilio REST redirect to gather error:", err && err.message ? err.message : err);
+      console.log(
+        nowIso(),
+        "Twilio REST redirect to gather error:",
+        err && err.message ? err.message : err
+      );
       closeAll("Redirect to Gather failed");
     }
   }
 
-  function requestClosingOptIn(reason) {
+  function requestClosingTransition(reason) {
     if (closingRequested) return;
     closingRequested = true;
     closingInProgress = true;
 
-    console.log(nowIso(), reason, "sending AI closing opt-in prompt");
+    console.log(nowIso(), reason, "sending AI closing transition");
 
-    cancelOpenAIResponseIfAnyOnce("closing opt-in requested");
-    freezeOpenAIForClosing();
+    cancelOpenAIResponseIfAnyOnce("closing transition requested");
+    quietForClosing();
 
     openaiSend({
       type: "response.create",
       response: {
         modalities: ["audio", "text"],
-        instructions: "Speak this exactly, naturally, then stop speaking:\n" + AI_OPTIN_PROMPT
-      }
+        instructions: "Speak this exactly, naturally, then stop speaking:\n" + AI_CLOSING_TRANSITION,
+      },
     });
   }
 
@@ -377,7 +398,7 @@ wss.on("connection", (twilioWs) => {
     sessionTimerStarted = true;
 
     sessionTimer = setTimeout(() => {
-      requestClosingOptIn("Trial timer fired,");
+      requestClosingTransition("Trial timer fired,");
     }, 60 * 1000);
 
     console.log(nowIso(), "Session timer started (60s) after first caller speech_started");
@@ -397,8 +418,8 @@ wss.on("connection", (twilioWs) => {
     openaiWs = new WebSocket(url, {
       headers: {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "OpenAI-Beta": "realtime=v1"
-      }
+        "OpenAI-Beta": "realtime=v1",
+      },
     });
 
     openaiWs.on("open", () => {
@@ -444,8 +465,8 @@ wss.on("connection", (twilioWs) => {
             "Give two specific strengths, two specific improvements as actionable suggestions, and one short model line they can repeat next time.\n" +
             "Then ask exactly one question:\n" +
             "\"Do you want to try that scenario again, try a different scenario, or end the call?\"\n" +
-            "Then stop speaking and wait.\n"
-        }
+            "Then stop speaking and wait.\n",
+        },
       });
 
       if (!openerSent) {
@@ -462,8 +483,8 @@ wss.on("connection", (twilioWs) => {
               "I am an AI helper who can talk with you like a real person would, so there's no reason to be self-conscious or nervous. " +
               "Quick note, this is a beta release, so there may still be some glitches. If I freeze, saying hello will usually get me back on track. " +
               "You can always say I don't know or help me if you're not sure what to say next. Before we start, make sure you're in a quiet room. " +
-              "Do you want to choose a type of call to practice, or should I choose an easy scenario to start?"
-          }
+              "Do you want to choose a type of call to practice, or should I choose an easy scenario to start?",
+          },
         });
       }
     });
@@ -496,7 +517,7 @@ wss.on("connection", (twilioWs) => {
         twilioSend({
           event: "media",
           streamSid,
-          media: { payload: msg.delta }
+          media: { payload: msg.delta },
         });
         return;
       }
@@ -562,8 +583,8 @@ wss.on("connection", (twilioWs) => {
         openaiSend({
           type: "session.update",
           session: {
-            turn_detection: { type: "server_vad" }
-          }
+            turn_detection: { type: "server_vad" },
+          },
         });
 
         return;
@@ -571,11 +592,13 @@ wss.on("connection", (twilioWs) => {
 
       if (msg.type === "response.done" && turnDetectionEnabled) {
         if (closingInProgress) {
-          console.log(nowIso(), "AI closing opt-in prompt finished, redirecting call to Gather");
+          console.log(nowIso(), "AI closing transition finished, redirecting call to Gather");
 
-          // Redirect immediately after AI finishes speaking the opt-in prompt.
-          // If you ever notice last syllables being clipped, we can add a short delay here.
-          redirectCallToGather("AI opt-in prompt finished");
+          // Small delay to reduce risk of clipping the last syllable before redirect.
+          setTimeout(() => {
+            redirectCallToGather("AI closing transition finished");
+          }, 500);
+
           return;
         }
 
@@ -651,7 +674,7 @@ wss.on("connection", (twilioWs) => {
 
         openaiSend({
           type: "input_audio_buffer.append",
-          audio: msg.media.payload
+          audio: msg.media.payload,
         });
       }
       return;
@@ -676,11 +699,6 @@ wss.on("connection", (twilioWs) => {
 });
 
 server.listen(PORT, () => {
-  console.log(
-    nowIso(),
-    `Server listening on ${PORT}`,
-    "version:",
-    CALLREADY_VERSION
-  );
+  console.log(nowIso(), `Server listening on ${PORT}`, "version:", CALLREADY_VERSION);
   console.log(nowIso(), "POST /voice, WS /media");
 });
