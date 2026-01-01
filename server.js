@@ -19,7 +19,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-optin-gather-5-twilio-closing-all";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -30,20 +30,20 @@ const TWILIO_SMS_FROM =
   process.env.TWILIO_PHONE_NUMBER ||
   process.env.TWILIO_FROM_NUMBER;
 
-// Twilio-only closing transition (said by Twilio before Gather)
-const TWILIO_CLOSING_TRANSITION =
+// Twilio will say this transition first, then immediately Gather for 1 digit.
+const TWILIO_END_TRANSITION =
   "Oops! It looks like our time for this session is almost up. " +
   "You did something important today by practicing, and that counts, even if it felt awkward or imperfect. " +
-  "One more quick choice before we hang up.";
+  "Before we hang up, one more quick choice.";
 
 // Twilio Gather prompt (deterministic opt-in language for compliance)
 const TWILIO_OPTIN_PROMPT =
-  "Before we hang up, you can choose to receive text messages from CallReady. " +
+  "You can choose to receive text messages from CallReady. " +
   "If you opt in, we can text you short reminders about what you practiced and what to work on next. " +
   "To agree to receive text messages from CallReady, press 1 now. " +
   "If you do not want text messages, press 2 now.";
 
-// Optional retry prompt spoken by Twilio Gather
+// Optional retry prompt spoken by Twilio Gather (no transition on retry)
 const GATHER_RETRY_PROMPT =
   "I did not get a response. Press 1 to receive texts, or press 2 to skip.";
 
@@ -55,7 +55,7 @@ const IN_CALL_CONFIRM_YES =
 
 const IN_CALL_CONFIRM_NO =
   "No problem. You will not receive text messages from CallReady. " +
-  "Thanks for practicing with us today. We'll hope to hear from you again soon! Have a great day!";
+  "Thanks for practicing with us today. We hope to hear from you again soon. Have a great day!";
 
 // First SMS after opt in
 const OPTIN_CONFIRM_SMS =
@@ -116,8 +116,9 @@ app.post("/voice", (req, res) => {
   }
 });
 
-// Gather endpoint (Twilio will request this after we redirect the call via REST)
-app.post("/gather", (req, res) => {
+// Single Twilio endpoint that plays transition and opt-in prompt in one TwiML response,
+// then Gather for 1 digit. Retries once, then defaults to no.
+app.post("/end", (req, res) => {
   try {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
@@ -125,9 +126,8 @@ app.post("/gather", (req, res) => {
     const retry = req.query && req.query.retry ? String(req.query.retry) : "0";
     const isRetry = retry === "1";
 
-    // Say the smooth transition only on the first pass.
     if (!isRetry) {
-      vr.say(TWILIO_CLOSING_TRANSITION);
+      vr.say(TWILIO_END_TRANSITION);
     }
 
     const gather = vr.gather({
@@ -146,7 +146,7 @@ app.post("/gather", (req, res) => {
     // If no input, Gather will fall through to here.
     // Retry once, then default to no.
     if (!isRetry) {
-      vr.redirect({ method: "POST" }, "/gather?retry=1");
+      vr.redirect({ method: "POST" }, "/end?retry=1");
     } else {
       vr.say(IN_CALL_CONFIRM_NO);
       vr.hangup();
@@ -154,7 +154,7 @@ app.post("/gather", (req, res) => {
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
-    console.error("Error building /gather TwiML:", err);
+    console.error("Error building /end TwiML:", err);
     res.status(500).send("Error");
   }
 });
@@ -214,7 +214,11 @@ app.post("/gather-result", async (req, res) => {
           //   body: SMS_TRIAL_TEXT
           // });
         } catch (e) {
-          console.log(nowIso(), "SMS send error:", e && e.message ? e.message : e);
+          console.log(
+            nowIso(),
+            "SMS send error:",
+            e && e.message ? e.message : e
+          );
         }
       }
 
@@ -265,8 +269,7 @@ wss.on("connection", (twilioWs) => {
   let sessionTimer = null;
 
   // Closing control
-  let closingRequested = false;
-  let gatherRedirectRequested = false;
+  let endRedirectRequested = false;
 
   // When true, we stop forwarding Twilio audio to OpenAI.
   let suppressCallerAudioToOpenAI = false;
@@ -317,61 +320,6 @@ wss.on("connection", (twilioWs) => {
     } catch {}
   }
 
-  async function redirectCallToGather(reason) {
-    if (gatherRedirectRequested) return;
-    gatherRedirectRequested = true;
-
-    if (!callSid) {
-      console.log(nowIso(), "Cannot redirect to gather, missing callSid", reason);
-      closeAll("Missing callSid for gather redirect");
-      return;
-    }
-
-    if (!hasTwilioRest()) {
-      console.log(
-        nowIso(),
-        "Cannot redirect to gather, missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN",
-        reason
-      );
-      closeAll("Missing Twilio REST creds for gather redirect");
-      return;
-    }
-
-    if (!PUBLIC_BASE_URL) {
-      console.log(nowIso(), "Cannot redirect to gather, missing PUBLIC_BASE_URL", reason);
-      closeAll("Missing PUBLIC_BASE_URL for gather redirect");
-      return;
-    }
-
-    try {
-      const client = twilioClient();
-      const gatherUrl = `${PUBLIC_BASE_URL.replace(/\/+$/, "")}/gather?retry=0`;
-
-      await client.calls(callSid).update({
-        url: gatherUrl,
-        method: "POST",
-      });
-
-      console.log(
-        nowIso(),
-        "Redirected call to Gather via Twilio REST",
-        callSid,
-        "reason:",
-        reason
-      );
-
-      // Now that Twilio is in Gather, end the streaming sockets.
-      closeAll("Redirected to Gather");
-    } catch (err) {
-      console.log(
-        nowIso(),
-        "Twilio REST redirect to gather error:",
-        err && err.message ? err.message : err
-      );
-      closeAll("Redirect to Gather failed");
-    }
-  }
-
   function sendOpenerOnce(label) {
     console.log(nowIso(), "Sending opener", label ? `(${label})` : "");
     openaiSend({
@@ -404,18 +352,71 @@ wss.on("connection", (twilioWs) => {
     }, 1500);
   }
 
-  function requestEndAndRedirect(reason) {
-    if (closingRequested) return;
-    closingRequested = true;
-
-    console.log(nowIso(), reason, "ending session, redirecting to Twilio Gather closing");
-
-    // Best effort to stop OpenAI from continuing.
-    cancelOpenAIResponseIfAnyOnce("redirecting to gather");
+  function prepForEnding() {
     suppressCallerAudioToOpenAI = true;
 
-    // Immediately hand off to Twilio for the full closing.
-    redirectCallToGather("Session ended, handoff to Twilio closing");
+    waitingForFirstCallerSpeech = false;
+    sawSpeechStarted = true;
+    requireCallerSpeechBeforeNextAI = false;
+    sawCallerSpeechSinceLastAIDone = true;
+
+    // Stop turn detection so nothing new starts while we redirect.
+    openaiSend({ type: "input_audio_buffer.clear" });
+    openaiSend({
+      type: "session.update",
+      session: {
+        turn_detection: null,
+      },
+    });
+  }
+
+  async function redirectCallToEnd(reason) {
+    if (endRedirectRequested) return;
+    endRedirectRequested = true;
+
+    if (!callSid) {
+      console.log(nowIso(), "Cannot redirect to /end, missing callSid", reason);
+      closeAll("Missing callSid for end redirect");
+      return;
+    }
+
+    if (!hasTwilioRest()) {
+      console.log(
+        nowIso(),
+        "Cannot redirect to /end, missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN",
+        reason
+      );
+      closeAll("Missing Twilio REST creds for end redirect");
+      return;
+    }
+
+    if (!PUBLIC_BASE_URL) {
+      console.log(nowIso(), "Cannot redirect to /end, missing PUBLIC_BASE_URL", reason);
+      closeAll("Missing PUBLIC_BASE_URL for end redirect");
+      return;
+    }
+
+    try {
+      const client = twilioClient();
+      const endUrl = `${PUBLIC_BASE_URL.replace(/\/+$/, "")}/end?retry=0`;
+
+      await client.calls(callSid).update({
+        url: endUrl,
+        method: "POST",
+      });
+
+      console.log(nowIso(), "Redirected call to /end via Twilio REST", callSid, "reason:", reason);
+
+      // Now that Twilio is in /end, end the streaming sockets.
+      closeAll("Redirected to /end");
+    } catch (err) {
+      console.log(
+        nowIso(),
+        "Twilio REST redirect to /end error:",
+        err && err.message ? err.message : err
+      );
+      closeAll("Redirect to /end failed");
+    }
   }
 
   function maybeStartSessionTimer() {
@@ -423,7 +424,10 @@ wss.on("connection", (twilioWs) => {
     sessionTimerStarted = true;
 
     sessionTimer = setTimeout(() => {
-      requestEndAndRedirect("Trial timer fired,");
+      console.log(nowIso(), "Trial timer fired, ending session, redirecting to /end");
+      cancelOpenAIResponseIfAnyOnce("redirecting to /end");
+      prepForEnding();
+      redirectCallToEnd("Trial timer fired");
     }, 60 * 1000);
 
     console.log(nowIso(), "Session timer started (60s) after first caller speech_started");
@@ -451,7 +455,6 @@ wss.on("connection", (twilioWs) => {
       openaiReady = true;
       console.log(nowIso(), "OpenAI WS open");
 
-      // VAD OFF for opener so it cannot be interrupted.
       openaiSend({
         type: "session.update",
         session: {
@@ -518,7 +521,7 @@ wss.on("connection", (twilioWs) => {
           }
         }
 
-        // Normal gating
+        // Block AI speech until caller speaks (after opener), never blocks opener.
         if (
           turnDetectionEnabled &&
           waitingForFirstCallerSpeech &&
@@ -528,6 +531,7 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
+        // Turn lock
         if (
           turnDetectionEnabled &&
           requireCallerSpeechBeforeNextAI &&
@@ -559,6 +563,7 @@ wss.on("connection", (twilioWs) => {
 
         if (requireCallerSpeechBeforeNextAI) {
           sawCallerSpeechSinceLastAIDone = true;
+          console.log(nowIso(), "Caller speech detected, unlocking turn lock");
         } else {
           sawCallerSpeechSinceLastAIDone = true;
         }
@@ -572,11 +577,7 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-        if (
-          turnDetectionEnabled &&
-          requireCallerSpeechBeforeNextAI &&
-          !sawCallerSpeechSinceLastAIDone
-        ) {
+        if (turnDetectionEnabled && requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
           cancelOpenAIResponseIfAnyOnce("turn lock active");
           return;
         }
@@ -612,6 +613,7 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
+      // After any other AI response completes, arm turn lock.
       if (msg.type === "response.done" && turnDetectionEnabled) {
         requireCallerSpeechBeforeNextAI = true;
         sawCallerSpeechSinceLastAIDone = false;
