@@ -19,7 +19,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-optin-gather-2-ai-transition-twilio-optin";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-optin-gather-3-opener-retry";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -240,6 +240,11 @@ wss.on("connection", (twilioWs) => {
 
   let openerSent = false;
 
+  // Opener reliability tracking
+  let openerAudioDeltaCount = 0;
+  let openerResent = false;
+  let openerRetryTimer = null;
+
   // We keep turn detection off during the opener, then enable it.
   let turnDetectionEnabled = false;
 
@@ -279,6 +284,10 @@ wss.on("connection", (twilioWs) => {
     } catch {}
 
     try {
+      if (openerRetryTimer) clearTimeout(openerRetryTimer);
+    } catch {}
+
+    try {
       if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
     } catch {}
     try {
@@ -307,8 +316,6 @@ wss.on("connection", (twilioWs) => {
   }
 
   function quietForClosing() {
-    // We only suppress caller audio so the AI transition is less likely to be interrupted.
-    // We do not change session settings here.
     suppressCallerAudioToOpenAI = true;
 
     waitingForFirstCallerSpeech = false;
@@ -362,7 +369,6 @@ wss.on("connection", (twilioWs) => {
         reason
       );
 
-      // Now that Twilio is in Gather, end the streaming sockets.
       closeAll("Redirected to Gather");
     } catch (err) {
       console.log(
@@ -372,6 +378,38 @@ wss.on("connection", (twilioWs) => {
       );
       closeAll("Redirect to Gather failed");
     }
+  }
+
+  function sendOpenerOnce(label) {
+    console.log(nowIso(), "Sending opener", label ? `(${label})` : "");
+    openaiSend({
+      type: "response.create",
+      response: {
+        modalities: ["audio", "text"],
+        instructions:
+          "Speak this exactly, naturally, then stop speaking:\n" +
+          "Welcome to CallReady, a safe place to practice real phone calls before they matter. " +
+          "I am an AI helper who can talk with you like a real person would, so there is no reason to be self-conscious or nervous. " +
+          "Quick note, this is a beta release, so there may still be some glitches. If I freeze, saying hello will usually get me back on track. " +
+          "You can always say I do not know or help me if you are not sure what to say next. Before we start, make sure you are in a quiet room. " +
+          "Do you want to choose a type of call to practice, or should I choose an easy scenario to start?",
+      },
+    });
+  }
+
+  function armOpenerRetryTimer() {
+    if (openerRetryTimer) return;
+
+    openerRetryTimer = setTimeout(() => {
+      if (turnDetectionEnabled) return;
+      if (!openerSent) return;
+      if (openerAudioDeltaCount > 0) return;
+      if (openerResent) return;
+
+      openerResent = true;
+      console.log(nowIso(), "Opener audio did not arrive, resending opener once");
+      sendOpenerOnce("retry");
+    }, 1500);
   }
 
   function requestClosingTransition(reason) {
@@ -388,7 +426,8 @@ wss.on("connection", (twilioWs) => {
       type: "response.create",
       response: {
         modalities: ["audio", "text"],
-        instructions: "Speak this exactly, naturally, then stop speaking:\n" + AI_CLOSING_TRANSITION,
+        instructions:
+          "Speak this exactly, naturally, then stop speaking:\n" + AI_CLOSING_TRANSITION,
       },
     });
   }
@@ -426,6 +465,7 @@ wss.on("connection", (twilioWs) => {
       openaiReady = true;
       console.log(nowIso(), "OpenAI WS open");
 
+      // Make sure turn detection is off for opener.
       openaiSend({
         type: "session.update",
         session: {
@@ -471,21 +511,11 @@ wss.on("connection", (twilioWs) => {
 
       if (!openerSent) {
         openerSent = true;
-        console.log(nowIso(), "Sending opener");
+        openerAudioDeltaCount = 0;
+        openerResent = false;
 
-        openaiSend({
-          type: "response.create",
-          response: {
-            modalities: ["audio", "text"],
-            instructions:
-              "Speak this exactly, naturally, then stop speaking:\n" +
-              "Welcome to CallReady, a safe place to practice real phone calls before they matter. " +
-              "I am an AI helper who can talk with you like a real person would, so there's no reason to be self-conscious or nervous. " +
-              "Quick note, this is a beta release, so there may still be some glitches. If I freeze, saying hello will usually get me back on track. " +
-              "You can always say I don't know or help me if you're not sure what to say next. Before we start, make sure you're in a quiet room. " +
-              "Do you want to choose a type of call to practice, or should I choose an easy scenario to start?",
-          },
-        });
+        sendOpenerOnce("initial");
+        armOpenerRetryTimer();
       }
     });
 
@@ -494,6 +524,14 @@ wss.on("connection", (twilioWs) => {
       if (!msg) return;
 
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
+        // Track opener audio arrival
+        if (!turnDetectionEnabled && openerSent) {
+          openerAudioDeltaCount += 1;
+          if (openerAudioDeltaCount === 1) {
+            console.log(nowIso(), "Opener: first audio delta forwarded to Twilio");
+          }
+        }
+
         if (
           !closingInProgress &&
           turnDetectionEnabled &&
@@ -568,6 +606,7 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
+      // Opener finished, now enable VAD.
       if (msg.type === "response.done" && openerSent && !turnDetectionEnabled) {
         turnDetectionEnabled = true;
         waitingForFirstCallerSpeech = true;
@@ -577,6 +616,11 @@ wss.on("connection", (twilioWs) => {
         sawCallerSpeechSinceLastAIDone = false;
 
         console.log(nowIso(), "Opener done, enabling VAD and clearing buffer");
+
+        try {
+          if (openerRetryTimer) clearTimeout(openerRetryTimer);
+        } catch {}
+        openerRetryTimer = null;
 
         openaiSend({ type: "input_audio_buffer.clear" });
 
@@ -594,7 +638,6 @@ wss.on("connection", (twilioWs) => {
         if (closingInProgress) {
           console.log(nowIso(), "AI closing transition finished, redirecting call to Gather");
 
-          // Small delay to reduce risk of clipping the last syllable before redirect.
           setTimeout(() => {
             redirectCallToGather("AI closing transition finished");
           }, 500);
