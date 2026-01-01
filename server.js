@@ -30,7 +30,7 @@ const GOODBYE_TRIGGER =
   "Thanks for using CallReady and I look forward to our next session. Goodbye!";
 
 // Tune this. This delay starts when the FIRST closing audio delta is forwarded to Twilio.
-const HANGUP_AFTER_CLOSING_MS = 20000;
+const HANGUP_AFTER_CLOSING_MS = 30000;
 
 // Fallback if closing audio never arrives
 const HANGUP_FALLBACK_AFTER_REQUEST_MS = 30000;
@@ -395,7 +395,7 @@ wss.on("connection", (twilioWs) => {
               "Welcome to CallReady, a safe place to practice real phone calls before they matter. " +
               "I am an AI helper who can talk with you like a real person would, so there's no reason to be self-conscious or nervous. " +
               "Quick note, this is a beta release, so there may still be some glitches. If i freeze, saying hello will usually get me back on track." +
-              "You can always say i don't know or help me if you're not sure what to say next." +
+              "You can always say i don't know or help me if you're not sure what to say next. Before we start, make sure you're in a quiet room." +
               "Do you want to choose a type of call to practice, or should I choose an easy scenario to start?",
           },
         });
