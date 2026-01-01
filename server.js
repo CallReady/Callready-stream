@@ -378,9 +378,9 @@ wss.on("connection", (twilioWs) => {
 
     sessionTimer = setTimeout(() => {
       requestClosingOptIn("Trial timer fired,");
-    }, 300 * 1000);
+    }, 60 * 1000);
 
-    console.log(nowIso(), "Session timer started (300s) after first caller speech_started");
+    console.log(nowIso(), "Session timer started (60s) after first caller speech_started");
   }
 
   function startOpenAIRealtime() {
