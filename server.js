@@ -24,7 +24,7 @@ const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 
 const CLOSING_SCRIPT =
-  "Oops! It looks like our time for this session is about up. If you'd like more time, the ability to remember previous sessions, or recieve a text summary of after session and what to work on next, please visit callready.live. Thanks for using CallReady and I look forward to our next session. Goodbye!";
+  "Oops! It looks like our time for this session is about up. You did something important today by practicing, and that counts, even if it felt awkward or imperfect. I am going to send you a short text with a quick note about what went well and one thing you can work on next. If you would like more time, longer practice sessions, or for me to remember past sessions, you can visit callready.live whenever you are ready. Thanks for using CallReady. I look forward to our next session. Goodbye!”";
 
 const GOODBYE_TRIGGER =
   "Thanks for using CallReady and I look forward to our next session. Goodbye!";
