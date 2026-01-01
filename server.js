@@ -24,7 +24,7 @@ const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 
 const CLOSING_SCRIPT =
-  "Oops! It looks like our time for this session is about up. If you'd like more time, the ability to remember previous sessions, or recieve a text summary of our session and what to work on next, please visit callready.live. Thanks for using CallReady and I look forward to our next session. Goodbye!";
+  "Oops! It looks like our time for this session is about up. If you'd like more time, the ability to remember previous sessions, or recieve a text summary of after session and what to work on next, please visit callready.live. Thanks for using CallReady and I look forward to our next session. Goodbye!";
 
 const GOODBYE_TRIGGER =
   "Thanks for using CallReady and I look forward to our next session. Goodbye!";
@@ -310,10 +310,10 @@ wss.on("connection", (twilioWs) => {
     sessionTimerStarted = true;
 
     sessionTimer = setTimeout(() => {
-      requestClosingScript("1-minute timer fired,");
-    }, 60 * 1000);
+      requestClosingScript("5-minute timer fired,");
+    }, 300 * 1000);
 
-    console.log(nowIso(), "Session timer started (60s) after first caller speech_started");
+    console.log(nowIso(), "Session timer started (300s) after first caller speech_started");
   }
 
   function startOpenAIRealtime() {
