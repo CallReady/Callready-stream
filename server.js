@@ -19,7 +19,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-optin-gather-5-closing-playout-buffer";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-wrap-options-optin-gather-6-closing-mark-redirect";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -30,11 +30,17 @@ const TWILIO_SMS_FROM =
   process.env.TWILIO_PHONE_NUMBER ||
   process.env.TWILIO_FROM_NUMBER;
 
-// Closing timing knobs (start high, tune down)
-const CLOSING_PLAYOUT_BUFFER_MS =
-  parseInt(process.env.CLOSING_PLAYOUT_BUFFER_MS || "9000", 10); // wait after AI says it is done
-const CLOSING_AUDIO_START_FALLBACK_MS =
-  parseInt(process.env.CLOSING_AUDIO_START_FALLBACK_MS || "2500", 10); // if no closing audio arrives, redirect anyway
+// If no closing audio ever arrives, redirect anyway after this long
+const CLOSING_AUDIO_START_FALLBACK_MS = parseInt(
+  process.env.CLOSING_AUDIO_START_FALLBACK_MS || "2500",
+  10
+);
+
+// If we never get a Twilio mark back, redirect anyway after this long
+const CLOSING_MARK_FALLBACK_MS = parseInt(
+  process.env.CLOSING_MARK_FALLBACK_MS || "15000",
+  10
+);
 
 // AI says only a smooth transition, then we hand off to Twilio Gather for the opt-in language.
 const AI_CLOSING_TRANSITION =
@@ -272,8 +278,13 @@ wss.on("connection", (twilioWs) => {
   let closingAudioDeltaCount = 0;
   let closingAudioStarted = false;
   let closingDoneSeen = false;
-  let closingRedirectTimer = null;
+
+  // Mark based redirect control
+  const CLOSING_MARK_NAME = "closing_transition_end";
+  let closingMarkSent = false;
+  let waitingForClosingMark = false;
   let closingAudioStartFallbackTimer = null;
+  let closingMarkFallbackTimer = null;
 
   // When true, we stop forwarding Twilio audio to OpenAI.
   let suppressCallerAudioToOpenAI = false;
@@ -297,11 +308,11 @@ wss.on("connection", (twilioWs) => {
     } catch {}
 
     try {
-      if (closingRedirectTimer) clearTimeout(closingRedirectTimer);
+      if (closingAudioStartFallbackTimer) clearTimeout(closingAudioStartFallbackTimer);
     } catch {}
 
     try {
-      if (closingAudioStartFallbackTimer) clearTimeout(closingAudioStartFallbackTimer);
+      if (closingMarkFallbackTimer) clearTimeout(closingMarkFallbackTimer);
     } catch {}
 
     try {
@@ -340,7 +351,6 @@ wss.on("connection", (twilioWs) => {
     requireCallerSpeechBeforeNextAI = false;
     sawCallerSpeechSinceLastAIDone = true;
 
-    // Freeze turn detection so the closing cannot be disrupted.
     openaiSend({ type: "input_audio_buffer.clear" });
     openaiSend({
       type: "session.update",
@@ -438,18 +448,38 @@ wss.on("connection", (twilioWs) => {
     }, 1500);
   }
 
-  function scheduleRedirectAfterClosingAudioPlays(reason) {
-    if (closingRedirectTimer) return;
+  function maybeSendClosingMark() {
+    if (!closingInProgress) return;
+    if (!closingDoneSeen) return;
+    if (!closingAudioStarted) return;
+    if (!streamSid) return;
+    if (closingMarkSent) return;
 
-    closingRedirectTimer = setTimeout(() => {
-      redirectCallToGather(reason);
-    }, CLOSING_PLAYOUT_BUFFER_MS);
+    closingMarkSent = true;
+    waitingForClosingMark = true;
 
-    console.log(
-      nowIso(),
-      "Closing: redirect scheduled after playout buffer ms:",
-      CLOSING_PLAYOUT_BUFFER_MS
-    );
+    console.log(nowIso(), "Closing: sending Twilio mark:", CLOSING_MARK_NAME);
+
+    twilioSend({
+      event: "mark",
+      streamSid,
+      mark: { name: CLOSING_MARK_NAME },
+    });
+
+    if (closingMarkFallbackTimer) {
+      try {
+        clearTimeout(closingMarkFallbackTimer);
+      } catch {}
+      closingMarkFallbackTimer = null;
+    }
+
+    closingMarkFallbackTimer = setTimeout(() => {
+      if (!waitingForClosingMark) return;
+      console.log(nowIso(), "Closing: mark fallback fired, redirecting anyway");
+      redirectCallToGather("Closing mark fallback");
+    }, CLOSING_MARK_FALLBACK_MS);
+
+    console.log(nowIso(), "Closing: mark fallback armed ms:", CLOSING_MARK_FALLBACK_MS);
   }
 
   function requestClosingTransition(reason) {
@@ -457,17 +487,11 @@ wss.on("connection", (twilioWs) => {
     closingRequested = true;
     closingInProgress = true;
 
-    // Reset closing trackers each session
     closingAudioDeltaCount = 0;
     closingAudioStarted = false;
     closingDoneSeen = false;
-
-    if (closingRedirectTimer) {
-      try {
-        clearTimeout(closingRedirectTimer);
-      } catch {}
-      closingRedirectTimer = null;
-    }
+    closingMarkSent = false;
+    waitingForClosingMark = false;
 
     if (closingAudioStartFallbackTimer) {
       try {
@@ -476,15 +500,21 @@ wss.on("connection", (twilioWs) => {
       closingAudioStartFallbackTimer = null;
     }
 
+    if (closingMarkFallbackTimer) {
+      try {
+        clearTimeout(closingMarkFallbackTimer);
+      } catch {}
+      closingMarkFallbackTimer = null;
+    }
+
     console.log(nowIso(), reason, "sending AI closing transition");
 
     cancelOpenAIResponseIfAnyOnce("closing transition requested");
     prepForClosingTransition();
 
-    // If for any reason no audio deltas arrive, still redirect to Gather after a short wait.
     closingAudioStartFallbackTimer = setTimeout(() => {
       if (closingAudioStarted) return;
-      console.log(nowIso(), "Closing: no audio deltas arrived, redirecting anyway (fallback)");
+      console.log(nowIso(), "Closing: no audio deltas arrived, redirecting anyway (audio fallback)");
       redirectCallToGather("Closing transition fallback (no audio)");
     }, CLOSING_AUDIO_START_FALLBACK_MS);
 
@@ -493,7 +523,8 @@ wss.on("connection", (twilioWs) => {
       response: {
         modalities: ["audio", "text"],
         instructions:
-          "Speak this exactly, naturally, then stop speaking:\n" + AI_CLOSING_TRANSITION,
+          "Speak this exactly, naturally, at a normal pace, then stop speaking:\n" +
+          AI_CLOSING_TRANSITION,
       },
     });
   }
@@ -589,7 +620,6 @@ wss.on("connection", (twilioWs) => {
       if (!msg) return;
 
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
-        // Track opener audio arrival
         if (!turnDetectionEnabled && openerSent) {
           openerAudioDeltaCount += 1;
           if (openerAudioDeltaCount === 1) {
@@ -597,7 +627,6 @@ wss.on("connection", (twilioWs) => {
           }
         }
 
-        // Track closing transition audio arrival
         if (closingInProgress) {
           closingAudioDeltaCount += 1;
           if (!closingAudioStarted) {
@@ -609,16 +638,13 @@ wss.on("connection", (twilioWs) => {
                 clearTimeout(closingAudioStartFallbackTimer);
               } catch {}
               closingAudioStartFallbackTimer = null;
-              console.log(nowIso(), "Closing: cleared fallback timer (audio arrived)");
+              console.log(nowIso(), "Closing: cleared audio fallback timer (audio arrived)");
             }
 
-            if (closingDoneSeen) {
-              scheduleRedirectAfterClosingAudioPlays("Closing transition finished (audio started)");
-            }
+            maybeSendClosingMark();
           }
         }
 
-        // Normal gating (never blocks closing because we froze VAD and suppressed caller audio)
         if (
           !closingInProgress &&
           turnDetectionEnabled &&
@@ -693,7 +719,6 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
-      // Opener finished, now enable VAD.
       if (msg.type === "response.done" && openerSent && !turnDetectionEnabled) {
         turnDetectionEnabled = true;
         waitingForFirstCallerSpeech = true;
@@ -724,16 +749,9 @@ wss.on("connection", (twilioWs) => {
       if (msg.type === "response.done" && turnDetectionEnabled) {
         if (closingInProgress) {
           console.log(nowIso(), "AI closing transition done");
-
           closingDoneSeen = true;
 
-          // Only redirect after audio has actually started.
-          if (closingAudioStarted) {
-            scheduleRedirectAfterClosingAudioPlays("Closing transition done (audio started)");
-          } else {
-            console.log(nowIso(), "Closing: done seen before audio start, waiting for first audio delta");
-          }
-
+          maybeSendClosingMark();
           return;
         }
 
@@ -807,6 +825,26 @@ wss.on("connection", (twilioWs) => {
           type: "input_audio_buffer.append",
           audio: msg.media.payload,
         });
+      }
+      return;
+    }
+
+    if (msg.event === "mark") {
+      const name = msg.mark && msg.mark.name ? String(msg.mark.name) : "";
+      console.log(nowIso(), "Twilio mark received:", name);
+
+      if (waitingForClosingMark && name === CLOSING_MARK_NAME) {
+        waitingForClosingMark = false;
+
+        if (closingMarkFallbackTimer) {
+          try {
+            clearTimeout(closingMarkFallbackTimer);
+          } catch {}
+          closingMarkFallbackTimer = null;
+        }
+
+        console.log(nowIso(), "Closing: mark reached playback point, redirecting now");
+        redirectCallToGather("Closing mark received");
       }
       return;
     }
