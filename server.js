@@ -19,7 +19,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-2-ignore-caller-while-ai-speaks";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -143,8 +143,6 @@ app.post("/end", (req, res) => {
       gather.say(TWILIO_OPTIN_PROMPT);
     }
 
-    // If no input, Gather will fall through to here.
-    // Retry once, then default to no.
     if (!isRetry) {
       vr.redirect({ method: "POST" }, "/end?retry=1");
     } else {
@@ -268,11 +266,16 @@ wss.on("connection", (twilioWs) => {
   let sessionTimerStarted = false;
   let sessionTimer = null;
 
-  // Closing control
+  // Ending control
   let endRedirectRequested = false;
 
   // When true, we stop forwarding Twilio audio to OpenAI.
   let suppressCallerAudioToOpenAI = false;
+
+  // Ignore caller audio while AI is speaking
+  let aiSpeaking = false;
+  let aiAllowCallerAtMs = 0; // small grace window after AI finishes
+  const AI_POST_SPEECH_GRACE_MS = 250;
 
   // Cancel throttling
   let lastCancelAtMs = 0;
@@ -513,6 +516,12 @@ wss.on("connection", (twilioWs) => {
       if (!msg) return;
 
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
+        // Mark AI speaking as soon as we see output audio
+        if (!aiSpeaking) {
+          aiSpeaking = true;
+          console.log(nowIso(), "AI speaking started");
+        }
+
         // Track opener audio arrival
         if (!turnDetectionEnabled && openerSent) {
           openerAudioDeltaCount += 1;
@@ -587,6 +596,14 @@ wss.on("connection", (twilioWs) => {
 
       // Opener finished, now enable VAD.
       if (msg.type === "response.done" && openerSent && !turnDetectionEnabled) {
+        // AI finished speaking, open a small grace window and clear any buffered input
+        if (aiSpeaking) {
+          aiSpeaking = false;
+          aiAllowCallerAtMs = Date.now() + AI_POST_SPEECH_GRACE_MS;
+          console.log(nowIso(), "AI speaking finished (opener), clearing input buffer");
+          openaiSend({ type: "input_audio_buffer.clear" });
+        }
+
         turnDetectionEnabled = true;
         waitingForFirstCallerSpeech = true;
         sawSpeechStarted = false;
@@ -615,6 +632,14 @@ wss.on("connection", (twilioWs) => {
 
       // After any other AI response completes, arm turn lock.
       if (msg.type === "response.done" && turnDetectionEnabled) {
+        // AI finished speaking, open a small grace window and clear any buffered input
+        if (aiSpeaking) {
+          aiSpeaking = false;
+          aiAllowCallerAtMs = Date.now() + AI_POST_SPEECH_GRACE_MS;
+          console.log(nowIso(), "AI speaking finished, clearing input buffer");
+          openaiSend({ type: "input_audio_buffer.clear" });
+        }
+
         requireCallerSpeechBeforeNextAI = true;
         sawCallerSpeechSinceLastAIDone = false;
         return;
@@ -675,6 +700,10 @@ wss.on("connection", (twilioWs) => {
     if (msg.event === "media") {
       if (!turnDetectionEnabled) return;
       if (suppressCallerAudioToOpenAI) return;
+
+      // Ignore caller audio while AI is speaking, and for a short grace window after.
+      if (aiSpeaking) return;
+      if (aiAllowCallerAtMs && Date.now() < aiAllowCallerAtMs) return;
 
       if (openaiReady && msg.media && msg.media.payload) {
         if (requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
