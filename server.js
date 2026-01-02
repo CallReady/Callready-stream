@@ -19,7 +19,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-trigger-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-trigger-2";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -30,7 +30,7 @@ const TWILIO_SMS_FROM =
   process.env.TWILIO_PHONE_NUMBER ||
   process.env.TWILIO_FROM_NUMBER;
 
-// AI text trigger to end call (text only, never spoken)
+// Text-only trigger the AI must include to end the call
 const AI_END_CALL_TRIGGER = "END_CALL_NOW";
 
 // Twilio will say this transition first, then immediately Gather for 1 digit.
@@ -278,10 +278,6 @@ wss.on("connection", (twilioWs) => {
   // Cancel throttling
   let lastCancelAtMs = 0;
 
-  // AI text tracking for END_CALL_NOW trigger
-  let aiTextBuffer = "";
-  let aiSpeaking = false;
-
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
   function closeAll(reason) {
@@ -311,7 +307,7 @@ wss.on("connection", (twilioWs) => {
   }
 
   function openaiSend(obj) {
-    if (!openaiWs || openaiWs.readyState === WebSocket.OPEN === false) return;
+    if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
     openaiWs.send(JSON.stringify(obj));
   }
 
@@ -404,12 +400,14 @@ wss.on("connection", (twilioWs) => {
       const client = twilioClient();
       const endUrl = `${PUBLIC_BASE_URL.replace(/\/+$/, "")}/end?retry=0`;
 
+      console.log(nowIso(), "Redirecting call to /end now", callSid, "reason:", reason);
+
       await client.calls(callSid).update({
         url: endUrl,
         method: "POST",
       });
 
-      console.log(nowIso(), "Redirected call to /end via Twilio REST", callSid, "reason:", reason);
+      console.log(nowIso(), "Redirected call to /end via Twilio REST", callSid);
 
       closeAll("Redirected to /end");
     } catch (err) {
@@ -434,6 +432,49 @@ wss.on("connection", (twilioWs) => {
     }, 300 * 1000);
 
     console.log(nowIso(), "Session timer started (300s) after first caller speech_started");
+  }
+
+  function extractTextFromResponseDone(msg) {
+    // Try to pull any text the model produced from response.done
+    // Realtime payloads vary, so this is intentionally defensive.
+    let out = "";
+
+    const response = msg && msg.response ? msg.response : null;
+    if (!response) return out;
+
+    const output = Array.isArray(response.output) ? response.output : [];
+    for (const item of output) {
+      if (!item) continue;
+
+      // Common shape: { type: "message", content: [{ type: "output_text", text: "..." }, ...] }
+      const content = Array.isArray(item.content) ? item.content : [];
+      for (const c of content) {
+        if (!c) continue;
+        if (typeof c.text === "string") out += c.text + "\n";
+        if (typeof c.value === "string") out += c.value + "\n";
+        if (typeof c.transcript === "string") out += c.transcript + "\n";
+      }
+
+      // Sometimes text is directly on the item
+      if (typeof item.text === "string") out += item.text + "\n";
+      if (typeof item.transcript === "string") out += item.transcript + "\n";
+    }
+
+    // Some variants put text in response.output_text
+    if (typeof response.output_text === "string") out += response.output_text + "\n";
+
+    return out;
+  }
+
+  function responseTextRequestsEnd(text) {
+    if (!text) return false;
+    const t = String(text).toUpperCase();
+    if (t.includes(AI_END_CALL_TRIGGER)) return true;
+
+    // Backstop, in case it says it with spaces
+    if (t.includes("END CALL NOW")) return true;
+
+    return false;
   }
 
   function startOpenAIRealtime() {
@@ -478,10 +519,10 @@ wss.on("connection", (twilioWs) => {
             "Ask one question at a time. After you ask a question, stop speaking and wait.\n" +
             "\n" +
             "Ending rule:\n" +
-            "If the caller asks to end the call, quit, stop, or says they do not want to do this anymore, you must do BOTH:\n" +
-            "1) Say a short, kind goodbye in one sentence.\n" +
-            "2) In the TEXT output only, include this exact token on its own line: END_CALL_NOW\n" +
-            "Do not say the token out loud.\n" +
+            "If the caller asks to end the call, quit, stop, hang up, or says they do not want to do this anymore, do BOTH:\n" +
+            "1) Say one short, kind goodbye sentence.\n" +
+            "2) In TEXT ONLY, output this exact token on its own line: END_CALL_NOW\n" +
+            "Never say the token out loud.\n" +
             "Do not ask any follow up questions.\n" +
             "\n" +
             "Important realism rule:\n" +
@@ -522,40 +563,6 @@ wss.on("connection", (twilioWs) => {
     openaiWs.on("message", (data) => {
       const msg = safeJsonParse(data.toString());
       if (!msg) return;
-
-      // Track AI text for END_CALL_NOW (event names vary, so we accept several)
-      if (msg.type === "response.created") {
-        aiTextBuffer = "";
-        aiSpeaking = true;
-
-        if (turnDetectionEnabled && waitingForFirstCallerSpeech && !sawSpeechStarted) {
-          cancelOpenAIResponseIfAnyOnce("response.created before caller speech");
-          return;
-        }
-
-        if (turnDetectionEnabled && requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
-          cancelOpenAIResponseIfAnyOnce("turn lock active");
-          return;
-        }
-
-        return;
-      }
-
-      if (
-        (msg.type === "response.text.delta" || msg.type === "response.output_text.delta") &&
-        msg.delta
-      ) {
-        aiTextBuffer += String(msg.delta);
-        return;
-      }
-
-      if (
-        (msg.type === "response.text.done" || msg.type === "response.output_text.done") &&
-        (msg.text || msg.delta)
-      ) {
-        aiTextBuffer += String(msg.text || msg.delta);
-        return;
-      }
 
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
         if (!turnDetectionEnabled && openerSent) {
@@ -605,9 +612,21 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
-      if (msg.type === "response.done" && openerSent && !turnDetectionEnabled) {
-        aiSpeaking = false;
+      if (msg.type === "response.created") {
+        if (turnDetectionEnabled && waitingForFirstCallerSpeech && !sawSpeechStarted) {
+          cancelOpenAIResponseIfAnyOnce("response.created before caller speech");
+          return;
+        }
 
+        if (turnDetectionEnabled && requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
+          cancelOpenAIResponseIfAnyOnce("turn lock active");
+          return;
+        }
+
+        return;
+      }
+
+      if (msg.type === "response.done" && openerSent && !turnDetectionEnabled) {
         turnDetectionEnabled = true;
         waitingForFirstCallerSpeech = true;
         sawSpeechStarted = false;
@@ -635,10 +654,9 @@ wss.on("connection", (twilioWs) => {
       }
 
       if (msg.type === "response.done" && turnDetectionEnabled) {
-        aiSpeaking = false;
-
-        if (!endRedirectRequested && aiTextBuffer && aiTextBuffer.includes(AI_END_CALL_TRIGGER)) {
-          console.log(nowIso(), "AI requested end, redirecting to /end");
+        const text = extractTextFromResponseDone(msg);
+        if (!endRedirectRequested && responseTextRequestsEnd(text)) {
+          console.log(nowIso(), "Detected END_CALL_NOW in model text, redirecting to /end");
           cancelOpenAIResponseIfAnyOnce("AI requested end");
           prepForEnding();
           redirectCallToEnd("AI requested end");
