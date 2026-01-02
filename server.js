@@ -19,7 +19,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-end-intent-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-trigger-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -29,6 +29,9 @@ const TWILIO_SMS_FROM =
   process.env.TWILIO_SMS_FROM ||
   process.env.TWILIO_PHONE_NUMBER ||
   process.env.TWILIO_FROM_NUMBER;
+
+// AI text trigger to end call (text only, never spoken)
+const AI_END_CALL_TRIGGER = "END_CALL_NOW";
 
 // Twilio will say this transition first, then immediately Gather for 1 digit.
 const TWILIO_END_TRANSITION =
@@ -84,48 +87,6 @@ function hasTwilioRest() {
 function twilioClient() {
   if (!hasTwilioRest()) return null;
   return twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
-}
-
-function normalizeText(s) {
-  return String(s || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s']/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function isEndIntent(text) {
-  const t = normalizeText(text);
-  if (!t) return false;
-
-  // Strong matches only, to avoid accidental triggers.
-  const phrases = [
-    "end the call",
-    "i want to end the call",
-    "can we end the call",
-    "let's end the call",
-    "i want to hang up",
-    "can i hang up",
-    "hang up now",
-    "please hang up",
-    "please end the call",
-    "i'm done",
-    "im done",
-    "i am done",
-    "i want to stop",
-    "stop the call",
-    "stop this call",
-    "i want to finish",
-    "can we finish",
-    "finish the call",
-    "end this",
-    "end it",
-  ];
-
-  for (const p of phrases) {
-    if (t.includes(p)) return true;
-  }
-  return false;
 }
 
 app.get("/", (req, res) => res.status(200).send("CallReady server up"));
@@ -254,7 +215,11 @@ app.post("/gather-result", async (req, res) => {
           //   body: SMS_TRIAL_TEXT
           // });
         } catch (e) {
-          console.log(nowIso(), "SMS send error:", e && e.message ? e.message : e);
+          console.log(
+            nowIso(),
+            "SMS send error:",
+            e && e.message ? e.message : e
+          );
         }
       }
 
@@ -313,6 +278,10 @@ wss.on("connection", (twilioWs) => {
   // Cancel throttling
   let lastCancelAtMs = 0;
 
+  // AI text tracking for END_CALL_NOW trigger
+  let aiTextBuffer = "";
+  let aiSpeaking = false;
+
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
   function closeAll(reason) {
@@ -342,7 +311,7 @@ wss.on("connection", (twilioWs) => {
   }
 
   function openaiSend(obj) {
-    if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
+    if (!openaiWs || openaiWs.readyState === WebSocket.OPEN === false) return;
     openaiWs.send(JSON.stringify(obj));
   }
 
@@ -440,13 +409,7 @@ wss.on("connection", (twilioWs) => {
         method: "POST",
       });
 
-      console.log(
-        nowIso(),
-        "Redirected call to /end via Twilio REST",
-        callSid,
-        "reason:",
-        reason
-      );
+      console.log(nowIso(), "Redirected call to /end via Twilio REST", callSid, "reason:", reason);
 
       closeAll("Redirected to /end");
     } catch (err) {
@@ -504,11 +467,6 @@ wss.on("connection", (twilioWs) => {
           turn_detection: null,
           temperature: 0.7,
           modalities: ["audio", "text"],
-
-          // Enables transcripts of caller speech so we can detect "end the call" intent.
-          // If your account does not have transcription enabled for Realtime, this will be ignored or error.
-          input_audio_transcription: { model: "gpt-4o-mini-transcribe" },
-
           instructions:
             "You are CallReady. You help teens and young adults practice real phone calls.\n" +
             "Speak with a friendly, upbeat, warm tone that sounds like a calm, encouraging young adult woman.\n" +
@@ -519,8 +477,12 @@ wss.on("connection", (twilioWs) => {
             "Do not allow the conversation to drift away from helping the caller practice phone skills.\n" +
             "Ask one question at a time. After you ask a question, stop speaking and wait.\n" +
             "\n" +
-            "If the caller says they want to end the call, politely acknowledge and tell them you will end the call now.\n" +
-            "Do not add extra questions after they ask to end the call.\n" +
+            "Ending rule:\n" +
+            "If the caller asks to end the call, quit, stop, or says they do not want to do this anymore, you must do BOTH:\n" +
+            "1) Say a short, kind goodbye in one sentence.\n" +
+            "2) In the TEXT output only, include this exact token on its own line: END_CALL_NOW\n" +
+            "Do not say the token out loud.\n" +
+            "Do not ask any follow up questions.\n" +
             "\n" +
             "Important realism rule:\n" +
             "The caller cannot dial a number in this simulation.\n" +
@@ -561,25 +523,38 @@ wss.on("connection", (twilioWs) => {
       const msg = safeJsonParse(data.toString());
       if (!msg) return;
 
-      // Caller transcript events (Realtime). Different accounts sometimes emit slightly different shapes.
-      // We handle a few common ones safely.
-      if (msg.type === "conversation.item.input_audio_transcription.completed") {
-        const transcript =
-          (msg.transcription && msg.transcription.text) ||
-          (msg.transcript && msg.transcript.text) ||
-          msg.text ||
-          "";
+      // Track AI text for END_CALL_NOW (event names vary, so we accept several)
+      if (msg.type === "response.created") {
+        aiTextBuffer = "";
+        aiSpeaking = true;
 
-        if (transcript) {
-          console.log(nowIso(), "Caller transcript:", JSON.stringify(transcript));
-          if (!endRedirectRequested && isEndIntent(transcript)) {
-            console.log(nowIso(), "Caller requested end, redirecting to /end");
-            cancelOpenAIResponseIfAnyOnce("caller requested end");
-            prepForEnding();
-            redirectCallToEnd("Caller requested end");
-            return;
-          }
+        if (turnDetectionEnabled && waitingForFirstCallerSpeech && !sawSpeechStarted) {
+          cancelOpenAIResponseIfAnyOnce("response.created before caller speech");
+          return;
         }
+
+        if (turnDetectionEnabled && requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
+          cancelOpenAIResponseIfAnyOnce("turn lock active");
+          return;
+        }
+
+        return;
+      }
+
+      if (
+        (msg.type === "response.text.delta" || msg.type === "response.output_text.delta") &&
+        msg.delta
+      ) {
+        aiTextBuffer += String(msg.delta);
+        return;
+      }
+
+      if (
+        (msg.type === "response.text.done" || msg.type === "response.output_text.done") &&
+        (msg.text || msg.delta)
+      ) {
+        aiTextBuffer += String(msg.text || msg.delta);
+        return;
       }
 
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
@@ -595,11 +570,7 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-        if (
-          turnDetectionEnabled &&
-          requireCallerSpeechBeforeNextAI &&
-          !sawCallerSpeechSinceLastAIDone
-        ) {
+        if (turnDetectionEnabled && requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
           cancelOpenAIResponseIfAnyOnce("turn lock active");
           return;
         }
@@ -634,25 +605,9 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
-      if (msg.type === "response.created") {
-        if (turnDetectionEnabled && waitingForFirstCallerSpeech && !sawSpeechStarted) {
-          cancelOpenAIResponseIfAnyOnce("response.created before caller speech");
-          return;
-        }
-
-        if (
-          turnDetectionEnabled &&
-          requireCallerSpeechBeforeNextAI &&
-          !sawCallerSpeechSinceLastAIDone
-        ) {
-          cancelOpenAIResponseIfAnyOnce("turn lock active");
-          return;
-        }
-
-        return;
-      }
-
       if (msg.type === "response.done" && openerSent && !turnDetectionEnabled) {
+        aiSpeaking = false;
+
         turnDetectionEnabled = true;
         waitingForFirstCallerSpeech = true;
         sawSpeechStarted = false;
@@ -680,6 +635,16 @@ wss.on("connection", (twilioWs) => {
       }
 
       if (msg.type === "response.done" && turnDetectionEnabled) {
+        aiSpeaking = false;
+
+        if (!endRedirectRequested && aiTextBuffer && aiTextBuffer.includes(AI_END_CALL_TRIGGER)) {
+          console.log(nowIso(), "AI requested end, redirecting to /end");
+          cancelOpenAIResponseIfAnyOnce("AI requested end");
+          prepForEnding();
+          redirectCallToEnd("AI requested end");
+          return;
+        }
+
         requireCallerSpeechBeforeNextAI = true;
         sawCallerSpeechSinceLastAIDone = false;
         return;
