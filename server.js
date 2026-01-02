@@ -19,7 +19,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-trigger-2";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -30,7 +30,6 @@ const TWILIO_SMS_FROM =
   process.env.TWILIO_PHONE_NUMBER ||
   process.env.TWILIO_FROM_NUMBER;
 
-// Text-only trigger the AI must include to end the call
 const AI_END_CALL_TRIGGER = "END_CALL_NOW";
 
 // Twilio will say this transition first, then immediately Gather for 1 digit.
@@ -119,8 +118,9 @@ app.post("/voice", (req, res) => {
   }
 });
 
-// Single Twilio endpoint that plays transition and opt-in prompt in one TwiML response,
-// then Gather for 1 digit. Retries once, then defaults to no.
+// /end supports:
+// - retry=1 for the retry prompt
+// - skip_transition=1 to go straight to opt-in language (used when AI ends the call)
 app.post("/end", (req, res) => {
   try {
     const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -129,7 +129,12 @@ app.post("/end", (req, res) => {
     const retry = req.query && req.query.retry ? String(req.query.retry) : "0";
     const isRetry = retry === "1";
 
-    if (!isRetry) {
+    const skipTransition =
+      req.query && req.query.skip_transition
+        ? String(req.query.skip_transition) === "1"
+        : false;
+
+    if (!isRetry && !skipTransition) {
       vr.say(TWILIO_END_TRANSITION);
     }
 
@@ -147,7 +152,9 @@ app.post("/end", (req, res) => {
     }
 
     if (!isRetry) {
-      vr.redirect({ method: "POST" }, "/end?retry=1");
+      // Preserve skip_transition on the retry as well.
+      const retryUrl = skipTransition ? "/end?retry=1&skip_transition=1" : "/end?retry=1";
+      vr.redirect({ method: "POST" }, retryUrl);
     } else {
       vr.say(IN_CALL_CONFIRM_NO);
       vr.hangup();
@@ -212,7 +219,7 @@ app.post("/gather-result", async (req, res) => {
           // await client.messages.create({
           //   to: from,
           //   from: TWILIO_SMS_FROM,
-          //   body: SMS_TRIAL_TEXT
+          //   body: SMS_TRIAL_TEXT,
           // });
         } catch (e) {
           console.log(
@@ -370,9 +377,11 @@ wss.on("connection", (twilioWs) => {
     });
   }
 
-  async function redirectCallToEnd(reason) {
+  async function redirectCallToEnd(reason, opts) {
     if (endRedirectRequested) return;
     endRedirectRequested = true;
+
+    const skipTransition = opts && opts.skipTransition ? true : false;
 
     if (!callSid) {
       console.log(nowIso(), "Cannot redirect to /end, missing callSid", reason);
@@ -398,9 +407,10 @@ wss.on("connection", (twilioWs) => {
 
     try {
       const client = twilioClient();
-      const endUrl = `${PUBLIC_BASE_URL.replace(/\/+$/, "")}/end?retry=0`;
+      const base = PUBLIC_BASE_URL.replace(/\/+$/, "");
+      const endUrl = skipTransition ? `${base}/end?retry=0&skip_transition=1` : `${base}/end?retry=0`;
 
-      console.log(nowIso(), "Redirecting call to /end now", callSid, "reason:", reason);
+      console.log(nowIso(), "Redirecting call to /end now", callSid, "reason:", reason, "skipTransition:", skipTransition);
 
       await client.calls(callSid).update({
         url: endUrl,
@@ -428,15 +438,13 @@ wss.on("connection", (twilioWs) => {
       console.log(nowIso(), "Trial timer fired, ending session, redirecting to /end");
       cancelOpenAIResponseIfAnyOnce("redirecting to /end");
       prepForEnding();
-      redirectCallToEnd("Trial timer fired");
+      redirectCallToEnd("Trial timer fired", { skipTransition: false });
     }, 300 * 1000);
 
     console.log(nowIso(), "Session timer started (300s) after first caller speech_started");
   }
 
   function extractTextFromResponseDone(msg) {
-    // Try to pull any text the model produced from response.done
-    // Realtime payloads vary, so this is intentionally defensive.
     let out = "";
 
     const response = msg && msg.response ? msg.response : null;
@@ -445,8 +453,6 @@ wss.on("connection", (twilioWs) => {
     const output = Array.isArray(response.output) ? response.output : [];
     for (const item of output) {
       if (!item) continue;
-
-      // Common shape: { type: "message", content: [{ type: "output_text", text: "..." }, ...] }
       const content = Array.isArray(item.content) ? item.content : [];
       for (const c of content) {
         if (!c) continue;
@@ -454,13 +460,10 @@ wss.on("connection", (twilioWs) => {
         if (typeof c.value === "string") out += c.value + "\n";
         if (typeof c.transcript === "string") out += c.transcript + "\n";
       }
-
-      // Sometimes text is directly on the item
       if (typeof item.text === "string") out += item.text + "\n";
       if (typeof item.transcript === "string") out += item.transcript + "\n";
     }
 
-    // Some variants put text in response.output_text
     if (typeof response.output_text === "string") out += response.output_text + "\n";
 
     return out;
@@ -470,10 +473,7 @@ wss.on("connection", (twilioWs) => {
     if (!text) return false;
     const t = String(text).toUpperCase();
     if (t.includes(AI_END_CALL_TRIGGER)) return true;
-
-    // Backstop, in case it says it with spaces
     if (t.includes("END CALL NOW")) return true;
-
     return false;
   }
 
@@ -656,10 +656,10 @@ wss.on("connection", (twilioWs) => {
       if (msg.type === "response.done" && turnDetectionEnabled) {
         const text = extractTextFromResponseDone(msg);
         if (!endRedirectRequested && responseTextRequestsEnd(text)) {
-          console.log(nowIso(), "Detected END_CALL_NOW in model text, redirecting to /end");
+          console.log(nowIso(), "Detected END_CALL_NOW in model text, redirecting to /end (skip transition)");
           cancelOpenAIResponseIfAnyOnce("AI requested end");
           prepForEnding();
-          redirectCallToEnd("AI requested end");
+          redirectCallToEnd("AI requested end", { skipTransition: true });
           return;
         }
 
