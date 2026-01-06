@@ -19,7 +19,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "alloy";
 
 const CALLREADY_VERSION =
-  "twilio-opener-then-stream-v1-aiSpeaking-gate-silence-nudges-2-timer-300-sms-optin";
+  "twilio-opener-then-stream-v2-first-speech-gate-english-only-aiSpeaking-gate-silence-nudges-2-timer-300-sms-optin";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -93,7 +93,7 @@ app.get("/voice", (req, res) =>
 );
 
 // Twilio opener, then connect the media stream.
-// This prevents any "listening" before the opener is done because streaming has not started yet.
+// This prevents any streaming (and therefore any model input) until after the opener completes.
 app.post("/voice", (req, res) => {
   try {
     const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -252,13 +252,17 @@ wss.on("connection", (twilioWs) => {
   let openaiReady = false;
   let closing = false;
 
-  // Core simplification: while the AI is speaking, do not forward caller audio to OpenAI.
+  // Core rule: while AI is speaking, do not forward caller audio to OpenAI.
   let aiSpeaking = false;
+
+  // Gate the very first AI turn until real caller speech is detected.
+  let firstUserSpeechSeen = false;
+  let firstQuestionSent = false;
 
   // Ending control
   let endRedirectRequested = false;
 
-  // When true, we stop forwarding Twilio audio to OpenAI.
+  // When true, stop forwarding Twilio audio to OpenAI.
   let suppressCallerAudioToOpenAI = false;
 
   // Cancel throttling
@@ -268,7 +272,7 @@ wss.on("connection", (twilioWs) => {
   let sessionTimerStarted = false;
   let sessionTimer = null;
 
-  // Nervous caller support: deterministic silence nudges
+  // Nervous caller support: silence nudges
   const SILENCE_NUDGE_SECONDS = 8;
   const MAX_SILENCE_NUDGES = 2;
   let lastUserSpeechAtMs = Date.now();
@@ -325,10 +329,7 @@ wss.on("connection", (twilioWs) => {
       openaiSend({ type: "input_audio_buffer.clear" });
     } catch {}
     try {
-      openaiSend({
-        type: "session.update",
-        session: { turn_detection: null },
-      });
+      openaiSend({ type: "session.update", session: { turn_detection: null } });
     } catch {}
   }
 
@@ -443,6 +444,27 @@ wss.on("connection", (twilioWs) => {
     return false;
   }
 
+  function sendFirstQuestionIfReady() {
+    if (!openaiReady) return;
+    if (closing) return;
+    if (endRedirectRequested) return;
+    if (firstQuestionSent) return;
+    if (!firstUserSpeechSeen) return;
+
+    firstQuestionSent = true;
+
+    openaiSend({
+      type: "response.create",
+      response: {
+        modalities: ["audio", "text"],
+        instructions:
+          "Always speak English. Do not switch languages.\n" +
+          "Ask the caller what kind of call they want to practice, or offer to choose an easy scenario.\n" +
+          "Keep it to 2 sentences maximum, then stop speaking and wait.",
+      },
+    });
+  }
+
   function sendSilenceNudgeIfNeeded() {
     if (!openaiReady) return;
     if (closing) return;
@@ -450,14 +472,14 @@ wss.on("connection", (twilioWs) => {
     if (suppressCallerAudioToOpenAI) return;
     if (aiSpeaking) return;
 
+    // Do not nudge until we have real caller speech at least once.
+    if (!firstUserSpeechSeen) return;
+
     const now = Date.now();
     const secondsSinceSpeech = (now - lastUserSpeechAtMs) / 1000;
     if (secondsSinceSpeech < SILENCE_NUDGE_SECONDS) return;
 
-    if (silenceNudgesUsed >= MAX_SILENCE_NUDGES) {
-      // After nudges are used up, we stop nudging. The AI will wait.
-      return;
-    }
+    if (silenceNudgesUsed >= MAX_SILENCE_NUDGES) return;
 
     silenceNudgesUsed += 1;
     lastUserSpeechAtMs = now;
@@ -467,11 +489,11 @@ wss.on("connection", (twilioWs) => {
       response: {
         modalities: ["audio", "text"],
         instructions:
-          "You are currently waiting because the caller has been silent. " +
-          "Speak as the real person on the other end of the phone, with calm patience. " +
-          "Say one short supportive line, then ask one very simple question to help them continue. " +
-          "Offer an easy default if they want it. " +
-          "Keep it to 2 sentences max, then stop speaking.",
+          "Always speak English. Do not switch languages.\n" +
+          "The caller has been silent. Stay in character as the person on the other end of the phone.\n" +
+          "Say one short supportive line, then ask one very simple question to help them continue.\n" +
+          "Offer an easy default, like asking store hours, scheduling something, or leaving a short message.\n" +
+          "Keep it to 2 sentences maximum, then stop speaking and wait.",
       },
     });
   }
@@ -518,6 +540,7 @@ wss.on("connection", (twilioWs) => {
           modalities: ["audio", "text"],
           instructions:
             "You are CallReady. You help teens and young adults practice real phone calls.\n" +
+            "Language rule: Always speak English. Do not switch languages unless the caller explicitly asks you to.\n" +
             "Tone: calm, friendly, patient, and encouraging.\n" +
             "Keep each spoken response short, usually 1 to 2 sentences. Ask one question at a time, then stop and wait.\n" +
             "Never sexual content.\n" +
@@ -527,7 +550,7 @@ wss.on("connection", (twilioWs) => {
             "Stay focused on practicing phone calls.\n" +
             "\n" +
             "How the call works:\n" +
-            "First, ask the caller what kind of call they want to practice, or offer to choose an easy scenario.\n" +
+            "You will hear the caller describe what call they want to practice.\n" +
             "If they ask you to choose, pick something low pressure, like asking store hours, scheduling an appointment, or leaving a simple message.\n" +
             "Once the scenario is chosen, ask: \"Are you ready to start?\" Wait for yes.\n" +
             "Then say: \"Ring! Ring!\" and immediately roleplay as the person they are calling.\n" +
@@ -552,17 +575,9 @@ wss.on("connection", (twilioWs) => {
         },
       });
 
-      // After Twilio opener, the caller is likely ready to speak.
-      // Prompt the AI to ask the first question, short and calm.
-      openaiSend({
-        type: "response.create",
-        response: {
-          modalities: ["audio", "text"],
-          instructions:
-            "Start now. Ask the caller what call they want to practice, or offer to choose an easy scenario. " +
-            "Keep it to 2 sentences max, then stop speaking.",
-        },
-      });
+      // Important: do NOT speak immediately.
+      // We wait until the caller actually speaks at least once (speech_started),
+      // to avoid reacting to background noise (TV, room sounds) and switching languages.
 
       startSilenceMonitor();
     });
@@ -577,7 +592,6 @@ wss.on("connection", (twilioWs) => {
       }
 
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
-        // Stream audio to Twilio.
         twilioSend({
           event: "media",
           streamSid,
@@ -587,8 +601,16 @@ wss.on("connection", (twilioWs) => {
       }
 
       if (msg.type === "input_audio_buffer.speech_started") {
-        lastUserSpeechAtMs = Date.now();
-        maybeStartSessionTimer();
+        const now = Date.now();
+        lastUserSpeechAtMs = now;
+
+        if (!firstUserSpeechSeen) {
+          firstUserSpeechSeen = true;
+          maybeStartSessionTimer();
+          sendFirstQuestionIfReady();
+        } else {
+          maybeStartSessionTimer();
+        }
         return;
       }
 
@@ -670,7 +692,7 @@ wss.on("connection", (twilioWs) => {
       if (suppressCallerAudioToOpenAI) return;
       if (!openaiReady) return;
 
-      // Key simplification: do not forward caller audio while AI is speaking.
+      // Key rule: do not forward caller audio while AI is speaking.
       if (aiSpeaking) return;
 
       if (msg.media && msg.media.payload) {
