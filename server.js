@@ -276,9 +276,32 @@ app.post("/gather-result", async (req, res) => {
       );
     }
 
+    // NEW: update calls table with SMS opt-in choice
+    try {
+      if (pool && callSid) {
+        await pool.query(
+          "update calls set opted_in_sms_during_call = $2 where call_sid = $1",
+          [callSid, pressed1]
+        );
+        console.log(nowIso(), "Updated calls.opted_in_sms_during_call", {
+          callSid,
+          opted_in_sms_during_call: pressed1,
+        });
+      }
+    } catch (e) {
+      console.log(
+        nowIso(),
+        "DB update failed for calls.opted_in_sms_during_call:",
+        e && e.message ? e.message : e
+      );
+    }
+
     // Log the call as ended when the gather result is processed
     if (callSid) {
-      await logCallEndToDb(callSid, pressed1 ? "completed_opted_in" : "completed_declined");
+      await logCallEndToDb(
+        callSid,
+        pressed1 ? "completed_opted_in" : "completed_declined"
+      );
     }
 
     if (pressed1) {
