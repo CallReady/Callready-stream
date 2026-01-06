@@ -125,7 +125,7 @@ async function logCallEndToDb(callSid, endedReason) {
 
   try {
     await pool.query(
-      "update calls set ended_at = now(), ended_reason = $2 where call_sid = $1",
+      "update calls set ended_at = now(), ended_reason = $2, duration_seconds = extract(epoch from (now() - started_at))::int where call_sid = $1",
       [callSid, endedReason || null]
     );
 
@@ -276,7 +276,7 @@ app.post("/gather-result", async (req, res) => {
       );
     }
 
-    // NEW: update calls table with SMS opt-in choice
+    // Update calls table with SMS opt-in choice
     try {
       if (pool && callSid) {
         await pool.query(
