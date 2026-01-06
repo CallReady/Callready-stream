@@ -185,6 +185,36 @@ app.post("/gather-result", async (req, res) => {
     const vr = new VoiceResponse();
 
     const pressed1 = digits === "1";
+    // Save SMS opt-in choice to Supabase
+try {
+  if (pool) {
+    await pool.query(
+      "insert into sms_optins (call_sid, from_phone, digits, opted_in, consent_version, source) values ($1, $2, $3, $4, $5, $6)",
+      [
+        callSid,
+        from,
+        digits,
+        pressed1,
+        "sms_optin_v1",
+        "DTMF during call",
+      ]
+    );
+    console.log(nowIso(), "Saved SMS opt-in to DB", {
+      callSid,
+      from,
+      digits,
+      optedIn: pressed1,
+    });
+  } else {
+    console.log(nowIso(), "DB not configured, skipping sms_optins insert");
+  }
+} catch (e) {
+  console.log(
+    nowIso(),
+    "DB insert failed for sms_optins:",
+    e && e.message ? e.message : e
+  );
+}
 
     if (pressed1) {
       console.log(
