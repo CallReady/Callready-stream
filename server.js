@@ -119,6 +119,41 @@ async function logCallStartToDb(callSid, fromPhoneE164) {
   }
 }
 
+async function logCallEndToDb(callSid, endedReason) {
+  if (!pool) return;
+  if (!callSid) return;
+
+  try {
+    await pool.query(
+      "update calls set ended_at = now(), ended_reason = $2 where call_sid = $1",
+      [callSid, endedReason || null]
+    );
+
+    console.log(nowIso(), "Logged call end to DB", {
+      callSid,
+      ended_reason: endedReason || null,
+    });
+  } catch (e) {
+    console.log(
+      nowIso(),
+      "DB update failed for calls end:",
+      e && e.message ? e.message : e
+    );
+  }
+}
+
+function fireAndForgetCallEndLog(callSid, endedReason) {
+  try {
+    logCallEndToDb(callSid, endedReason).catch((e) => {
+      console.log(
+        nowIso(),
+        "DB update failed for calls end (async):",
+        e && e.message ? e.message : e
+      );
+    });
+  } catch {}
+}
+
 app.get("/", (req, res) => res.status(200).send("CallReady server up"));
 app.get("/health", (req, res) =>
   res.status(200).json({ ok: true, version: CALLREADY_VERSION })
@@ -239,6 +274,11 @@ app.post("/gather-result", async (req, res) => {
         "DB insert failed for sms_optins:",
         e && e.message ? e.message : e
       );
+    }
+
+    // Log the call as ended when the gather result is processed
+    if (callSid) {
+      await logCallEndToDb(callSid, pressed1 ? "completed_opted_in" : "completed_declined");
     }
 
     if (pressed1) {
@@ -812,6 +852,12 @@ wss.on("connection", (twilioWs) => {
 
     if (msg.event === "stop") {
       console.log(nowIso(), "Twilio stream stop");
+
+      if (callSid) {
+        const endedReason = endRedirectRequested ? "redirected_to_end" : "hangup_or_stream_stop";
+        fireAndForgetCallEndLog(callSid, endedReason);
+      }
+
       closeAll("Twilio stop");
       return;
     }
