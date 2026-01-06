@@ -792,11 +792,15 @@ wss.on("connection", (twilioWs) => {
             "Never say those tag lines out loud.\n" +
             "\n" +
             "Ending rule:\n" +
-            "If the caller asks to end the call, quit, stop, hang up, or says they do not want to do this anymore, do BOTH:\n" +
+            "If the caller asks to end the call, quit, stop, hang up, or says they do not want to do this anymore, you MUST do BOTH in the SAME response:\n" +
             "1) Say one short, kind goodbye sentence.\n" +
             "2) In TEXT ONLY, output this exact token on its own line: END_CALL_NOW\n" +
+            "This token is REQUIRED. Always include it when ending.\n" +
             "Never say the token out loud.\n" +
             "Do not ask any follow up questions.\n" +
+            "Do not include any other text after the token line.\n" +
+            "\n" +
+
             "\n" +
             "Important realism rule:\n" +
             "The caller cannot dial a number in this simulation.\n" +
