@@ -14,6 +14,13 @@ const PORT = process.env.PORT || 10000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const PUBLIC_WSS_URL = process.env.PUBLIC_WSS_URL;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
+const DATABASE_URL = process.env.DATABASE_URL;
+const pool = DATABASE_URL
+  ? new Pool({ connectionString: DATABASE_URL })
+  : null;
+if (!DATABASE_URL) {
+  console.log(nowIso(), "Warning: DATABASE_URL is not set, DB features disabled");
+}
 
 const OPENAI_REALTIME_MODEL =
   process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview";
@@ -96,6 +103,38 @@ app.get("/health", (req, res) =>
 app.get("/voice", (req, res) =>
   res.status(200).send("OK. Configure Twilio to POST here.")
 );
+app.get("/db-test", async (req, res) => {
+  try {
+    if (!pool) {
+      return res.status(500).json({
+        success: false,
+        error: "DATABASE_URL not set on this server",
+      });
+    }
+
+    const insertResult = await pool.query(
+      "insert into connection_test (message) values ($1) returning *",
+      [`CallReady DB test ${new Date().toISOString()}`]
+    );
+
+    const inserted = insertResult.rows[0];
+
+    const readResult = await pool.query(
+      "select * from connection_test where id = $1",
+      [inserted.id]
+    );
+
+    res.json({
+      success: true,
+      inserted,
+      readBack: readResult.rows[0],
+    });
+  } catch (err) {
+    console.error("DB TEST ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
 app.post("/voice", (req, res) => {
   try {
