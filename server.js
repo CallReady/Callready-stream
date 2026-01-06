@@ -743,7 +743,7 @@ wss.on("connection", (twilioWs) => {
     });
   }
 
-  twilioWs.on("message", (data) => {
+ twilioWs.on("message", async (data) => {
     const msg = safeJsonParse(data.toString());
     if (!msg) return;
 
@@ -753,6 +753,29 @@ wss.on("connection", (twilioWs) => {
 
       console.log(nowIso(), "Twilio stream start:", streamSid || "(no streamSid)");
       console.log(nowIso(), "Twilio callSid:", callSid || "(no callSid)");
+      // Log call start to Supabase
+try {
+  if (pool && callSid) {
+    const fromPhone =
+      msg.start && msg.start.customParameters && msg.start.customParameters.from
+        ? String(msg.start.customParameters.from)
+        : null;
+
+    await pool.query(
+      "insert into calls (call_sid, from_phone, started_at) values ($1, $2, now()) on conflict (call_sid) do nothing",
+      [callSid, fromPhone]
+    );
+
+    console.log(nowIso(), "Logged call start to DB", { callSid, fromPhone });
+  }
+} catch (e) {
+  console.log(
+    nowIso(),
+    "DB insert failed for calls start:",
+    e && e.message ? e.message : e
+  );
+}
+
 
       startOpenAIRealtime();
       return;
