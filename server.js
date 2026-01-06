@@ -761,10 +761,10 @@ try {
         ? String(msg.start.customParameters.from)
         : null;
 
-    await pool.query(
-      "insert into calls (call_sid, from_phone, started_at) values ($1, $2, now()) on conflict (call_sid) do nothing",
-      [callSid, fromPhone]
-    );
+   await pool.query(
+"insert into calls (call_sid, from_phone, started_at, minutes_cap_applied) values ($1, $2, now(), $3) on conflict (call_sid) do nothing",
+[callSid, fromPhone, 5]
+);
 
     console.log(nowIso(), "Logged call start to DB", { callSid, fromPhone });
   }
