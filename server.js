@@ -15,9 +15,13 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const PUBLIC_WSS_URL = process.env.PUBLIC_WSS_URL;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 const DATABASE_URL = process.env.DATABASE_URL;
-const pool = DATABASE_URL
-  ? new Pool({ connectionString: DATABASE_URL })
-  : null;
+
+const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
 if (!DATABASE_URL) {
   console.log(nowIso(), "Warning: DATABASE_URL is not set, DB features disabled");
 }
@@ -83,10 +87,6 @@ function safeJsonParse(str) {
   }
 }
 
-function nowIso() {
-  return new Date().toISOString();
-}
-
 function hasTwilioRest() {
   return !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN);
 }
@@ -94,6 +94,29 @@ function hasTwilioRest() {
 function twilioClient() {
   if (!hasTwilioRest()) return null;
   return twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+}
+
+async function logCallStartToDb(callSid, fromPhoneE164) {
+  if (!pool) return;
+
+  try {
+    await pool.query(
+      "insert into calls (call_sid, phone_e164, started_at, minutes_cap_applied) values ($1, $2, now(), $3) on conflict (call_sid) do update set phone_e164 = coalesce(calls.phone_e164, excluded.phone_e164)",
+      [callSid, fromPhoneE164 || null, 5]
+    );
+
+    console.log(nowIso(), "Logged call start to DB", {
+      callSid,
+      phone_e164: fromPhoneE164 || null,
+      minutes_cap_applied: 5,
+    });
+  } catch (e) {
+    console.log(
+      nowIso(),
+      "DB insert failed for calls start:",
+      e && e.message ? e.message : e
+    );
+  }
 }
 
 app.get("/", (req, res) => res.status(200).send("CallReady server up"));
@@ -104,8 +127,15 @@ app.get("/voice", (req, res) =>
   res.status(200).send("OK. Configure Twilio to POST here.")
 );
 
-app.post("/voice", (req, res) => {
+app.post("/voice", async (req, res) => {
   try {
+    const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
+    const from = req.body && req.body.From ? String(req.body.From) : "";
+
+    if (callSid) {
+      await logCallStartToDb(callSid, from);
+    }
+
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
@@ -160,8 +190,9 @@ app.post("/end", (req, res) => {
     }
 
     if (!isRetry) {
-      // Preserve skip_transition on the retry as well.
-      const retryUrl = skipTransition ? "/end?retry=1&skip_transition=1" : "/end?retry=1";
+      const retryUrl = skipTransition
+        ? "/end?retry=1&skip_transition=1"
+        : "/end?retry=1";
       vr.redirect({ method: "POST" }, retryUrl);
     } else {
       vr.say(IN_CALL_CONFIRM_NO);
@@ -185,36 +216,30 @@ app.post("/gather-result", async (req, res) => {
     const vr = new VoiceResponse();
 
     const pressed1 = digits === "1";
+
     // Save SMS opt-in choice to Supabase
-try {
-  if (pool) {
-    await pool.query(
-      "insert into sms_optins (call_sid, from_phone, digits, opted_in, consent_version, source) values ($1, $2, $3, $4, $5, $6)",
-      [
-        callSid,
-        from,
-        digits,
-        pressed1,
-        "sms_optin_v1",
-        "DTMF during call",
-      ]
-    );
-    console.log(nowIso(), "Saved SMS opt-in to DB", {
-      callSid,
-      from,
-      digits,
-      optedIn: pressed1,
-    });
-  } else {
-    console.log(nowIso(), "DB not configured, skipping sms_optins insert");
-  }
-} catch (e) {
-  console.log(
-    nowIso(),
-    "DB insert failed for sms_optins:",
-    e && e.message ? e.message : e
-  );
-}
+    try {
+      if (pool) {
+        await pool.query(
+          "insert into sms_optins (call_sid, from_phone, digits, opted_in, consent_version, source) values ($1, $2, $3, $4, $5, $6)",
+          [callSid, from, digits, pressed1, "sms_optin_v1", "DTMF during call"]
+        );
+        console.log(nowIso(), "Saved SMS opt-in to DB", {
+          callSid,
+          from,
+          digits,
+          optedIn: pressed1,
+        });
+      } else {
+        console.log(nowIso(), "DB not configured, skipping sms_optins insert");
+      }
+    } catch (e) {
+      console.log(
+        nowIso(),
+        "DB insert failed for sms_optins:",
+        e && e.message ? e.message : e
+      );
+    }
 
     if (pressed1) {
       console.log(
@@ -446,9 +471,19 @@ wss.on("connection", (twilioWs) => {
     try {
       const client = twilioClient();
       const base = PUBLIC_BASE_URL.replace(/\/+$/, "");
-      const endUrl = skipTransition ? `${base}/end?retry=0&skip_transition=1` : `${base}/end?retry=0`;
+      const endUrl = skipTransition
+        ? `${base}/end?retry=0&skip_transition=1`
+        : `${base}/end?retry=0`;
 
-      console.log(nowIso(), "Redirecting call to /end now", callSid, "reason:", reason, "skipTransition:", skipTransition);
+      console.log(
+        nowIso(),
+        "Redirecting call to /end now",
+        callSid,
+        "reason:",
+        reason,
+        "skipTransition:",
+        skipTransition
+      );
 
       await client.calls(callSid).update({
         url: endUrl,
@@ -743,7 +778,7 @@ wss.on("connection", (twilioWs) => {
     });
   }
 
- twilioWs.on("message", async (data) => {
+  twilioWs.on("message", (data) => {
     const msg = safeJsonParse(data.toString());
     if (!msg) return;
 
@@ -753,29 +788,6 @@ wss.on("connection", (twilioWs) => {
 
       console.log(nowIso(), "Twilio stream start:", streamSid || "(no streamSid)");
       console.log(nowIso(), "Twilio callSid:", callSid || "(no callSid)");
-      // Log call start to Supabase
-try {
-  if (pool && callSid) {
-    const fromPhone =
-      msg.start && msg.start.customParameters && msg.start.customParameters.from
-        ? String(msg.start.customParameters.from)
-        : null;
-
-   await pool.query(
-"insert into calls (call_sid, from_phone, started_at, minutes_cap_applied) values ($1, $2, now(), $3) on conflict (call_sid) do nothing",
-[callSid, fromPhone, 5]
-);
-
-    console.log(nowIso(), "Logged call start to DB", { callSid, fromPhone });
-  }
-} catch (e) {
-  console.log(
-    nowIso(),
-    "DB insert failed for calls start:",
-    e && e.message ? e.message : e
-  );
-}
-
 
       startOpenAIRealtime();
       return;
