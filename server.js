@@ -65,11 +65,11 @@ const GATHER_RETRY_PROMPT =
 const IN_CALL_CONFIRM_YES =
   "Thanks. You are opted in to receive text messages from CallReady. " +
   "Message and data rates may apply. You can opt out any time by replying STOP. " +
-  "Thanks for practicing today. Have a great day!";
+  "Thanks for practicing today. Have a great day and call again soon!";
 
 const IN_CALL_CONFIRM_NO =
   "No problem. You will not receive text messages from CallReady. " +
-  "Thanks for practicing with us today. We hope to hear from you again soon. Have a great day!";
+  "Thanks for practicing with us today. We hope to hear from you again soon. Have a great day and call again soon!";
 
 // First SMS after opt in
 const OPTIN_CONFIRM_SMS =
@@ -572,10 +572,9 @@ wss.on("connection", (twilioWs) => {
         instructions:
           "Speak this exactly, naturally, then stop speaking:\n" +
           "Welcome to CallReady, a safe place to practice real phone calls before they matter. " +
-          "I am an AI helper who can talk with you like a real person would, so there is no reason to be self-conscious or nervous. " +
-          "Quick note, this is a beta release, so there may still be some glitches. If I freeze, saying hello will usually get me back on track. " +
-          "You can always say I don't know or help me if you are not sure what to say next. Before we start, make sure you are in a quiet room. Background voices or noise can confuse me, as can speaking while I am speaking. " +
-          "Let's get started! Do you want to tell me what type of call you want to practice, or should I choose an easy scenario to get us going?",
+          "I'm an AI helper who can talk with you like a real person would, so there is no reason to be self-conscious or nervous. " +
+          "You can always say I don't know or help me if you are not sure what to say next during this call. Before we start, make sure you are in a quiet room. Background noise can cause problems. " +
+          "Let's get started! Do you want to tell me about a call you want to practice, or should I choose an easy scenario to get us going?",
       },
     });
   }
@@ -793,7 +792,7 @@ wss.on("connection", (twilioWs) => {
             "\n" +
             "Ending rule:\n" +
             "If the caller asks to end the call, quit, stop, hang up, or says they do not want to do this anymore, you MUST do BOTH in the SAME response:\n" +
-            "1) Say one short, kind goodbye sentence.\n" +
+            "1) Say one word: Okay.\n" +
             "2) In TEXT ONLY, output this exact token on its own line: END_CALL_NOW\n" +
             "This token is REQUIRED. Always include it when ending.\n" +
             "Never say the token out loud.\n" +
@@ -808,14 +807,14 @@ wss.on("connection", (twilioWs) => {
             "If asking for personal information, tell the caller they can make it up if they want.\n" +
             "Instead, once the scenario is chosen and setup is clear, ask: \"Are you ready to start?\"\n" +
             "Wait for yes.\n" +
-            "Then say \"Ring! Ring!\" and immediately answer the call as the other person.\n" +
+            "Then say \"Ring, ring!\" and immediately answer the call as the other person.\n" +
             "In roleplay, you speak first after \"Ring! Ring!\"\n" +
             "\n" +
             "Scenario completion rule:\n" +
             "When the scenario is complete, you must do this in the SAME spoken turn with no pause for caller input:\n" +
             "1) Say: \"Okay, that wraps the scenario.\"\n" +
             "2) Immediately ask exactly one question:\n" +
-            "\"Would you like some feedback on how you did, try that scenario again, or try something different?\"\n" +
+            "\"Would you like some feedback on how you did, run scenario again, or try something different?\"\n" +
             "Then stop speaking and wait.\n" +
             "\n" +
             "If they ask for feedback:\n" +
