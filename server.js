@@ -256,6 +256,26 @@ function extractTokenLineValue(text, token) {
   return null;
 }
 
+async function isAlreadyOptedInByPhone(fromPhoneE164) {
+  if (!pool) return false;
+  if (!fromPhoneE164) return false;
+
+  try {
+    const r = await pool.query(
+      "select 1 from sms_optins where from_phone = $1 and opted_in = true limit 1",
+      [fromPhoneE164]
+    );
+    return r && r.rowCount > 0;
+  } catch (e) {
+    console.log(
+      nowIso(),
+      "DB lookup failed for sms_optins prior opt-in check:",
+      e && e.message ? e.message : e
+    );
+    return false;
+  }
+}
+
 app.get("/", (req, res) => res.status(200).send("CallReady server up"));
 app.get("/health", (req, res) =>
   res.status(200).json({ ok: true, version: CALLREADY_VERSION })
@@ -296,7 +316,7 @@ app.post("/voice", async (req, res) => {
 // /end supports:
 // - retry=1 for the retry prompt
 // - skip_transition=1 to go straight to opt-in language (used when AI ends the call)
-app.post("/end", (req, res) => {
+app.post("/end", async (req, res) => {
   try {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
@@ -308,6 +328,32 @@ app.post("/end", (req, res) => {
       req.query && req.query.skip_transition
         ? String(req.query.skip_transition) === "1"
         : false;
+
+    const from = req.body && req.body.From ? String(req.body.From) : "";
+    const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
+
+    // If they have already opted in on a previous call, skip Gather entirely.
+    // Keep behavior safe: if DB is missing or lookup fails, fall through to existing Gather flow.
+    if (!isRetry) {
+      const alreadyOptedIn = await isAlreadyOptedInByPhone(from);
+      if (alreadyOptedIn) {
+        console.log(nowIso(), "Skipping SMS opt-in prompt, caller already opted in", {
+          from,
+          callSid,
+        });
+
+        if (callSid) {
+          fireAndForgetCallEndLog(callSid, "completed_already_opted_in");
+        }
+
+        vr.say(
+          "Thanks for calling CallReady. We hope you'll call again soon! Have a great day!"
+        );
+        vr.hangup();
+        res.type("text/xml").send(vr.toString());
+        return;
+      }
+    }
 
     if (!isRetry && !skipTransition) {
       vr.say(TWILIO_END_TRANSITION);
@@ -798,7 +844,6 @@ wss.on("connection", (twilioWs) => {
             "Do not ask any follow up questions.\n" +
             "Do not include any other text after the token line.\n" +
             "\n" +
-
             "\n" +
             "Important realism rule:\n" +
             "The caller cannot dial a number in this simulation.\n" +
@@ -853,7 +898,11 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-        if (turnDetectionEnabled && requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
+        if (
+          turnDetectionEnabled &&
+          requireCallerSpeechBeforeNextAI &&
+          !sawCallerSpeechSinceLastAIDone
+        ) {
           cancelOpenAIResponseIfAnyOnce("turn lock active");
           return;
         }
@@ -894,7 +943,11 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-        if (turnDetectionEnabled && requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
+        if (
+          turnDetectionEnabled &&
+          requireCallerSpeechBeforeNextAI &&
+          !sawCallerSpeechSinceLastAIDone
+        ) {
           cancelOpenAIResponseIfAnyOnce("turn lock active");
           return;
         }
@@ -938,15 +991,15 @@ wss.on("connection", (twilioWs) => {
           openaiSend({ type: "input_audio_buffer.clear" });
 
           openaiSend({
-          type: "session.update",
-          session: {
-          turn_detection: {
-          type: "server_vad",
-          silence_duration_ms: 900,
-          prefix_padding_ms: 300,
-          threshold: 0.5,
-          },
-          },
+            type: "session.update",
+            session: {
+              turn_detection: {
+                type: "server_vad",
+                silence_duration_ms: 900,
+                prefix_padding_ms: 300,
+                threshold: 0.5,
+              },
+            },
           });
 
           return;
@@ -954,7 +1007,10 @@ wss.on("connection", (twilioWs) => {
 
         if (turnDetectionEnabled) {
           if (!endRedirectRequested && responseTextRequestsEnd(text)) {
-            console.log(nowIso(), "Detected END_CALL_NOW in model text, redirecting to /end (skip transition)");
+            console.log(
+              nowIso(),
+              "Detected END_CALL_NOW in model text, redirecting to /end (skip transition)"
+            );
             cancelOpenAIResponseIfAnyOnce("AI requested end");
             prepForEnding();
             redirectCallToEnd("AI requested end", { skipTransition: true });
@@ -1048,7 +1104,9 @@ wss.on("connection", (twilioWs) => {
       console.log(nowIso(), "Twilio stream stop");
 
       if (callSid) {
-        const endedReason = endRedirectRequested ? "redirected_to_end" : "hangup_or_stream_stop";
+        const endedReason = endRedirectRequested
+          ? "redirected_to_end"
+          : "hangup_or_stream_stop";
         fireAndForgetCallEndLog(callSid, endedReason);
       }
 
@@ -1067,6 +1125,9 @@ wss.on("connection", (twilioWs) => {
     closeAll("Twilio WS error");
   });
 });
+
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server, path: "/media" });
 
 server.listen(PORT, () => {
   console.log(nowIso(), `Server listening on ${PORT}`, "version:", CALLREADY_VERSION);
