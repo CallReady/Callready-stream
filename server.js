@@ -940,10 +940,15 @@ wss.on("connection", (twilioWs) => {
           openaiSend({ type: "input_audio_buffer.clear" });
 
           openaiSend({
-            type: "session.update",
-            session: {
-              turn_detection: { type: "server_vad" },
-            },
+          type: "session.update",
+          session: {
+          turn_detection: {
+          type: "server_vad",
+          silence_duration_ms: 900,
+          prefix_padding_ms: 300,
+          threshold: 0.5,
+          },
+          },
           });
 
           return;
