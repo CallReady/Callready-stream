@@ -347,7 +347,7 @@ app.post("/end", async (req, res) => {
         }
 
         vr.say(
-          "Thanks for calling CallReady. You are already opted in for texts. Goodbye."
+          "Thanks for calling CallReady. We hope you'll call again soon! Have a great day!"
         );
         vr.hangup();
         res.type("text/xml").send(vr.toString());
