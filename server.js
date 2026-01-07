@@ -47,8 +47,7 @@ const AI_END_CALL_TRIGGER = "END_CALL_NOW";
 // Twilio will say this transition first, then immediately Gather for 1 digit.
 const TWILIO_END_TRANSITION =
   "Pardon my interruption, but we've reached the time limit for trial sessions. " +
-  "You did something important today by practicing, and that counts, even if it felt awkward or imperfect. " +
-  "Before we finish, we've got one more quick choice to make.";
+  "You did something important today by practicing, and that counts, even if it felt awkward or imperfect.";
 
 // Twilio Gather prompt (deterministic opt-in language for compliance)
 const TWILIO_OPTIN_PROMPT =
