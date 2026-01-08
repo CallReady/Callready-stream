@@ -28,7 +28,7 @@ if (!DATABASE_URL) {
 
 const OPENAI_REALTIME_MODEL =
   process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview";
-const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
+const OPENAI_VOICE = process.env.OPENAI_VOICE || "ash";
 
 const CALLREADY_VERSION =
   "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1";
