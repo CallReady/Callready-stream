@@ -944,8 +944,6 @@ wss.on("connection", (twilioWs) => {
       }
 
       if (msg.type === "response.created") {
-        console.log(nowIso(), "OpenAI response.created");
-
         if (turnDetectionEnabled && waitingForFirstCallerSpeech && !sawSpeechStarted) {
           cancelOpenAIResponseIfAnyOnce("response.created before caller speech");
           return;
@@ -964,9 +962,7 @@ wss.on("connection", (twilioWs) => {
       }
 
       if (msg.type === "response.done") {
-        console.log(nowIso(), "OpenAI response.done");
         const text = extractTextFromResponseDone(msg);
-        console.log(nowIso(), "OpenAI response text:", JSON.stringify(text));
 
         // Capture tagging tokens from model text
         if (text && callSid) {
