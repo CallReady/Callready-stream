@@ -34,7 +34,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -335,6 +335,12 @@ app.post("/end", async (req, res) => {
     const from = req.body && req.body.From ? String(req.body.From) : "";
     const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
 
+    // Option A fix:
+    // Always play the time-limit transition when appropriate, even if caller already opted in.
+    if (!isRetry && !skipTransition) {
+      vr.say(TWILIO_END_TRANSITION);
+    }
+
     // If they have already opted in on a previous call, skip Gather entirely.
     // Keep behavior safe: if DB is missing or lookup fails, fall through to existing Gather flow.
     if (!isRetry) {
@@ -356,10 +362,6 @@ app.post("/end", async (req, res) => {
         res.type("text/xml").send(vr.toString());
         return;
       }
-    }
-
-    if (!isRetry && !skipTransition) {
-      vr.say(TWILIO_END_TRANSITION);
     }
 
     const gather = vr.gather({
@@ -491,13 +493,6 @@ app.post("/gather-result", async (req, res) => {
             body: OPTIN_CONFIRM_SMS,
           });
           console.log(nowIso(), "Opt-in confirmation SMS sent to", from);
-
-          // Optional placeholder summary SMS. Leave off for now unless you want it.
-          // await client.messages.create({
-          //   to: from,
-          //   from: TWILIO_SMS_FROM,
-          //   body: SMS_TRIAL_TEXT,
-          // });
         } catch (e) {
           console.log(
             nowIso(),
@@ -534,7 +529,6 @@ wss.on("connection", (twilioWs) => {
   let openerSent = false;
 
   // Tracks whether OpenAI currently has an active response in progress.
-  // This prevents opener retry from sending a second response.create too early.
   let responseActive = false;
 
   // Opener reliability tracking
@@ -572,7 +566,7 @@ wss.on("connection", (twilioWs) => {
   // Prevent repeated DB writes for scenario tag in a single call
   let scenarioTagAlreadyCaptured = false;
 
-  // Gibberish / unintelligible guard
+  // Gibberish and unintelligible guard
   let lastUserTranscript = "";
   let lastUserTranscriptAtMs = 0;
   let lastAssistantUserFacingText = "";
@@ -645,7 +639,6 @@ wss.on("connection", (twilioWs) => {
   function isLikelyUnintelligibleTranscript(text) {
     const t = (text || "").trim();
     if (!t) return true;
-
     if (t.length <= 2) return true;
 
     const letters = (t.match(/[A-Za-z]/g) || []).length;
@@ -657,10 +650,7 @@ wss.on("connection", (twilioWs) => {
     const letterRatio = letters / denom;
     const nonWordRatio = nonWord / denom;
 
-    // If it is mostly symbols, junk, or punctuation, treat as unclear.
     if (nonWordRatio > 0.25) return true;
-
-    // If there are very few letters and no obvious numeric-only intent, treat as unclear.
     if (letterRatio < 0.35 && digits < 2) return true;
 
     const words = t
@@ -670,14 +660,11 @@ wss.on("connection", (twilioWs) => {
 
     if (words.length === 0) return true;
 
-    // Long strings with no vowels often indicate gibberish.
     const hasVowels = /[aeiouy]/i.test(t);
     if (!hasVowels && letters >= 6) return true;
 
-    // Obvious repeated character spam, like "aaaaaa" or "kkkkkk"
     if (/(.)\1{5,}/.test(t)) return true;
 
-    // If it is extremely short and not a common short answer, treat as unclear.
     const lower = t.toLowerCase();
     const commonShort = new Set([
       "yes",
@@ -694,8 +681,6 @@ wss.on("connection", (twilioWs) => {
     ]);
 
     if (words.length === 1 && t.length <= 4 && !commonShort.has(lower)) return true;
-
-    // If it is mostly spaces (should not happen, but safe)
     if (spaces / denom > 0.5) return true;
 
     return false;
@@ -706,7 +691,6 @@ wss.on("connection", (twilioWs) => {
     if (endRedirectRequested) return;
     if (!openaiReady) return;
 
-    // Avoid spamming clarification loops.
     const now = Date.now();
     if (clarificationInFlight && now - clarificationRequestedAtMs < 3000) return;
 
@@ -720,12 +704,10 @@ wss.on("connection", (twilioWs) => {
 
     cancelOpenAIResponseIfAnyOnce("unintelligible_input");
 
-    // Clear audio buffer to reduce the chance the model "uses" the bad audio.
     try {
       openaiSend({ type: "input_audio_buffer.clear" });
     } catch {}
 
-    // After cancel, give the server a brief moment, then create our own response.
     setTimeout(() => {
       if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
 
@@ -778,7 +760,6 @@ wss.on("connection", (twilioWs) => {
       if (openerAudioDeltaCount > 0) return;
       if (openerResent) return;
 
-      // Do not send a second response.create while the first one is still active.
       if (responseActive) {
         console.log(nowIso(), "Opener retry waiting, OpenAI response still active");
         try {
@@ -921,8 +902,6 @@ wss.on("connection", (twilioWs) => {
     return false;
   }
 
-  // Fallback: sometimes the model says "Okay." but forgets the END_CALL_NOW token.
-  // If the text output is effectively just "Okay", treat it as an end intent.
   function responseTextLooksLikeEndOkay(text) {
     if (!text) return false;
 
@@ -936,7 +915,6 @@ wss.on("connection", (twilioWs) => {
     const joined = lines.join(" ").replace(/\s+/g, " ").trim();
     const upper = joined.toUpperCase();
 
-    // Keep this strict to avoid accidental ends on normal "Okay, let's continue" replies.
     const normalized = upper.replace(/[^A-Z]/g, "");
     if (normalized !== "OKAY") return false;
 
@@ -997,8 +975,6 @@ wss.on("connection", (twilioWs) => {
           temperature: 0.7,
           modalities: ["audio", "text"],
 
-          // Enable user speech transcription events so we can detect unintelligible input.
-          // You can switch to "gpt-4o-mini-transcribe" later if you prefer.
           input_audio_transcription: {
             model: "whisper-1",
           },
@@ -1084,10 +1060,8 @@ wss.on("connection", (twilioWs) => {
       const msg = safeJsonParse(data.toString());
       if (!msg) return;
 
-      // Track user transcription so we can detect unintelligible turns.
       if (msg.type === "conversation.item.input_audio_transcription.completed") {
-        const transcript =
-          typeof msg.transcript === "string" ? msg.transcript : "";
+        const transcript = typeof msg.transcript === "string" ? msg.transcript : "";
         lastUserTranscript = transcript;
         lastUserTranscriptAtMs = Date.now();
 
@@ -1101,12 +1075,11 @@ wss.on("connection", (twilioWs) => {
       if (msg.type === "conversation.item.input_audio_transcription.failed") {
         const err = msg.error || {};
         const code = err.code || "transcription_failed";
-        const transcript = "";
         lastUserTranscript = "";
         lastUserTranscriptAtMs = Date.now();
 
         if (turnDetectionEnabled) {
-          requestClarification(`transcription_failed_${code}`, transcript);
+          requestClarification(`transcription_failed_${code}`, "");
         }
         return;
       }
@@ -1166,7 +1139,6 @@ wss.on("connection", (twilioWs) => {
       if (msg.type === "response.created") {
         responseActive = true;
 
-        // If we very recently detected unintelligible input, cancel fast.
         if (turnDetectionEnabled) {
           const ageMs = Date.now() - lastUserTranscriptAtMs;
           if (ageMs >= 0 && ageMs < 2000) {
@@ -1199,11 +1171,9 @@ wss.on("connection", (twilioWs) => {
         const text = extractTextFromResponseDone(msg);
         responseActive = false;
 
-        // Track last user-facing assistant text so clarification can reference "your last question".
         const cleaned = cleanUserFacingText(text);
         if (cleaned) lastAssistantUserFacingText = cleaned;
 
-        // If we just forced a clarification response, release the guard after it completes.
         if (clarificationInFlight) {
           const age = Date.now() - clarificationRequestedAtMs;
           if (age < 15000) {
@@ -1211,7 +1181,6 @@ wss.on("connection", (twilioWs) => {
           }
         }
 
-        // Capture tagging tokens from model text
         if (text && callSid) {
           const scenarioTag = extractTokenLineValue(text, "SCENARIO_TAG");
           if (scenarioTag && !scenarioTagAlreadyCaptured) {
@@ -1333,7 +1302,6 @@ wss.on("connection", (twilioWs) => {
       console.log(nowIso(), "Twilio stream start:", streamSid || "(no streamSid)");
       console.log(nowIso(), "Twilio callSid:", callSid || "(no callSid)");
 
-      // Load prior call context before starting OpenAI session
       if (callSid) {
         priorContext = await fetchPriorCallContextByCallSid(callSid);
         if (priorContext) {
