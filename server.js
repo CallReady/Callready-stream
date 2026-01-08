@@ -750,7 +750,7 @@ wss.on("connection", (twilioWs) => {
           "I'm an AI helper, so you can practice without pressure. " +
           "If you get stuck, you can say help me, and I'll give you a simple line to try. " +
           "Before we start, try to be somewhere quiet, because background noise can make it harder to hear you. " +
-          "Quick question first. Do you want to practice answering an incoming call, or making an outgoing call?",
+          "Quick question first. Do you want to practice making a call or answering a call?",
       },
     });
   }
