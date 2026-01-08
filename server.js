@@ -810,6 +810,7 @@ wss.on("connection", (twilioWs) => {
       openaiSend({
         type: "session.update",
         session: {
+          type: "realtime",
           voice: OPENAI_VOICE,
           input_audio_format: "g711_ulaw",
           output_audio_format: "g711_ulaw",
