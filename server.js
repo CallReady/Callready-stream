@@ -34,7 +34,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -572,6 +572,13 @@ wss.on("connection", (twilioWs) => {
   // Prevent repeated DB writes for scenario tag in a single call
   let scenarioTagAlreadyCaptured = false;
 
+  // Gibberish / unintelligible guard
+  let lastUserTranscript = "";
+  let lastUserTranscriptAtMs = 0;
+  let lastAssistantUserFacingText = "";
+  let clarificationRequestedAtMs = 0;
+  let clarificationInFlight = false;
+
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
   function closeAll(reason) {
@@ -613,6 +620,137 @@ wss.on("connection", (twilioWs) => {
       console.log(nowIso(), "Cancelling response due to:", reason);
       openaiSend({ type: "response.cancel" });
     } catch {}
+  }
+
+  function cleanUserFacingText(text) {
+    if (!text) return "";
+    const lines = String(text)
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    const kept = [];
+    for (const line of lines) {
+      const upper = line.toUpperCase();
+      if (upper.startsWith("SCENARIO_TAG:")) continue;
+      if (upper.startsWith("FOCUS_SKILL:")) continue;
+      if (upper.startsWith("COACHING_NOTE:")) continue;
+      if (upper === AI_END_CALL_TRIGGER) continue;
+      if (upper === "END CALL NOW") continue;
+      kept.push(line);
+    }
+    return kept.join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  function isLikelyUnintelligibleTranscript(text) {
+    const t = (text || "").trim();
+    if (!t) return true;
+
+    if (t.length <= 2) return true;
+
+    const letters = (t.match(/[A-Za-z]/g) || []).length;
+    const digits = (t.match(/[0-9]/g) || []).length;
+    const spaces = (t.match(/\s/g) || []).length;
+    const nonWord = (t.match(/[^A-Za-z0-9\s']/g) || []).length;
+
+    const denom = t.length || 1;
+    const letterRatio = letters / denom;
+    const nonWordRatio = nonWord / denom;
+
+    // If it is mostly symbols, junk, or punctuation, treat as unclear.
+    if (nonWordRatio > 0.25) return true;
+
+    // If there are very few letters and no obvious numeric-only intent, treat as unclear.
+    if (letterRatio < 0.35 && digits < 2) return true;
+
+    const words = t
+      .split(/\s+/)
+      .map((w) => w.trim())
+      .filter(Boolean);
+
+    if (words.length === 0) return true;
+
+    // Long strings with no vowels often indicate gibberish.
+    const hasVowels = /[aeiouy]/i.test(t);
+    if (!hasVowels && letters >= 6) return true;
+
+    // Obvious repeated character spam, like "aaaaaa" or "kkkkkk"
+    if (/(.)\1{5,}/.test(t)) return true;
+
+    // If it is extremely short and not a common short answer, treat as unclear.
+    const lower = t.toLowerCase();
+    const commonShort = new Set([
+      "yes",
+      "yeah",
+      "yep",
+      "no",
+      "nope",
+      "ok",
+      "okay",
+      "sure",
+      "help",
+      "repeat",
+      "again",
+    ]);
+
+    if (words.length === 1 && t.length <= 4 && !commonShort.has(lower)) return true;
+
+    // If it is mostly spaces (should not happen, but safe)
+    if (spaces / denom > 0.5) return true;
+
+    return false;
+  }
+
+  function requestClarification(reason, transcript) {
+    if (!turnDetectionEnabled) return;
+    if (endRedirectRequested) return;
+    if (!openaiReady) return;
+
+    // Avoid spamming clarification loops.
+    const now = Date.now();
+    if (clarificationInFlight && now - clarificationRequestedAtMs < 3000) return;
+
+    clarificationInFlight = true;
+    clarificationRequestedAtMs = now;
+
+    console.log(nowIso(), "Unintelligible input detected, asking to repeat", {
+      reason,
+      transcript: transcript ? String(transcript).slice(0, 120) : "",
+    });
+
+    cancelOpenAIResponseIfAnyOnce("unintelligible_input");
+
+    // Clear audio buffer to reduce the chance the model "uses" the bad audio.
+    try {
+      openaiSend({ type: "input_audio_buffer.clear" });
+    } catch {}
+
+    // After cancel, give the server a brief moment, then create our own response.
+    setTimeout(() => {
+      if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
+
+      const lastPrompt = lastAssistantUserFacingText
+        ? `Your last question was: "${lastAssistantUserFacingText}"`
+        : "Ask them to answer the last question again.";
+
+      openaiSend({
+        type: "response.create",
+        response: {
+          modalities: ["audio", "text"],
+          instructions:
+            "You are CallReady.\n" +
+            "The caller's last response was unclear or unintelligible.\n" +
+            "Do not guess what they meant.\n" +
+            "In one or two short sentences, kindly ask them to repeat more clearly.\n" +
+            "Then say one short reminder: they can take their time and speak a little slower.\n" +
+            "Then ask them to answer your last question again.\n" +
+            lastPrompt +
+            "\n" +
+            "Important: Do not output SCENARIO_TAG, FOCUS_SKILL, or COACHING_NOTE in this response.\n" +
+            "Ask only one question at the end, then stop speaking and wait.",
+        },
+      });
+    }, 200);
   }
 
   function sendOpenerOnce(label) {
@@ -858,6 +996,13 @@ wss.on("connection", (twilioWs) => {
           turn_detection: null,
           temperature: 0.7,
           modalities: ["audio", "text"],
+
+          // Enable user speech transcription events so we can detect unintelligible input.
+          // You can switch to "gpt-4o-mini-transcribe" later if you prefer.
+          input_audio_transcription: {
+            model: "whisper-1",
+          },
+
           instructions:
             "You are CallReady. You help teens and young adults practice real phone calls.\n" +
             "Speak with a friendly, warm tone that sounds like a calm, encouraging young adult woman.\n" +
@@ -869,6 +1014,11 @@ wss.on("connection", (twilioWs) => {
             "Keep it simple and conversational, not formal.\n" +
             "It is okay to use brief acknowledgements like \"okay,\" \"got it,\" or \"sure\" sometimes.\n" +
             "Avoid sounding scripted.\n" +
+            "\n" +
+            "Unclear input rule:\n" +
+            "If the caller's answer is unclear, unintelligible, or does not make sense, do NOT guess what they meant.\n" +
+            "Kindly ask them to repeat more clearly and answer your last question again.\n" +
+            "Keep it to one or two short sentences, then ask only one question.\n" +
             "\n" +
             "Never sexual content.\n" +
             "Never request real personal information. If needed, tell the caller they can make something up.\n" +
@@ -893,7 +1043,6 @@ wss.on("connection", (twilioWs) => {
             "Never say the token out loud.\n" +
             "Do not ask any follow up questions.\n" +
             "Do not include any other text after the token line.\n" +
-            "\n" +
             "\n" +
             "Important realism rule:\n" +
             "The caller cannot dial a number in this simulation.\n" +
@@ -934,6 +1083,33 @@ wss.on("connection", (twilioWs) => {
     openaiWs.on("message", (data) => {
       const msg = safeJsonParse(data.toString());
       if (!msg) return;
+
+      // Track user transcription so we can detect unintelligible turns.
+      if (msg.type === "conversation.item.input_audio_transcription.completed") {
+        const transcript =
+          typeof msg.transcript === "string" ? msg.transcript : "";
+        lastUserTranscript = transcript;
+        lastUserTranscriptAtMs = Date.now();
+
+        if (turnDetectionEnabled) {
+          const bad = isLikelyUnintelligibleTranscript(transcript);
+          if (bad) requestClarification("transcription_completed_unintelligible", transcript);
+        }
+        return;
+      }
+
+      if (msg.type === "conversation.item.input_audio_transcription.failed") {
+        const err = msg.error || {};
+        const code = err.code || "transcription_failed";
+        const transcript = "";
+        lastUserTranscript = "";
+        lastUserTranscriptAtMs = Date.now();
+
+        if (turnDetectionEnabled) {
+          requestClarification(`transcription_failed_${code}`, transcript);
+        }
+        return;
+      }
 
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
         if (!turnDetectionEnabled && openerSent) {
@@ -990,6 +1166,18 @@ wss.on("connection", (twilioWs) => {
       if (msg.type === "response.created") {
         responseActive = true;
 
+        // If we very recently detected unintelligible input, cancel fast.
+        if (turnDetectionEnabled) {
+          const ageMs = Date.now() - lastUserTranscriptAtMs;
+          if (ageMs >= 0 && ageMs < 2000) {
+            const bad = isLikelyUnintelligibleTranscript(lastUserTranscript);
+            if (bad) {
+              requestClarification("response_created_after_bad_transcript", lastUserTranscript);
+              return;
+            }
+          }
+        }
+
         if (turnDetectionEnabled && waitingForFirstCallerSpeech && !sawSpeechStarted) {
           cancelOpenAIResponseIfAnyOnce("response.created before caller speech");
           return;
@@ -1010,6 +1198,18 @@ wss.on("connection", (twilioWs) => {
       if (msg.type === "response.done") {
         const text = extractTextFromResponseDone(msg);
         responseActive = false;
+
+        // Track last user-facing assistant text so clarification can reference "your last question".
+        const cleaned = cleanUserFacingText(text);
+        if (cleaned) lastAssistantUserFacingText = cleaned;
+
+        // If we just forced a clarification response, release the guard after it completes.
+        if (clarificationInFlight) {
+          const age = Date.now() - clarificationRequestedAtMs;
+          if (age < 15000) {
+            clarificationInFlight = false;
+          }
+        }
 
         // Capture tagging tokens from model text
         if (text && callSid) {
