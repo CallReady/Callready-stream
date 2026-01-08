@@ -28,6 +28,9 @@ if (!DATABASE_URL) {
 
 const OPENAI_REALTIME_MODEL =
   process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview";
+
+// Default to coral for a friendlier, more conversational voice.
+// If OPENAI_VOICE is set in the environment, it overrides this.
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
 const CALLREADY_VERSION =
@@ -780,6 +783,30 @@ wss.on("connection", (twilioWs) => {
     return false;
   }
 
+  // Fallback: sometimes the model says "Okay." but forgets the END_CALL_NOW token.
+  // If the text output is effectively just "Okay", treat it as an end intent.
+  function responseTextLooksLikeEndOkay(text) {
+    if (!text) return false;
+
+    const lines = String(text)
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    if (lines.length === 0) return false;
+
+    const joined = lines.join(" ").replace(/\s+/g, " ").trim();
+    const upper = joined.toUpperCase();
+
+    // Keep this strict to avoid accidental ends on normal "Okay, let's continue" replies.
+    const normalized = upper.replace(/[^A-Z]/g, "");
+    if (normalized !== "OKAY") return false;
+
+    if (joined.length > 12) return false;
+
+    return true;
+  }
+
   function buildReturnCallerInstructions(ctx) {
     if (!ctx) return "";
 
@@ -833,7 +860,16 @@ wss.on("connection", (twilioWs) => {
           modalities: ["audio", "text"],
           instructions:
             "You are CallReady. You help teens and young adults practice real phone calls.\n" +
-            "Speak with a friendly, upbeat, warm tone that sounds like a calm, encouraging young adult woman.\n" +
+            "Speak with a friendly, warm tone that sounds like a calm, encouraging young adult woman.\n" +
+            "\n" +
+            "Speaking style:\n" +
+            "Sound natural, relaxed, and friendly, like a real phone call.\n" +
+            "Use short sentences.\n" +
+            "Use contractions (I'm, you're, that's).\n" +
+            "Keep it simple and conversational, not formal.\n" +
+            "It is okay to use brief acknowledgements like \"okay,\" \"got it,\" or \"sure\" sometimes.\n" +
+            "Avoid sounding scripted.\n" +
+            "\n" +
             "Never sexual content.\n" +
             "Never request real personal information. If needed, tell the caller they can make something up.\n" +
             "If self-harm intent appears, stop roleplay and recommend help (US: 988, immediate danger: 911).\n" +
@@ -1023,10 +1059,14 @@ wss.on("connection", (twilioWs) => {
         }
 
         if (turnDetectionEnabled) {
-          if (!endRedirectRequested && responseTextRequestsEnd(text)) {
+          const aiRequestedEnd =
+            responseTextRequestsEnd(text) || responseTextLooksLikeEndOkay(text);
+
+          if (!endRedirectRequested && aiRequestedEnd) {
             console.log(
               nowIso(),
-              "Detected END_CALL_NOW in model text, redirecting to /end (skip transition)"
+              "Detected AI end intent, redirecting to /end (skip transition)",
+              { hadToken: responseTextRequestsEnd(text) }
             );
             cancelOpenAIResponseIfAnyOnce("AI requested end");
             prepForEnding();
@@ -1126,7 +1166,9 @@ wss.on("connection", (twilioWs) => {
       console.log(nowIso(), "Twilio stream stop");
 
       if (callSid) {
-        const endedReason = endRedirectRequested ? "redirected_to_end" : "hangup_or_stream_stop";
+        const endedReason = endRedirectRequested
+          ? "redirected_to_end"
+          : "hangup_or_stream_stop";
         fireAndForgetCallEndLog(callSid, endedReason);
       }
 
