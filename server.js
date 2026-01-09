@@ -487,7 +487,9 @@ wss.on("connection", (twilioWs) => {
 
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
-  function closeAll(reason) {
+  function closeAll(reason, opts) {
+    const keepTwilioOpen = !!(opts && opts.keepTwilioOpen);
+
     if (closing) return;
     closing = true;
     console.log(nowIso(), "Closing:", reason);
@@ -503,9 +505,12 @@ wss.on("connection", (twilioWs) => {
     try {
       if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
     } catch {}
-    try {
-      if (twilioWs && twilioWs.readyState === WebSocket.OPEN) twilioWs.close();
-    } catch {}
+
+    if (!keepTwilioOpen) {
+      try {
+        if (twilioWs && twilioWs.readyState === WebSocket.OPEN) twilioWs.close();
+      } catch {}
+    }
   }
 
   function twilioSend(obj) {
@@ -672,7 +677,9 @@ wss.on("connection", (twilioWs) => {
 
       console.log(nowIso(), "Redirected call to /end via Twilio REST", callSid);
 
-      closeAll("Redirected to /end");
+      // Do not close the Twilio websocket here.
+      // Let Twilio send a natural "stop" when it switches to the new TwiML.
+      closeAll("Redirected to /end (keeping Twilio WS open)", { keepTwilioOpen: true });
     } catch (err) {
       console.log(
         nowIso(),
@@ -831,8 +838,15 @@ wss.on("connection", (twilioWs) => {
             "Ask one question at a time. After you ask a question, stop speaking and wait.\n" +
             "\n" +
             "Call flow:\n" +
-            "First ask whether they want to practice calling someone, or answering a call from someone.\n" +
-            "Then ask whether they want to pick the scenario or have you pick an easy one.\n" +
+            "Always start every new scenario by asking this exact question:\n" +
+            "\"Do you want to practice calling someone, or answering a call from someone?\"\n" +
+            "Then ask whether they want to choose the scenario or have you choose.\n" +
+            "\n" +
+            "Reset rule:\n" +
+            "If the caller says \"have you pick\", \"you choose\", \"something different\", or \"try something different\", you must restart the flow.\n" +
+            "That means you MUST ask the mode question again:\n" +
+            "\"Do you want to practice calling someone, or answering a call from someone?\"\n" +
+            "Do not reuse the prior mode automatically.\n" +
             "\n" +
             "No mind-reading rule:\n" +
             "Never say things like \"I understand you want to...\" or \"So you are calling to...\" as part of the greeting.\n" +
@@ -847,8 +861,11 @@ wss.on("connection", (twilioWs) => {
             "Do not ask any follow up questions.\n" +
             "Do not include any other text after the token line.\n" +
             "\n" +
-            "Roleplay start rules:\n" +
-            "Once the scenario is chosen and setup is clear, ask: \"Are you ready to start?\" Wait for yes.\n" +
+            "Ready check rule:\n" +
+            "Always ask this exact question before the ring moment:\n" +
+            "\"Are you ready to start?\"\n" +
+            "If you do not clearly hear yes, ask once:\n" +
+            "\"I didn't catch that. Are you ready to start?\"\n" +
             "\n" +
             "Mode definitions, these must never be swapped:\n" +
             "If the caller chose \"practice calling someone\", the caller is the caller, and you are the person answering the phone.\n" +
@@ -873,7 +890,6 @@ wss.on("connection", (twilioWs) => {
             "You must speak first and begin the call.\n" +
             "Start with: \"Hi, it's [name].\" and then immediately continue with the first natural line of the scenario, as the caller.\n" +
             "Do not pause after your name.\n" +
-            "Do not ask the caller to speak before you begin.\n" +
             "\n" +
             "Scenario completion rule:\n" +
             "Do not let the conversation hang at the end.\n" +
