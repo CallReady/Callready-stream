@@ -487,7 +487,9 @@ wss.on("connection", (twilioWs) => {
 
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
-  function closeAll(reason) {
+  function closeAll(reason, opts) {
+    const closeTwilio = !(opts && opts.keepTwilioOpen);
+
     if (closing) return;
     closing = true;
     console.log(nowIso(), "Closing:", reason);
@@ -503,9 +505,12 @@ wss.on("connection", (twilioWs) => {
     try {
       if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
     } catch {}
-    try {
-      if (twilioWs && twilioWs.readyState === WebSocket.OPEN) twilioWs.close();
-    } catch {}
+
+    if (closeTwilio) {
+      try {
+        if (twilioWs && twilioWs.readyState === WebSocket.OPEN) twilioWs.close();
+      } catch {}
+    }
   }
 
   function twilioSend(obj) {
@@ -672,7 +677,9 @@ wss.on("connection", (twilioWs) => {
 
       console.log(nowIso(), "Redirected call to /end via Twilio REST", callSid);
 
-      closeAll("Redirected to /end");
+      // Important: keep the Twilio WS open and let Twilio send "stop" naturally
+      // after it switches to the new TwiML. Closing the WS here can cause abrupt hangs.
+      closeAll("Redirected to /end (keeping Twilio WS open)", { keepTwilioOpen: true });
     } catch (err) {
       console.log(
         nowIso(),
@@ -692,7 +699,6 @@ wss.on("connection", (twilioWs) => {
         console.log(nowIso(), "Trial timer fired, ending session, redirecting to /end");
         cancelOpenAIResponseIfAnyOnce("redirecting to /end");
 
-        // End-only scenario capture, then end.
         await requestScenarioTagTextOnlyOnce("timer_end");
 
         prepForEnding();
@@ -840,12 +846,9 @@ wss.on("connection", (twilioWs) => {
             "Do not front-load scenario details during the greeting.\n" +
             "The greeting must sound like real life, nothing more.\n" +
             "\n" +
-            "Greeting rules for roleplay:\n" +
-            "When you are playing the person who answers (the callee), your first line must be ONLY a realistic greeting, then stop speaking and wait.\n" +
-            "If it is a personal call, use: \"Hi, it's [first name]. What's going on?\" or \"Hello?\".\n" +
-            "If it is a business call, use: \"Hello, thanks for calling [business name], how can I help you?\".\n" +
-            "Do not ask scenario-specific questions in the greeting.\n" +
-            "Do not mention the scenario in the greeting.\n" +
+            "Mode tracking rule:\n" +
+            "Once the caller chooses making a call (outgoing) or answering a call (incoming), you must follow the matching choreography exactly.\n" +
+            "Do not mix the two.\n" +
             "\n" +
             "Ending rule:\n" +
             "If the caller asks to end the call, quit, stop, hang up, or says they do not want to do this anymore, you MUST do BOTH in the SAME response:\n" +
@@ -857,16 +860,28 @@ wss.on("connection", (twilioWs) => {
             "\n" +
             "Roleplay start rules:\n" +
             "Once the scenario is chosen and setup is clear, ask: \"Are you ready to start?\" Wait for yes.\n" +
-            "Then do the ring moment based on direction:\n" +
-            "If making a call (outgoing): say \"Ring, ring!\" and immediately answer as the other person.\n" +
-            "If it is a personal outgoing call, answer with ONLY: \"Hi, it's [first name]. What's going on?\" Then stop and wait for the caller to speak.\n" +
-            "If it is a business outgoing call, answer with ONLY: \"Hello, thanks for calling [business name], how can I help you?\" Then stop and wait.\n" +
-            "If answering a call (incoming): say \"Ring, ring!\" then stop speaking and wait for the caller to answer with a simple greeting like \"Hello\".\n" +
-            "After the caller says hello in incoming mode, you play the caller. Start with ONLY a realistic opener like \"Hi, it's [name]\". Then wait for a response.\n" +
-            "If they forget to answer in incoming mode, prompt once: \"Go ahead and answer the phone by saying hello.\" Then wait.\n" +
+            "\n" +
+            "Incoming call choreography (caller is answering):\n" +
+            "After they say yes, you MUST do this sequence:\n" +
+            "1) Say exactly: \"Ring, ring!\"\n" +
+            "2) Immediately say exactly one short instruction: \"Go ahead and answer the phone by saying hello.\".\n" +
+            "3) Stop speaking and wait for the caller to say \"Hello\".\n" +
+            "4) Then you play the caller with ONLY a realistic opener like: \"Hi, it's [name].\".\n" +
+            "5) Stop speaking and wait.\n" +
+            "\n" +
+            "Outgoing call choreography (caller is making the call):\n" +
+            "After they say yes, you MUST do this sequence without waiting for them to speak first:\n" +
+            "1) Say exactly: \"Ring, ring!\"\n" +
+            "2) Immediately answer as the other person with ONLY a realistic greeting.\n" +
+            "If the scenario is clearly a personal call, use: \"Hi, it's [first name]. What's going on?\".\n" +
+            "If the scenario is clearly a business call, use: \"Hello, thanks for calling [business name], how can I help you?\".\n" +
+            "3) Stop speaking and wait for the caller to talk.\n" +
             "\n" +
             "Scenario completion rule:\n" +
-            "When the scenario is complete, say: \"Okay, that wraps the scenario.\" Then ask exactly one question:\n" +
+            "Do not let the conversation hang at the end.\n" +
+            "When the scenario reaches a natural resolution (they got the info, made the plan, confirmed details, or said goodbye), you must immediately say:\n" +
+            "\"Okay, that wraps the scenario.\".\n" +
+            "Then ask exactly one question:\n" +
             "\"Would you like some feedback on how you did, run scenario again, or try something different?\"\n" +
             "Then stop speaking and wait.\n" +
             "\n" +
@@ -944,7 +959,6 @@ wss.on("connection", (twilioWs) => {
         const text = extractTextFromResponseDone(msg);
         responseActive = false;
 
-        // If this was our end-only scenario capture response
         if (scenarioTagCaptureInFlight && !scenarioTagAlreadyCaptured && callSid) {
           const scenarioTag = extractTokenLineValue(text, "SCENARIO_TAG");
           if (scenarioTag) {
@@ -998,7 +1012,6 @@ wss.on("connection", (twilioWs) => {
             (async () => {
               cancelOpenAIResponseIfAnyOnce("AI requested end");
 
-              // End-only scenario capture, then end.
               await requestScenarioTagTextOnlyOnce("ai_end");
 
               prepForEnding();
