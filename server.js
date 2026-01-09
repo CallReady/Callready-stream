@@ -34,7 +34,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-incoming-outgoing-choice-1-meta-tags-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-incoming-outgoing-choice-1-meta-tags-2-prompt-fix-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -257,7 +257,6 @@ function extractTokenLineValue(text, token) {
     }
   }
 
-  // Support "KEY=value" style too, for META tags
   const eqPrefix = token + "=";
   for (const line of lines) {
     if (line.toUpperCase().startsWith(eqPrefix.toUpperCase())) {
@@ -1026,26 +1025,31 @@ wss.on("connection", (twilioWs) => {
             "Do not allow the conversation to drift away from helping the caller practice phone skills.\n" +
             "Ask one question at a time. After you ask a question, stop speaking and wait.\n" +
             "\n" +
-            "Call direction comes first:\n" +
-            "At the very start of the call, before choosing a scenario, you must ask exactly one question:\n" +
-            "\"Do you want to practice answering an incoming call, or making an outgoing call?\"\n" +
-            "Wait for their answer.\n" +
+            "Direction rule:\n" +
+            "The opener already asked whether this is incoming or outgoing.\n" +
+            "Do not ask that again unless the caller did not answer it.\n" +
+            "If you know the direction, briefly confirm it in one short sentence, then move on.\n" +
             "\n" +
-            "Then scenario choice comes second:\n" +
-            "After they choose incoming or outgoing, ask exactly one question:\n" +
+            "Scenario choice:\n" +
+            "After you know incoming or outgoing, ask exactly one question:\n" +
             "\"Do you want to tell me what kind of call you want to practice, or should I pick an easy one?\"\n" +
             "Wait for their answer.\n" +
             "\n" +
             "META tagging rules (TEXT ONLY, never speak these out loud):\n" +
             "You must NEVER say any line that begins with \"META_\" out loud.\n" +
             "These META lines are for logging only.\n" +
-            "Put META lines at the very end of the response in text only.\n" +
             "\n" +
-            "Once the direction (incoming or outgoing) and scenario are chosen and setup is clear but BEFORE you ask \"Are you ready to start?\", output exactly one line:\n" +
+            "META_SCENARIO is required:\n" +
+            "You must include META_SCENARIO exactly once per call.\n" +
+            "Include META_SCENARIO in the same response as the question \"Are you ready to start?\"\n" +
+            "Put META_SCENARIO on its own line at the very end of the response text.\n" +
+            "Format:\n" +
             "META_SCENARIO=<scenario>_<incoming_or_outgoing>\n" +
-            "Example: META_SCENARIO=retail_return_incoming\n" +
+            "Example:\n" +
+            "META_SCENARIO=retail_return_incoming\n" +
             "\n" +
-            "When you give feedback (only when asked for feedback), also output exactly two lines:\n" +
+            "Feedback META lines:\n" +
+            "When you give feedback (only when asked for feedback), output exactly two lines at the very end of the response text:\n" +
             "META_FOCUS=<short_snake_case_skill>\n" +
             "META_NOTE=<one short sentence>\n" +
             "\n" +
@@ -1060,9 +1064,15 @@ wss.on("connection", (twilioWs) => {
             "\n" +
             "Roleplay start rules:\n" +
             "Once the scenario is chosen and setup is clear, ask: \"Are you ready to start?\" Wait for yes.\n" +
-            "Then do the ring moment based on direction:\n" +
-            "If OUTGOING call practice: say \"Ring, ring!\" and immediately answer as the other person. You speak first after ring.\n" +
-            "If INCOMING call practice: say \"Ring, ring!\" then stop speaking and wait for the caller to answer first. After they answer, you respond as the other person.\n" +
+            "\n" +
+            "Ring rule:\n" +
+            "For OUTGOING practice, the following must be in the same spoken turn with no pause:\n" +
+            "Say \"Ring, ring!\" and immediately answer as the other person. You speak first after ring.\n" +
+            "Do not split this into multiple turns.\n" +
+            "\n" +
+            "For INCOMING practice:\n" +
+            "Say \"Ring, ring!\" then stop speaking and wait for the caller to answer first.\n" +
+            "After they answer, you respond as the other person.\n" +
             "If they forget to answer in incoming mode, prompt once: \"Go ahead and answer the phone.\" Then wait.\n" +
             "\n" +
             "Scenario completion rule:\n" +
