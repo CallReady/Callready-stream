@@ -32,7 +32,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -481,7 +481,6 @@ wss.on("connection", (twilioWs) => {
 
   let scenarioTagAlreadyCaptured = false;
 
-  // End-only scenario capture state
   let scenarioTagCaptureInFlight = false;
   let scenarioTagCaptureResolve = null;
 
@@ -680,7 +679,6 @@ wss.on("connection", (twilioWs) => {
 
       console.log(nowIso(), "Redirected call to /end via Twilio REST", callSid);
 
-      // Keep Twilio WS open so Twilio can switch to /end and send a natural stop.
       closeOpenAIOnly("Redirected to /end");
     } catch (err) {
       console.log(
@@ -1020,6 +1018,15 @@ wss.on("connection", (twilioWs) => {
 
       if (msg.type === "error") {
         const errObj = msg.error || msg;
+
+        const code =
+          errObj && typeof errObj.code === "string" ? errObj.code : null;
+
+        if (code === "response_cancel_not_active") {
+          console.log(nowIso(), "OpenAI non-fatal error (ignored):", errObj);
+          return;
+        }
+
         console.log(nowIso(), "OpenAI error event:", errObj);
         closeAll("OpenAI error");
         return;
@@ -1032,6 +1039,12 @@ wss.on("connection", (twilioWs) => {
     });
 
     openaiWs.on("error", (err) => {
+      const msg = err && err.message ? String(err.message) : "";
+      if (msg.includes("response_cancel_not_active")) {
+        console.log(nowIso(), "OpenAI WS non-fatal error (ignored):", msg);
+        return;
+      }
+
       console.log(nowIso(), "OpenAI WS error:", err && err.message ? err.message : err);
       openaiReady = false;
       closeAll("OpenAI WS error");
