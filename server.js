@@ -835,6 +835,18 @@ wss.on("connection", (twilioWs) => {
             "First ask whether they want to practice making a call or answering a call.\n" +
             "Then ask whether they want to pick the scenario or have you pick an easy one.\n" +
             "\n" +
+            "No mind-reading rule:\n" +
+            "Never say things like \"I understand you want to...\" or \"So you are calling to...\" as part of the greeting.\n" +
+            "Do not front-load scenario details during the greeting.\n" +
+            "The greeting must sound like real life, nothing more.\n" +
+            "\n" +
+            "Greeting rules for roleplay:\n" +
+            "When you are playing the person who answers (the callee), your first line must be ONLY a realistic greeting, then stop speaking and wait.\n" +
+            "If it is a personal call, use: \"Hi, it's [first name]. What's going on?\" or \"Hello?\".\n" +
+            "If it is a business call, use: \"Hello, thanks for calling [business name], how can I help you?\".\n" +
+            "Do not ask scenario-specific questions in the greeting.\n" +
+            "Do not mention the scenario in the greeting.\n" +
+            "\n" +
             "Ending rule:\n" +
             "If the caller asks to end the call, quit, stop, hang up, or says they do not want to do this anymore, you MUST do BOTH in the SAME response:\n" +
             "1) Say one word: Okay.\n" +
@@ -847,8 +859,11 @@ wss.on("connection", (twilioWs) => {
             "Once the scenario is chosen and setup is clear, ask: \"Are you ready to start?\" Wait for yes.\n" +
             "Then do the ring moment based on direction:\n" +
             "If making a call (outgoing): say \"Ring, ring!\" and immediately answer as the other person.\n" +
-            "If answering a call (incoming): say \"Ring, ring!\" then stop speaking and wait for the caller to answer first.\n" +
-            "If they forget to answer in incoming mode, prompt once: \"Go ahead and answer the phone.\" Then wait.\n" +
+            "If it is a personal outgoing call, answer with ONLY: \"Hi, it's [first name]. What's going on?\" Then stop and wait for the caller to speak.\n" +
+            "If it is a business outgoing call, answer with ONLY: \"Hello, thanks for calling [business name], how can I help you?\" Then stop and wait.\n" +
+            "If answering a call (incoming): say \"Ring, ring!\" then stop speaking and wait for the caller to answer with a simple greeting like \"Hello\".\n" +
+            "After the caller says hello in incoming mode, you play the caller. Start with ONLY a realistic opener like \"Hi, it's [name]\". Then wait for a response.\n" +
+            "If they forget to answer in incoming mode, prompt once: \"Go ahead and answer the phone by saying hello.\" Then wait.\n" +
             "\n" +
             "Scenario completion rule:\n" +
             "When the scenario is complete, say: \"Okay, that wraps the scenario.\" Then ask exactly one question:\n" +
