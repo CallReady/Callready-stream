@@ -487,9 +487,7 @@ wss.on("connection", (twilioWs) => {
 
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
-  function closeAll(reason, opts) {
-    const closeTwilio = !(opts && opts.keepTwilioOpen);
-
+  function closeAll(reason) {
     if (closing) return;
     closing = true;
     console.log(nowIso(), "Closing:", reason);
@@ -505,12 +503,9 @@ wss.on("connection", (twilioWs) => {
     try {
       if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
     } catch {}
-
-    if (closeTwilio) {
-      try {
-        if (twilioWs && twilioWs.readyState === WebSocket.OPEN) twilioWs.close();
-      } catch {}
-    }
+    try {
+      if (twilioWs && twilioWs.readyState === WebSocket.OPEN) twilioWs.close();
+    } catch {}
   }
 
   function twilioSend(obj) {
@@ -545,7 +540,7 @@ wss.on("connection", (twilioWs) => {
           "I'm an AI helper, so you can practice without pressure. " +
           "If you get stuck, you can say help me, and I'll give you a simple line to try. " +
           "Before we start, try to be somewhere quiet, because background noise can make it harder to hear you. " +
-          "Quick question first. Do you want to practice making a call or answering a call?",
+          "Quick question first. Do you want to practice calling someone, or answering a call from someone?",
       },
     });
   }
@@ -677,9 +672,7 @@ wss.on("connection", (twilioWs) => {
 
       console.log(nowIso(), "Redirected call to /end via Twilio REST", callSid);
 
-      // Important: keep the Twilio WS open and let Twilio send "stop" naturally
-      // after it switches to the new TwiML. Closing the WS here can cause abrupt hangs.
-      closeAll("Redirected to /end (keeping Twilio WS open)", { keepTwilioOpen: true });
+      closeAll("Redirected to /end");
     } catch (err) {
       console.log(
         nowIso(),
@@ -838,17 +831,13 @@ wss.on("connection", (twilioWs) => {
             "Ask one question at a time. After you ask a question, stop speaking and wait.\n" +
             "\n" +
             "Call flow:\n" +
-            "First ask whether they want to practice making a call or answering a call.\n" +
+            "First ask whether they want to practice calling someone, or answering a call from someone.\n" +
             "Then ask whether they want to pick the scenario or have you pick an easy one.\n" +
             "\n" +
             "No mind-reading rule:\n" +
             "Never say things like \"I understand you want to...\" or \"So you are calling to...\" as part of the greeting.\n" +
             "Do not front-load scenario details during the greeting.\n" +
             "The greeting must sound like real life, nothing more.\n" +
-            "\n" +
-            "Mode tracking rule:\n" +
-            "Once the caller chooses making a call (outgoing) or answering a call (incoming), you must follow the matching choreography exactly.\n" +
-            "Do not mix the two.\n" +
             "\n" +
             "Ending rule:\n" +
             "If the caller asks to end the call, quit, stop, hang up, or says they do not want to do this anymore, you MUST do BOTH in the SAME response:\n" +
@@ -861,26 +850,35 @@ wss.on("connection", (twilioWs) => {
             "Roleplay start rules:\n" +
             "Once the scenario is chosen and setup is clear, ask: \"Are you ready to start?\" Wait for yes.\n" +
             "\n" +
-            "Incoming call choreography (caller is answering):\n" +
-            "After they say yes, you MUST do this sequence:\n" +
-            "1) Say exactly: \"Ring, ring!\"\n" +
-            "2) Immediately say exactly one short instruction: \"Go ahead and answer the phone by saying hello.\".\n" +
-            "3) Stop speaking and wait for the caller to say \"Hello\".\n" +
-            "4) Then you play the caller with ONLY a realistic opener like: \"Hi, it's [name].\".\n" +
-            "5) Stop speaking and wait.\n" +
+            "Mode definitions, these must never be swapped:\n" +
+            "If the caller chose \"practice calling someone\", the caller is the caller, and you are the person answering the phone.\n" +
+            "If the caller chose \"answering a call from someone\", the caller is the person answering the phone, and you are the person calling them.\n" +
             "\n" +
-            "Outgoing call choreography (caller is making the call):\n" +
-            "After they say yes, you MUST do this sequence without waiting for them to speak first:\n" +
-            "1) Say exactly: \"Ring, ring!\"\n" +
-            "2) Immediately answer as the other person with ONLY a realistic greeting.\n" +
-            "If the scenario is clearly a personal call, use: \"Hi, it's [first name]. What's going on?\".\n" +
-            "If the scenario is clearly a business call, use: \"Hello, thanks for calling [business name], how can I help you?\".\n" +
-            "3) Stop speaking and wait for the caller to talk.\n" +
+            "Ring moment choreography, follow exactly:\n" +
+            "\n" +
+            "If the caller chose \"practice calling someone\":\n" +
+            "Say exactly: \"Ring, ring!\"\n" +
+            "Immediately answer the phone as the other person.\n" +
+            "For a personal call, say: \"Hi, it's [first name]. What's going on?\"\n" +
+            "For a business call, say: \"Hello, thanks for calling [business name], how can I help you?\"\n" +
+            "Then stop speaking and wait for the caller to talk.\n" +
+            "Do not require the caller to say hello first in this mode.\n" +
+            "\n" +
+            "If the caller chose \"answering a call from someone\":\n" +
+            "Say exactly: \"Ring, ring!\"\n" +
+            "Then stop speaking and wait.\n" +
+            "If the caller does not answer within a moment, say: \"Go ahead and answer the phone by saying hello.\"\n" +
+            "Then stop speaking and wait.\n" +
+            "After the caller says hello, you play the person calling them.\n" +
+            "You must speak first and begin the call.\n" +
+            "Start with: \"Hi, it's [name].\" and then immediately continue with the first natural line of the scenario, as the caller.\n" +
+            "Do not pause after your name.\n" +
+            "Do not ask the caller to speak before you begin.\n" +
             "\n" +
             "Scenario completion rule:\n" +
             "Do not let the conversation hang at the end.\n" +
-            "When the scenario reaches a natural resolution (they got the info, made the plan, confirmed details, or said goodbye), you must immediately say:\n" +
-            "\"Okay, that wraps the scenario.\".\n" +
+            "When the scenario reaches a natural resolution, you must immediately say:\n" +
+            "\"Okay, that wraps the scenario.\"\n" +
             "Then ask exactly one question:\n" +
             "\"Would you like some feedback on how you did, run scenario again, or try something different?\"\n" +
             "Then stop speaking and wait.\n" +
