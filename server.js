@@ -32,7 +32,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -86,6 +86,74 @@ function twilioClient() {
   return twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 }
 
+function monthBucketFirstDayUtc() {
+  const d = new Date();
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth();
+  return new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
+}
+
+async function upsertCallerOnCallStart(fromPhoneE164, callSid) {
+  if (!pool) return;
+  if (!fromPhoneE164) return;
+
+  const bucket = monthBucketFirstDayUtc();
+
+  try {
+    await pool.query(
+      "insert into callers (phone_e164, first_call_at, last_call_at, total_calls, tier, month_bucket, monthly_seconds_used, per_call_seconds_cap, last_call_sid) " +
+        "values ($1, now(), now(), 1, 'free', $2::date, 0, 300, $3) " +
+        "on conflict (phone_e164) do update set " +
+        "last_call_at = now(), " +
+        "total_calls = callers.total_calls + 1, " +
+        "last_call_sid = $3, " +
+        "first_call_at = coalesce(callers.first_call_at, now())",
+      [fromPhoneE164, bucket, callSid || null]
+    );
+
+    console.log(nowIso(), "Upserted caller row", {
+      phone_e164: fromPhoneE164,
+      callSid: callSid || null,
+    });
+  } catch (e) {
+    console.log(
+      nowIso(),
+      "DB upsert failed for callers:",
+      e && e.message ? e.message : e
+    );
+  }
+}
+
+async function setCallerSmsOptInState(fromPhoneE164, optedIn) {
+  if (!pool) return;
+  if (!fromPhoneE164) return;
+
+  try {
+    if (optedIn) {
+      await pool.query(
+        "update callers set sms_opted_in = true, sms_opted_in_at = now(), sms_last_keyword = 'DTMF_OPTIN', sms_opted_out_at = null where phone_e164 = $1",
+        [fromPhoneE164]
+      );
+    } else {
+      await pool.query(
+        "update callers set sms_opted_in = false, sms_opted_out_at = now(), sms_last_keyword = 'DTMF_DECLINE' where phone_e164 = $1",
+        [fromPhoneE164]
+      );
+    }
+
+    console.log(nowIso(), "Updated callers sms_opted_in", {
+      phone_e164: fromPhoneE164,
+      sms_opted_in: !!optedIn,
+    });
+  } catch (e) {
+    console.log(
+      nowIso(),
+      "DB update failed for callers sms state:",
+      e && e.message ? e.message : e
+    );
+  }
+}
+
 async function logCallStartToDb(callSid, fromPhoneE164) {
   if (!pool) return;
 
@@ -107,6 +175,10 @@ async function logCallStartToDb(callSid, fromPhoneE164) {
       e && e.message ? e.message : e
     );
   }
+
+  try {
+    await upsertCallerOnCallStart(fromPhoneE164, callSid);
+  } catch {}
 }
 
 async function logCallEndToDb(callSid, endedReason) {
@@ -221,6 +293,22 @@ function extractTokenLineValue(text, token) {
 async function isAlreadyOptedInByPhone(fromPhoneE164) {
   if (!pool) return false;
   if (!fromPhoneE164) return false;
+
+  try {
+    const r1 = await pool.query(
+      "select sms_opted_in from callers where phone_e164 = $1 limit 1",
+      [fromPhoneE164]
+    );
+    if (r1 && r1.rowCount > 0) {
+      return !!r1.rows[0].sms_opted_in;
+    }
+  } catch (e) {
+    console.log(
+      nowIso(),
+      "DB lookup failed for callers sms check:",
+      e && e.message ? e.message : e
+    );
+  }
 
   try {
     const r = await pool.query(
@@ -398,6 +486,12 @@ app.post("/gather-result", async (req, res) => {
         e && e.message ? e.message : e
       );
     }
+
+    try {
+      if (pool && from) {
+        await setCallerSmsOptInState(from, pressed1);
+      }
+    } catch {}
 
     if (callSid) {
       await logCallEndToDb(
