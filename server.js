@@ -32,7 +32,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-incoming-outgoing-choice-1-endonly-scenario-tag-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -296,10 +296,6 @@ app.post("/end", async (req, res) => {
     const from = req.body && req.body.From ? String(req.body.From) : "";
     const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
 
-    if (!isRetry && !skipTransition) {
-      vr.say(TWILIO_END_TRANSITION);
-    }
-
     if (!isRetry) {
       const alreadyOptedIn = await isAlreadyOptedInByPhone(from);
       if (alreadyOptedIn) {
@@ -317,6 +313,10 @@ app.post("/end", async (req, res) => {
         res.type("text/xml").send(vr.toString());
         return;
       }
+    }
+
+    if (!isRetry && !skipTransition) {
+      vr.say(TWILIO_END_TRANSITION);
     }
 
     const gather = vr.gather({
@@ -680,8 +680,7 @@ wss.on("connection", (twilioWs) => {
 
       console.log(nowIso(), "Redirected call to /end via Twilio REST", callSid);
 
-      // Key change: do not close Twilio WS, do not mark the whole session as closing.
-      // Stop OpenAI and let Twilio naturally switch to /end and send "stop".
+      // Keep Twilio WS open so Twilio can switch to /end and send a natural stop.
       closeOpenAIOnly("Redirected to /end");
     } catch (err) {
       console.log(
@@ -743,27 +742,6 @@ wss.on("connection", (twilioWs) => {
     if (t.includes(AI_END_CALL_TRIGGER)) return true;
     if (t.includes("END CALL NOW")) return true;
     return false;
-  }
-
-  function responseTextLooksLikeEndOkay(text) {
-    if (!text) return false;
-
-    const lines = String(text)
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
-
-    if (lines.length === 0) return false;
-
-    const joined = lines.join(" ").replace(/\s+/g, " ").trim();
-    const upper = joined.toUpperCase();
-
-    const normalized = upper.replace(/[^A-Z]/g, "");
-    if (normalized !== "OKAY") return false;
-
-    if (joined.length > 12) return false;
-
-    return true;
   }
 
   function buildReturnCallerInstructions(ctx) {
@@ -858,7 +836,7 @@ wss.on("connection", (twilioWs) => {
             "\n" +
             "Ending rule:\n" +
             "If the caller asks to end the call, quit, stop, hang up, or says they do not want to do this anymore, you MUST do BOTH in the SAME response:\n" +
-            "1) Say one word: Okay.\n" +
+            "1) Say exactly: Ending practice now.\n" +
             "2) In TEXT ONLY, output this exact token on its own line: END_CALL_NOW\n" +
             "Never say the token out loud.\n" +
             "Do not ask any follow up questions.\n" +
@@ -1020,8 +998,7 @@ wss.on("connection", (twilioWs) => {
         }
 
         if (turnDetectionEnabled) {
-          const aiRequestedEnd =
-            responseTextRequestsEnd(text) || responseTextLooksLikeEndOkay(text);
+          const aiRequestedEnd = responseTextRequestsEnd(text);
 
           if (!endRedirectRequested && aiRequestedEnd) {
             (async () => {
@@ -1059,31 +1036,6 @@ wss.on("connection", (twilioWs) => {
       openaiReady = false;
       closeAll("OpenAI WS error");
     });
-  }
-
-  function extractTextFromResponseDone(msg) {
-    let out = "";
-
-    const response = msg && msg.response ? msg.response : null;
-    if (!response) return out;
-
-    const output = Array.isArray(response.output) ? response.output : [];
-    for (const item of output) {
-      if (!item) continue;
-      const content = Array.isArray(item.content) ? item.content : [];
-      for (const c of content) {
-        if (!c) continue;
-        if (typeof c.text === "string") out += c.text + "\n";
-        if (typeof c.value === "string") out += c.value + "\n";
-        if (typeof c.transcript === "string") out += c.transcript + "\n";
-      }
-      if (typeof item.text === "string") out += item.text + "\n";
-      if (typeof item.transcript === "string") out += item.transcript + "\n";
-    }
-
-    if (typeof response.output_text === "string") out += response.output_text + "\n";
-
-    return out;
   }
 
   twilioWs.on("message", async (data) => {
