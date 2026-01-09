@@ -487,9 +487,7 @@ wss.on("connection", (twilioWs) => {
 
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
-  function closeAll(reason, opts) {
-    const keepTwilioOpen = !!(opts && opts.keepTwilioOpen);
-
+  function closeAll(reason) {
     if (closing) return;
     closing = true;
     console.log(nowIso(), "Closing:", reason);
@@ -505,12 +503,17 @@ wss.on("connection", (twilioWs) => {
     try {
       if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
     } catch {}
+    try {
+      if (twilioWs && twilioWs.readyState === WebSocket.OPEN) twilioWs.close();
+    } catch {}
+  }
 
-    if (!keepTwilioOpen) {
-      try {
-        if (twilioWs && twilioWs.readyState === WebSocket.OPEN) twilioWs.close();
-      } catch {}
-    }
+  function closeOpenAIOnly(reason) {
+    try {
+      console.log(nowIso(), "Closing OpenAI only:", reason);
+      if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
+    } catch {}
+    openaiReady = false;
   }
 
   function twilioSend(obj) {
@@ -677,9 +680,9 @@ wss.on("connection", (twilioWs) => {
 
       console.log(nowIso(), "Redirected call to /end via Twilio REST", callSid);
 
-      // Do not close the Twilio websocket here.
-      // Let Twilio send a natural "stop" when it switches to the new TwiML.
-      closeAll("Redirected to /end (keeping Twilio WS open)", { keepTwilioOpen: true });
+      // Key change: do not close Twilio WS, do not mark the whole session as closing.
+      // Stop OpenAI and let Twilio naturally switch to /end and send "stop".
+      closeOpenAIOnly("Redirected to /end");
     } catch (err) {
       console.log(
         nowIso(),
@@ -879,13 +882,11 @@ wss.on("connection", (twilioWs) => {
             "For a personal call, say: \"Hi, it's [first name]. What's going on?\"\n" +
             "For a business call, say: \"Hello, thanks for calling [business name], how can I help you?\"\n" +
             "Then stop speaking and wait for the caller to talk.\n" +
-            "Do not require the caller to say hello first in this mode.\n" +
             "\n" +
             "If the caller chose \"answering a call from someone\":\n" +
             "Say exactly: \"Ring, ring!\"\n" +
-            "Then stop speaking and wait.\n" +
-            "If the caller does not answer within a moment, say: \"Go ahead and answer the phone by saying hello.\"\n" +
-            "Then stop speaking and wait.\n" +
+            "Immediately say: \"Go ahead and answer the phone by saying hello.\"\n" +
+            "Then stop speaking and wait for the caller to say hello.\n" +
             "After the caller says hello, you play the person calling them.\n" +
             "You must speak first and begin the call.\n" +
             "Start with: \"Hi, it's [name].\" and then immediately continue with the first natural line of the scenario, as the caller.\n" +
@@ -1051,7 +1052,6 @@ wss.on("connection", (twilioWs) => {
     openaiWs.on("close", () => {
       console.log(nowIso(), "OpenAI WS closed");
       openaiReady = false;
-      closeAll("OpenAI closed");
     });
 
     openaiWs.on("error", (err) => {
@@ -1059,6 +1059,31 @@ wss.on("connection", (twilioWs) => {
       openaiReady = false;
       closeAll("OpenAI WS error");
     });
+  }
+
+  function extractTextFromResponseDone(msg) {
+    let out = "";
+
+    const response = msg && msg.response ? msg.response : null;
+    if (!response) return out;
+
+    const output = Array.isArray(response.output) ? response.output : [];
+    for (const item of output) {
+      if (!item) continue;
+      const content = Array.isArray(item.content) ? item.content : [];
+      for (const c of content) {
+        if (!c) continue;
+        if (typeof c.text === "string") out += c.text + "\n";
+        if (typeof c.value === "string") out += c.value + "\n";
+        if (typeof c.transcript === "string") out += c.transcript + "\n";
+      }
+      if (typeof item.text === "string") out += item.text + "\n";
+      if (typeof item.transcript === "string") out += item.transcript + "\n";
+    }
+
+    if (typeof response.output_text === "string") out += response.output_text + "\n";
+
+    return out;
   }
 
   twilioWs.on("message", async (data) => {
