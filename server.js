@@ -34,7 +34,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-incoming-outgoing-choice-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-incoming-outgoing-choice-1-meta-tags-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -256,6 +256,16 @@ function extractTokenLineValue(text, token) {
       return v || null;
     }
   }
+
+  // Support "KEY=value" style too, for META tags
+  const eqPrefix = token + "=";
+  for (const line of lines) {
+    if (line.toUpperCase().startsWith(eqPrefix.toUpperCase())) {
+      const v = line.substring(eqPrefix.length).trim();
+      return v || null;
+    }
+  }
+
   return null;
 }
 
@@ -601,10 +611,6 @@ wss.on("connection", (twilioWs) => {
   }
 
   function openaiSend(obj) {
-    if (!openaiWs || openaiWs.readyState === WebSocket.OPEN) {
-      // This condition is intentionally not returning early when OPEN.
-      // It is kept as-is from prior stable versions.
-    }
     if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
     openaiWs.send(JSON.stringify(obj));
   }
@@ -629,11 +635,21 @@ wss.on("connection", (twilioWs) => {
     const kept = [];
     for (const line of lines) {
       const upper = line.toUpperCase();
+
+      // Old tags (keep filtering just in case)
       if (upper.startsWith("SCENARIO_TAG:")) continue;
       if (upper.startsWith("FOCUS_SKILL:")) continue;
       if (upper.startsWith("COACHING_NOTE:")) continue;
+
+      // New META tags
+      if (upper.startsWith("META_SCENARIO=")) continue;
+      if (upper.startsWith("META_FOCUS=")) continue;
+      if (upper.startsWith("META_NOTE=")) continue;
+      if (upper.startsWith("META_")) continue;
+
       if (upper === AI_END_CALL_TRIGGER) continue;
       if (upper === "END CALL NOW") continue;
+
       kept.push(line);
     }
     return kept.join(" ").replace(/\s+/g, " ").trim();
@@ -731,7 +747,7 @@ wss.on("connection", (twilioWs) => {
             "Then ask them to answer your last question again.\n" +
             lastPrompt +
             "\n" +
-            "Important: Do not output SCENARIO_TAG, FOCUS_SKILL, or COACHING_NOTE in this response.\n" +
+            "Important: Do not output any META lines in this response.\n" +
             "Ask only one question at the end, then stop speaking and wait.",
         },
       });
@@ -750,7 +766,7 @@ wss.on("connection", (twilioWs) => {
           "I'm an AI helper, so you can practice without pressure. " +
           "If you get stuck, you can say help me, and I'll give you a simple line to try. " +
           "Before we start, try to be somewhere quiet, because background noise can make it harder to hear you. " +
-          "Quick question first. Do you want to practice making a call or answering a call?",
+          "Quick question first. Do you want to practice answering an incoming call, or making an outgoing call?",
       },
     });
   }
@@ -1020,14 +1036,18 @@ wss.on("connection", (twilioWs) => {
             "\"Do you want to tell me what kind of call you want to practice, or should I pick an easy one?\"\n" +
             "Wait for their answer.\n" +
             "\n" +
-            "Tagging rules (TEXT ONLY, never speak these tags out loud):\n" +
+            "META tagging rules (TEXT ONLY, never speak these out loud):\n" +
+            "You must NEVER say any line that begins with \"META_\" out loud.\n" +
+            "These META lines are for logging only.\n" +
+            "Put META lines at the very end of the response in text only.\n" +
+            "\n" +
             "Once the direction (incoming or outgoing) and scenario are chosen and setup is clear but BEFORE you ask \"Are you ready to start?\", output exactly one line:\n" +
-            "SCENARIO_TAG: <scenario>_<incoming_or_outgoing>\n" +
-            "Example: SCENARIO_TAG: retail_return_incoming\n" +
+            "META_SCENARIO=<scenario>_<incoming_or_outgoing>\n" +
+            "Example: META_SCENARIO=retail_return_incoming\n" +
+            "\n" +
             "When you give feedback (only when asked for feedback), also output exactly two lines:\n" +
-            "FOCUS_SKILL: <short_snake_case_skill>\n" +
-            "COACHING_NOTE: <one short sentence>\n" +
-            "Never say those tag lines out loud.\n" +
+            "META_FOCUS=<short_snake_case_skill>\n" +
+            "META_NOTE=<one short sentence>\n" +
             "\n" +
             "Ending rule:\n" +
             "If the caller asks to end the call, quit, stop, hang up, or says they do not want to do this anymore, you MUST do BOTH in the SAME response:\n" +
@@ -1197,15 +1217,16 @@ wss.on("connection", (twilioWs) => {
           }
         }
 
+        // Capture META tokens from model text
         if (text && callSid) {
-          const scenarioTag = extractTokenLineValue(text, "SCENARIO_TAG");
+          const scenarioTag = extractTokenLineValue(text, "META_SCENARIO");
           if (scenarioTag && !scenarioTagAlreadyCaptured) {
             scenarioTagAlreadyCaptured = true;
             setScenarioTagOnce(callSid, scenarioTag);
           }
 
-          const focusSkill = extractTokenLineValue(text, "FOCUS_SKILL");
-          const coachingNote = extractTokenLineValue(text, "COACHING_NOTE");
+          const focusSkill = extractTokenLineValue(text, "META_FOCUS");
+          const coachingNote = extractTokenLineValue(text, "META_NOTE");
           if (focusSkill || coachingNote) {
             setFocusAndNote(callSid, focusSkill, coachingNote);
           }
