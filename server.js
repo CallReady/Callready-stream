@@ -32,7 +32,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1-tier-enforcement-1-debug-logs-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1-tier-enforcement-1-debug-logs-1-opener-no-audio-retry-fix-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -1388,6 +1388,8 @@ wss.on("connection", (twilioWs) => {
         console.log(nowIso(), "OpenAI response.done", {
           count: debugResponseDoneCount,
           audioDeltasSoFar: debugAudioDeltaCount,
+          openerAudioDeltaCount,
+          turnDetectionEnabled,
         });
 
         const text = extractTextFromResponseDone(msg);
@@ -1407,6 +1409,17 @@ wss.on("connection", (twilioWs) => {
         }
 
         if (openerSent && !turnDetectionEnabled) {
+          // Fix: if OpenAI produced no opener audio, do NOT advance to VAD mode.
+          // Leave the retry timer intact so it can resend the opener once.
+          if (openerAudioDeltaCount === 0) {
+            console.log(nowIso(), "Opener completed with zero audio deltas, waiting and allowing opener retry");
+            try {
+              openerRetryTimer = null;
+            } catch {}
+            armOpenerRetryTimer();
+            return;
+          }
+
           turnDetectionEnabled = true;
           waitingForFirstCallerSpeech = true;
           sawSpeechStarted = false;
