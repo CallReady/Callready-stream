@@ -32,7 +32,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1-tier-enforcement-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1-tier-enforcement-1-datekey-fix-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -97,6 +97,12 @@ function monthBucketFirstDayUtc() {
   const y = d.getUTCFullYear();
   const m = d.getUTCMonth();
   return new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
+}
+
+function dateKey(v) {
+  if (!v) return null;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v).slice(0, 10);
 }
 
 function parseIntOrDefault(v, d) {
@@ -250,7 +256,7 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
     const tier = row && row.tier ? String(row.tier) : "free";
     const totalCalls = row && typeof row.total_calls === "number" ? row.total_calls : 1;
 
-    const monthBucket = row && row.month_bucket ? String(row.month_bucket) : bucket;
+    const monthBucket = row && row.month_bucket ? dateKey(row.month_bucket) : bucket;
     const used = row && typeof row.monthly_seconds_used === "number" ? row.monthly_seconds_used : 0;
 
     const allowance = tierMonthlyAllowanceSeconds(tier);
@@ -446,7 +452,7 @@ async function fetchCallerRuntimeContextByCallSid(callSid) {
     const allowance = tierMonthlyAllowanceSeconds(tier);
 
     const used = typeof row.monthly_seconds_used === "number" ? row.monthly_seconds_used : 0;
-    const monthBucket = row.month_bucket ? String(row.month_bucket) : bucket;
+    const monthBucket = row.month_bucket ? dateKey(row.month_bucket) : bucket;
     const usedEffective = monthBucket === bucket ? used : 0;
 
     let remaining = allowance - usedEffective;
