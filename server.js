@@ -32,7 +32,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1-tier-enforcement-1-debug-logs-1-opener-no-audio-retry-fix-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -69,12 +69,6 @@ const IN_CALL_CONFIRM_NO =
 const OPTIN_CONFIRM_SMS =
   "CallReady: You are opted in to receive texts about your practice sessions. Msg and data rates may apply. Reply STOP to opt out, HELP for help.";
 
-const TWILIO_NO_MINUTES_LEFT =
-  "Welcome back to CallReady. It looks like you do not have any practice minutes remaining on your plan right now. " +
-  "To get more time, please visit CallReady dot live. " +
-  "If you have questions, you can email support at CallReady dot live. " +
-  "Thanks for calling, and we hope you will practice again soon.";
-
 function safeJsonParse(str) {
   try {
     return JSON.parse(str);
@@ -99,33 +93,6 @@ function monthBucketFirstDayUtc() {
   return new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
 }
 
-function parseIntOrDefault(v, d) {
-  const n = parseInt(String(v || ""), 10);
-  return Number.isFinite(n) ? n : d;
-}
-
-const FREE_MONTHLY_MINUTES = parseIntOrDefault(process.env.FREE_MONTHLY_MINUTES, 30);
-const MEMBER_MONTHLY_MINUTES = parseIntOrDefault(process.env.MEMBER_MONTHLY_MINUTES, 120);
-const POWER_MONTHLY_MINUTES = parseIntOrDefault(process.env.POWER_MONTHLY_MINUTES, 600);
-
-const FREE_PER_CALL_SECONDS = parseIntOrDefault(process.env.FREE_PER_CALL_SECONDS, 300);
-const MEMBER_PER_CALL_SECONDS = parseIntOrDefault(process.env.MEMBER_PER_CALL_SECONDS, 900);
-const POWER_PER_CALL_SECONDS = parseIntOrDefault(process.env.POWER_PER_CALL_SECONDS, 1800);
-
-function tierMonthlyAllowanceSeconds(tier) {
-  const t = String(tier || "free").toLowerCase();
-  if (t === "power" || t === "power_user" || t === "poweruser") return POWER_MONTHLY_MINUTES * 60;
-  if (t === "member") return MEMBER_MONTHLY_MINUTES * 60;
-  return FREE_MONTHLY_MINUTES * 60;
-}
-
-function tierPerCallCapSeconds(tier) {
-  const t = String(tier || "free").toLowerCase();
-  if (t === "power" || t === "power_user" || t === "poweruser") return POWER_PER_CALL_SECONDS;
-  if (t === "member") return MEMBER_PER_CALL_SECONDS;
-  return FREE_PER_CALL_SECONDS;
-}
-
 async function upsertCallerOnCallStart(fromPhoneE164, callSid) {
   if (!pool) return;
   if (!fromPhoneE164) return;
@@ -135,15 +102,13 @@ async function upsertCallerOnCallStart(fromPhoneE164, callSid) {
   try {
     await pool.query(
       "insert into callers (phone_e164, first_call_at, last_call_at, total_calls, tier, month_bucket, monthly_seconds_used, per_call_seconds_cap, last_call_sid) " +
-        "values ($1, now(), now(), 1, 'free', $2::date, 0, $3, $4) " +
+        "values ($1, now(), now(), 1, 'free', $2::date, 0, 300, $3) " +
         "on conflict (phone_e164) do update set " +
         "last_call_at = now(), " +
         "total_calls = callers.total_calls + 1, " +
-        "last_call_sid = $4, " +
-        "first_call_at = coalesce(callers.first_call_at, now()), " +
-        "month_bucket = $2::date, " +
-        "monthly_seconds_used = case when callers.month_bucket is distinct from $2::date then 0 else callers.monthly_seconds_used end",
-      [fromPhoneE164, bucket, FREE_PER_CALL_SECONDS, callSid || null]
+        "last_call_sid = $3, " +
+        "first_call_at = coalesce(callers.first_call_at, now())",
+      [fromPhoneE164, bucket, callSid || null]
     );
 
     console.log(nowIso(), "Upserted caller row", {
@@ -194,15 +159,14 @@ async function logCallStartToDb(callSid, fromPhoneE164) {
 
   try {
     await pool.query(
-      "insert into calls (call_sid, phone_e164, started_at, minutes_cap_applied) values ($1, $2, now(), $3) " +
-        "on conflict (call_sid) do update set phone_e164 = coalesce(calls.phone_e164, excluded.phone_e164)",
-      [callSid, fromPhoneE164 || null, Math.ceil(FREE_PER_CALL_SECONDS / 60)]
+      "insert into calls (call_sid, phone_e164, started_at, minutes_cap_applied) values ($1, $2, now(), $3) on conflict (call_sid) do update set phone_e164 = coalesce(calls.phone_e164, excluded.phone_e164)",
+      [callSid, fromPhoneE164 || null, 5]
     );
 
     console.log(nowIso(), "Logged call start to DB", {
       callSid,
       phone_e164: fromPhoneE164 || null,
-      minutes_cap_applied: Math.ceil(FREE_PER_CALL_SECONDS / 60),
+      minutes_cap_applied: 5,
     });
   } catch (e) {
     console.log(
@@ -217,157 +181,20 @@ async function logCallStartToDb(callSid, fromPhoneE164) {
   } catch {}
 }
 
-async function applyTierForIncomingCall(fromPhoneE164, callSid) {
-  if (!pool) {
-    return {
-      allowed: true,
-      tier: "free",
-      remainingSeconds: tierMonthlyAllowanceSeconds("free"),
-      perCallCapSeconds: FREE_PER_CALL_SECONDS,
-      totalCalls: 1,
-    };
-  }
-
-  if (!fromPhoneE164) {
-    return {
-      allowed: true,
-      tier: "free",
-      remainingSeconds: tierMonthlyAllowanceSeconds("free"),
-      perCallCapSeconds: FREE_PER_CALL_SECONDS,
-      totalCalls: 1,
-    };
-  }
-
-  const bucket = monthBucketFirstDayUtc();
-
-  try {
-    const r = await pool.query(
-      "select tier, month_bucket, monthly_seconds_used, total_calls from callers where phone_e164 = $1 limit 1",
-      [fromPhoneE164]
-    );
-
-    const row = r && r.rows && r.rows[0] ? r.rows[0] : null;
-    const tier = row && row.tier ? String(row.tier) : "free";
-    const totalCalls = row && typeof row.total_calls === "number" ? row.total_calls : 1;
-
-    const monthBucket = row && row.month_bucket ? String(row.month_bucket) : bucket;
-    const used = row && typeof row.monthly_seconds_used === "number" ? row.monthly_seconds_used : 0;
-
-    const allowance = tierMonthlyAllowanceSeconds(tier);
-    const usedEffective = monthBucket === bucket ? used : 0;
-
-    let remaining = allowance - usedEffective;
-    if (!Number.isFinite(remaining)) remaining = allowance;
-    if (remaining < 0) remaining = 0;
-
-    const baseCap = tierPerCallCapSeconds(tier);
-    const perCallCapSeconds = remaining > 0 ? Math.max(1, Math.min(baseCap, remaining)) : 0;
-
-    if (perCallCapSeconds > 0) {
-      try {
-        await pool.query(
-          "update callers set per_call_seconds_cap = $2, month_bucket = $3::date, monthly_seconds_used = case when month_bucket is distinct from $3::date then 0 else monthly_seconds_used end where phone_e164 = $1",
-          [fromPhoneE164, perCallCapSeconds, bucket]
-        );
-      } catch {}
-    }
-
-    try {
-      if (callSid) {
-        await pool.query(
-          "update calls set minutes_cap_applied = $2 where call_sid = $1",
-          [callSid, Math.ceil(perCallCapSeconds / 60)]
-        );
-      }
-    } catch {}
-
-    const allowed = remaining > 0;
-
-    console.log(nowIso(), "Tier check", {
-      phone_e164: fromPhoneE164,
-      tier,
-      bucket,
-      remainingSeconds: remaining,
-      perCallCapSeconds,
-      allowed,
-      totalCalls,
-    });
-
-    return {
-      allowed,
-      tier,
-      remainingSeconds: remaining,
-      perCallCapSeconds,
-      totalCalls,
-    };
-  } catch (e) {
-    console.log(
-      nowIso(),
-      "DB tier check failed, defaulting to free:",
-      e && e.message ? e.message : e
-    );
-
-    return {
-      allowed: true,
-      tier: "free",
-      remainingSeconds: tierMonthlyAllowanceSeconds("free"),
-      perCallCapSeconds: FREE_PER_CALL_SECONDS,
-      totalCalls: 1,
-    };
-  }
-}
-
 async function logCallEndToDb(callSid, endedReason) {
   if (!pool) return;
   if (!callSid) return;
 
   try {
-    const upd = await pool.query(
-      "with u as ( " +
-        "update calls set ended_at = now(), ended_reason = $2, duration_seconds = extract(epoch from (now() - started_at))::int " +
-        "where call_sid = $1 and ended_at is null " +
-        "returning phone_e164, duration_seconds " +
-        ") " +
-        "select phone_e164, duration_seconds from u",
+    await pool.query(
+      "update calls set ended_at = now(), ended_reason = $2, duration_seconds = extract(epoch from (now() - started_at))::int where call_sid = $1",
       [callSid, endedReason || null]
     );
-
-    const row = upd && upd.rows && upd.rows[0] ? upd.rows[0] : null;
 
     console.log(nowIso(), "Logged call end to DB", {
       callSid,
       ended_reason: endedReason || null,
-      duration_seconds: row && typeof row.duration_seconds === "number" ? row.duration_seconds : null,
-      phone_e164: row && row.phone_e164 ? row.phone_e164 : null,
     });
-
-    if (row && row.phone_e164 && typeof row.duration_seconds === "number" && row.duration_seconds > 0) {
-      const bucket = monthBucketFirstDayUtc();
-      try {
-        await pool.query(
-          "update callers set " +
-            "month_bucket = $3::date, " +
-            "monthly_seconds_used = case " +
-            "when month_bucket is distinct from $3::date then $2 " +
-            "else coalesce(monthly_seconds_used, 0) + $2 end, " +
-            "last_call_sid = $4 " +
-            "where phone_e164 = $1",
-          [row.phone_e164, row.duration_seconds, bucket, callSid]
-        );
-
-        console.log(nowIso(), "Updated callers monthly_seconds_used", {
-          phone_e164: row.phone_e164,
-          added_seconds: row.duration_seconds,
-          bucket,
-        });
-      } catch (e) {
-        console.log(
-          nowIso(),
-          "DB update failed for callers monthly_seconds_used:",
-          e && e.message ? e.message : e
-        );
-      }
-    }
   } catch (e) {
     console.log(
       nowIso(),
@@ -419,55 +246,6 @@ async function fetchPriorCallContextByCallSid(callSid) {
     console.log(
       nowIso(),
       "DB fetch failed for prior call context:",
-      e && e.message ? e.message : e
-    );
-    return null;
-  }
-}
-
-async function fetchCallerRuntimeContextByCallSid(callSid) {
-  if (!pool) return null;
-  if (!callSid) return null;
-
-  const bucket = monthBucketFirstDayUtc();
-
-  try {
-    const r = await pool.query(
-      "select c.phone_e164, cl.tier, cl.month_bucket, cl.monthly_seconds_used, cl.per_call_seconds_cap, cl.total_calls, cl.sms_opted_in " +
-        "from calls c join callers cl on cl.phone_e164 = c.phone_e164 " +
-        "where c.call_sid = $1 limit 1",
-      [callSid]
-    );
-
-    const row = r && r.rows && r.rows[0] ? r.rows[0] : null;
-    if (!row) return null;
-
-    const tier = row.tier ? String(row.tier) : "free";
-    const allowance = tierMonthlyAllowanceSeconds(tier);
-
-    const used = typeof row.monthly_seconds_used === "number" ? row.monthly_seconds_used : 0;
-    const monthBucket = row.month_bucket ? String(row.month_bucket) : bucket;
-    const usedEffective = monthBucket === bucket ? used : 0;
-
-    let remaining = allowance - usedEffective;
-    if (!Number.isFinite(remaining)) remaining = allowance;
-    if (remaining < 0) remaining = 0;
-
-    const perCallCapSeconds =
-      typeof row.per_call_seconds_cap === "number" ? row.per_call_seconds_cap : tierPerCallCapSeconds(tier);
-
-    return {
-      phone_e164: row.phone_e164 || null,
-      tier,
-      remainingSeconds: remaining,
-      perCallCapSeconds,
-      totalCalls: typeof row.total_calls === "number" ? row.total_calls : 1,
-      sms_opted_in: !!row.sms_opted_in,
-    };
-  } catch (e) {
-    console.log(
-      nowIso(),
-      "DB fetch failed for caller runtime context:",
       e && e.message ? e.message : e
     );
     return null;
@@ -567,28 +345,8 @@ app.post("/voice", async (req, res) => {
       await logCallStartToDb(callSid, from);
     }
 
-    const tierDecision = await applyTierForIncomingCall(from, callSid);
-
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
-
-    if (!tierDecision.allowed) {
-      console.log(nowIso(), "Blocking call due to no remaining minutes", {
-        from,
-        callSid,
-        tier: tierDecision.tier,
-        remainingSeconds: tierDecision.remainingSeconds,
-      });
-
-      if (callSid) {
-        fireAndForgetCallEndLog(callSid, "no_minutes_remaining");
-      }
-
-      vr.say(TWILIO_NO_MINUTES_LEFT);
-      vr.hangup();
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
 
     if (!PUBLIC_WSS_URL) {
       vr.say("Server is missing PUBLIC W S S U R L.");
@@ -824,19 +582,6 @@ wss.on("connection", (twilioWs) => {
   let scenarioTagCaptureInFlight = false;
   let scenarioTagCaptureResolve = null;
 
-  let callerRuntime = null;
-  let perCallCapSeconds = FREE_PER_CALL_SECONDS;
-
-  // Debug-only state
-  let debugSpeechStartedCount = 0;
-  let debugResponseCreatedCount = 0;
-  let debugResponseDoneCount = 0;
-  let debugAudioDeltaCount = 0;
-  let debugDroppedAiAudioFirstSpeechGuardLogged = false;
-  let debugDroppedAiAudioTurnLockLogged = false;
-  let debugSuppressedCallerAudioLogged = false;
-  let debugLastOpenAiMessageAtMs = Date.now();
-
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
   function closeAll(reason) {
@@ -888,74 +633,19 @@ wss.on("connection", (twilioWs) => {
     } catch {}
   }
 
-  function formatMinutesApprox(seconds) {
-    const s = typeof seconds === "number" && seconds >= 0 ? seconds : 0;
-    const m = Math.max(0, Math.ceil(s / 60));
-    return String(m);
-  }
-
-  function buildDynamicOpenerSpeech() {
-    const base =
-      "Welcome to CallReady, a safe place to practice phone calls before they matter. " +
-      "I'm an AI helper, so you can practice without pressure. " +
-      "If you get stuck, you can say help me, and I'll give you a simple line to try. " +
-      "Before we start, try to be somewhere quiet, because background noise can make it harder to hear you. ";
-
-    if (!callerRuntime) {
-      return (
-        base +
-        "Quick question first. Do you want to practice calling someone, or answering a call from someone?"
-      );
-    }
-
-    const totalCalls = callerRuntime.totalCalls || 1;
-    const tier = String(callerRuntime.tier || "free");
-    const remainingMinutes = formatMinutesApprox(callerRuntime.remainingSeconds);
-    const capMinutes = formatMinutesApprox(perCallCapSeconds);
-
-    if (totalCalls <= 1) {
-      return (
-        base +
-        "You're set up with a free trial plan tied to your phone number. " +
-        "Quick question first. Do you want to practice calling someone, or answering a call from someone?"
-      );
-    }
-
-    if (String(tier).toLowerCase() === "free") {
-      return (
-        "Welcome back to CallReady. " +
-        "You have about " +
-        remainingMinutes +
-        " minutes remaining this month on your free plan. " +
-        "Practice calls are limited to about " +
-        capMinutes +
-        " minutes. " +
-        "For more time, visit CallReady dot live. " +
-        "Quick question first. Do you want to practice calling someone, or answering a call from someone?"
-      );
-    }
-
-    return (
-      "Welcome back to CallReady. " +
-      "You have about " +
-      remainingMinutes +
-      " minutes remaining this month on your plan. " +
-      "This call is limited to about " +
-      capMinutes +
-      " minutes. " +
-      "Quick question first. Do you want to practice calling someone, or answering a call from someone?"
-    );
-  }
-
   function sendOpenerOnce(label) {
     console.log(nowIso(), "Sending opener", label ? `(${label})` : "");
-    const openerSpeech = buildDynamicOpenerSpeech();
-
     openaiSend({
       type: "response.create",
       response: {
         modalities: ["audio", "text"],
-        instructions: "Speak this exactly, naturally, then stop speaking:\n" + openerSpeech,
+        instructions:
+          "Speak this exactly, naturally, then stop speaking:\n" +
+          "Welcome to CallReady, a safe place to practice phone calls before they matter. " +
+          "I'm an AI helper, so you can practice without pressure. " +
+          "If you get stuck, you can say help me, and I'll give you a simple line to try. " +
+          "Before we start, try to be somewhere quiet, because background noise can make it harder to hear you. " +
+          "Quick question first. Do you want to practice calling someone, or answering a call from someone?",
       },
     });
   }
@@ -1102,25 +792,19 @@ wss.on("connection", (twilioWs) => {
     if (sessionTimerStarted) return;
     sessionTimerStarted = true;
 
-    const capMs = Math.max(1, perCallCapSeconds || FREE_PER_CALL_SECONDS) * 1000;
-
     sessionTimer = setTimeout(() => {
       (async () => {
-        console.log(nowIso(), "Session timer fired, ending session, redirecting to /end", {
-          perCallCapSeconds,
-        });
+        console.log(nowIso(), "Trial timer fired, ending session, redirecting to /end");
         cancelOpenAIResponseIfAnyOnce("redirecting to /end");
 
         await requestScenarioTagTextOnlyOnce("timer_end");
 
         prepForEnding();
-        await redirectCallToEnd("Session timer fired", { skipTransition: false });
+        await redirectCallToEnd("Trial timer fired", { skipTransition: false });
       })().catch(() => {});
-    }, capMs);
+    }, 300 * 1000);
 
-    console.log(nowIso(), "Session timer started after first caller speech_started", {
-      perCallCapSeconds,
-    });
+    console.log(nowIso(), "Session timer started (300s) after first caller speech_started");
   }
 
   function extractTextFromResponseDone(msg) {
@@ -1310,14 +994,10 @@ wss.on("connection", (twilioWs) => {
     });
 
     openaiWs.on("message", (data) => {
-      debugLastOpenAiMessageAtMs = Date.now();
-
       const msg = safeJsonParse(data.toString());
       if (!msg) return;
 
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
-        debugAudioDeltaCount += 1;
-
         if (!turnDetectionEnabled && openerSent) {
           openerAudioDeltaCount += 1;
           if (openerAudioDeltaCount === 1) {
@@ -1326,10 +1006,6 @@ wss.on("connection", (twilioWs) => {
         }
 
         if (turnDetectionEnabled && waitingForFirstCallerSpeech && !sawSpeechStarted) {
-          if (!debugDroppedAiAudioFirstSpeechGuardLogged) {
-            debugDroppedAiAudioFirstSpeechGuardLogged = true;
-            console.log(nowIso(), "Dropping AI audio because caller has not spoken yet (first speech guard)");
-          }
           cancelOpenAIResponseIfAnyOnce("AI spoke before first caller speech");
           return;
         }
@@ -1339,10 +1015,6 @@ wss.on("connection", (twilioWs) => {
           requireCallerSpeechBeforeNextAI &&
           !sawCallerSpeechSinceLastAIDone
         ) {
-          if (!debugDroppedAiAudioTurnLockLogged) {
-            debugDroppedAiAudioTurnLockLogged = true;
-            console.log(nowIso(), "Dropping AI audio due to turn lock, waiting for caller speech");
-          }
           cancelOpenAIResponseIfAnyOnce("turn lock active");
           return;
         }
@@ -1352,14 +1024,6 @@ wss.on("connection", (twilioWs) => {
       }
 
       if (msg.type === "input_audio_buffer.speech_started") {
-        debugSpeechStartedCount += 1;
-
-        console.log(nowIso(), "speech_started detected", {
-          count: debugSpeechStartedCount,
-          waitingForFirstCallerSpeech,
-          turnDetectionEnabled,
-        });
-
         sawSpeechStarted = true;
 
         if (waitingForFirstCallerSpeech) {
@@ -1372,26 +1036,15 @@ wss.on("connection", (twilioWs) => {
         }
 
         sawCallerSpeechSinceLastAIDone = true;
-        debugDroppedAiAudioTurnLockLogged = false;
         return;
       }
 
       if (msg.type === "response.created") {
-        debugResponseCreatedCount += 1;
-        console.log(nowIso(), "OpenAI response.created", { count: debugResponseCreatedCount });
         responseActive = true;
         return;
       }
 
       if (msg.type === "response.done") {
-        debugResponseDoneCount += 1;
-        console.log(nowIso(), "OpenAI response.done", {
-          count: debugResponseDoneCount,
-          audioDeltasSoFar: debugAudioDeltaCount,
-          openerAudioDeltaCount,
-          turnDetectionEnabled,
-        });
-
         const text = extractTextFromResponseDone(msg);
         responseActive = false;
 
@@ -1409,17 +1062,6 @@ wss.on("connection", (twilioWs) => {
         }
 
         if (openerSent && !turnDetectionEnabled) {
-          // Fix: if OpenAI produced no opener audio, do NOT advance to VAD mode.
-          // Leave the retry timer intact so it can resend the opener once.
-          if (openerAudioDeltaCount === 0) {
-            console.log(nowIso(), "Opener completed with zero audio deltas, waiting and allowing opener retry");
-            try {
-              openerRetryTimer = null;
-            } catch {}
-            armOpenerRetryTimer();
-            return;
-          }
-
           turnDetectionEnabled = true;
           waitingForFirstCallerSpeech = true;
           sawSpeechStarted = false;
@@ -1468,22 +1110,8 @@ wss.on("connection", (twilioWs) => {
 
           requireCallerSpeechBeforeNextAI = true;
           sawCallerSpeechSinceLastAIDone = false;
-          debugDroppedAiAudioTurnLockLogged = false;
           return;
         }
-      }
-
-      if (msg.type === "conversation.item.input_audio_transcription.completed") {
-        const transcript =
-          msg && msg.transcript && typeof msg.transcript === "string"
-            ? msg.transcript
-            : null;
-
-        console.log(nowIso(), "Transcription completed", {
-          hasTranscript: !!transcript,
-          preview: transcript ? transcript.slice(0, 120) : null,
-        });
-        return;
       }
 
       if (msg.type === "error") {
@@ -1504,20 +1132,14 @@ wss.on("connection", (twilioWs) => {
     });
 
     openaiWs.on("close", () => {
-      console.log(nowIso(), "OpenAI WS closed", {
-        lastOpenAiMessageMsAgo: Date.now() - debugLastOpenAiMessageAtMs,
-        speechStartedCount: debugSpeechStartedCount,
-        responseCreatedCount: debugResponseCreatedCount,
-        responseDoneCount: debugResponseDoneCount,
-        audioDeltaCount: debugAudioDeltaCount,
-      });
+      console.log(nowIso(), "OpenAI WS closed");
       openaiReady = false;
     });
 
     openaiWs.on("error", (err) => {
-      const msgText = err && err.message ? String(err.message) : "";
-      if (msgText.includes("response_cancel_not_active")) {
-        console.log(nowIso(), "OpenAI WS non-fatal error (ignored):", msgText);
+      const msg = err && err.message ? String(err.message) : "";
+      if (msg.includes("response_cancel_not_active")) {
+        console.log(nowIso(), "OpenAI WS non-fatal error (ignored):", msg);
         return;
       }
 
@@ -1543,24 +1165,6 @@ wss.on("connection", (twilioWs) => {
         if (priorContext) {
           console.log(nowIso(), "Loaded prior call context", priorContext);
         }
-
-        callerRuntime = await fetchCallerRuntimeContextByCallSid(callSid);
-        if (callerRuntime) {
-          perCallCapSeconds =
-            typeof callerRuntime.perCallCapSeconds === "number" && callerRuntime.perCallCapSeconds > 0
-              ? callerRuntime.perCallCapSeconds
-              : FREE_PER_CALL_SECONDS;
-
-          console.log(nowIso(), "Loaded caller runtime", {
-            tier: callerRuntime.tier,
-            remainingSeconds: callerRuntime.remainingSeconds,
-            perCallCapSeconds,
-            totalCalls: callerRuntime.totalCalls,
-            sms_opted_in: callerRuntime.sms_opted_in,
-          });
-        } else {
-          console.log(nowIso(), "Caller runtime not found for callSid", callSid);
-        }
       }
 
       startOpenAIRealtime();
@@ -1569,14 +1173,7 @@ wss.on("connection", (twilioWs) => {
 
     if (msg.event === "media") {
       if (!turnDetectionEnabled) return;
-
-      if (suppressCallerAudioToOpenAI) {
-        if (!debugSuppressedCallerAudioLogged) {
-          debugSuppressedCallerAudioLogged = true;
-          console.log(nowIso(), "Caller audio suppressed (suppressCallerAudioToOpenAI=true)");
-        }
-        return;
-      }
+      if (suppressCallerAudioToOpenAI) return;
 
       if (openaiReady && msg.media && msg.media.payload) {
         if (requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
