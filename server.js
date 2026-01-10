@@ -1165,7 +1165,7 @@ wss.on("connection", (twilioWs) => {
             "\"Do you want to practice calling someone, or answering a call from someone?\"\n" +
             "Then ask whether they want to choose the scenario or have you choose.\n" +
             "Roleplay start rules:\n" +
-            "When roleplay begins and the caller is practicing calling someone, start by saying /Ring ring/ and then immediately speak roleplaying as the person answering the call with something like "Hello, this is..."\n" +
+            "When roleplay begins and the caller is practicing calling someone, start by saying /Ring ring/ and then immediately speak roleplaying as the person answering the call with something like /Hello, this is.../" +
             "When roleplay begins and the caller is practicing answering a call, start by saying /Ring ring/ the tell the caller to answer by saying hello.\n" +
             "Do not say /Ring ring/ at any other time.\n" +
             "\n" +
@@ -1182,9 +1182,9 @@ wss.on("connection", (twilioWs) => {
             "\n" +
             "End of scenario:\n" +
             "When it is clear that the scenario is at an end, say /That wraps the scenario. Would you like some feedback about how you did?/\n" +
-            "If the caller says /no/ or similar, ask if they would like to try that scenario again or try something else"\n +
+            "If the caller says /no/ or similar, ask if they would like to try that scenario again or try something else" +
             "Follow their answer to restart a new scenario\n" +
-            "If the caller requests feedback, tell them one good thing they did, one thing they can work on for next time, and encourage them to keep practicing. Then return to asking whether they want to practice it again, try something else, or end our practice session." \n +
+            "If the caller requests feedback, tell them one good thing they did, one thing they can work on for next time, and encourage them to keep practicing. Then return to asking whether they want to practice it again, try something else, or end our practice session." +
 
             "Ending rule:\n" +
             "If the caller asks to end the call, quit, stop, hang up, or says they do not want to do this anymore, you MUST do BOTH in the SAME response:\n" +
