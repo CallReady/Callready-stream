@@ -32,7 +32,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1-tier-enforcement-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1-tier-enforcement-1-debug-logs-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -827,6 +827,16 @@ wss.on("connection", (twilioWs) => {
   let callerRuntime = null;
   let perCallCapSeconds = FREE_PER_CALL_SECONDS;
 
+  // Debug-only state
+  let debugSpeechStartedCount = 0;
+  let debugResponseCreatedCount = 0;
+  let debugResponseDoneCount = 0;
+  let debugAudioDeltaCount = 0;
+  let debugDroppedAiAudioFirstSpeechGuardLogged = false;
+  let debugDroppedAiAudioTurnLockLogged = false;
+  let debugSuppressedCallerAudioLogged = false;
+  let debugLastOpenAiMessageAtMs = Date.now();
+
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
   function closeAll(reason) {
@@ -1300,10 +1310,14 @@ wss.on("connection", (twilioWs) => {
     });
 
     openaiWs.on("message", (data) => {
+      debugLastOpenAiMessageAtMs = Date.now();
+
       const msg = safeJsonParse(data.toString());
       if (!msg) return;
 
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
+        debugAudioDeltaCount += 1;
+
         if (!turnDetectionEnabled && openerSent) {
           openerAudioDeltaCount += 1;
           if (openerAudioDeltaCount === 1) {
@@ -1312,6 +1326,10 @@ wss.on("connection", (twilioWs) => {
         }
 
         if (turnDetectionEnabled && waitingForFirstCallerSpeech && !sawSpeechStarted) {
+          if (!debugDroppedAiAudioFirstSpeechGuardLogged) {
+            debugDroppedAiAudioFirstSpeechGuardLogged = true;
+            console.log(nowIso(), "Dropping AI audio because caller has not spoken yet (first speech guard)");
+          }
           cancelOpenAIResponseIfAnyOnce("AI spoke before first caller speech");
           return;
         }
@@ -1321,6 +1339,10 @@ wss.on("connection", (twilioWs) => {
           requireCallerSpeechBeforeNextAI &&
           !sawCallerSpeechSinceLastAIDone
         ) {
+          if (!debugDroppedAiAudioTurnLockLogged) {
+            debugDroppedAiAudioTurnLockLogged = true;
+            console.log(nowIso(), "Dropping AI audio due to turn lock, waiting for caller speech");
+          }
           cancelOpenAIResponseIfAnyOnce("turn lock active");
           return;
         }
@@ -1330,6 +1352,14 @@ wss.on("connection", (twilioWs) => {
       }
 
       if (msg.type === "input_audio_buffer.speech_started") {
+        debugSpeechStartedCount += 1;
+
+        console.log(nowIso(), "speech_started detected", {
+          count: debugSpeechStartedCount,
+          waitingForFirstCallerSpeech,
+          turnDetectionEnabled,
+        });
+
         sawSpeechStarted = true;
 
         if (waitingForFirstCallerSpeech) {
@@ -1342,15 +1372,24 @@ wss.on("connection", (twilioWs) => {
         }
 
         sawCallerSpeechSinceLastAIDone = true;
+        debugDroppedAiAudioTurnLockLogged = false;
         return;
       }
 
       if (msg.type === "response.created") {
+        debugResponseCreatedCount += 1;
+        console.log(nowIso(), "OpenAI response.created", { count: debugResponseCreatedCount });
         responseActive = true;
         return;
       }
 
       if (msg.type === "response.done") {
+        debugResponseDoneCount += 1;
+        console.log(nowIso(), "OpenAI response.done", {
+          count: debugResponseDoneCount,
+          audioDeltasSoFar: debugAudioDeltaCount,
+        });
+
         const text = extractTextFromResponseDone(msg);
         responseActive = false;
 
@@ -1416,8 +1455,22 @@ wss.on("connection", (twilioWs) => {
 
           requireCallerSpeechBeforeNextAI = true;
           sawCallerSpeechSinceLastAIDone = false;
+          debugDroppedAiAudioTurnLockLogged = false;
           return;
         }
+      }
+
+      if (msg.type === "conversation.item.input_audio_transcription.completed") {
+        const transcript =
+          msg && msg.transcript && typeof msg.transcript === "string"
+            ? msg.transcript
+            : null;
+
+        console.log(nowIso(), "Transcription completed", {
+          hasTranscript: !!transcript,
+          preview: transcript ? transcript.slice(0, 120) : null,
+        });
+        return;
       }
 
       if (msg.type === "error") {
@@ -1438,14 +1491,20 @@ wss.on("connection", (twilioWs) => {
     });
 
     openaiWs.on("close", () => {
-      console.log(nowIso(), "OpenAI WS closed");
+      console.log(nowIso(), "OpenAI WS closed", {
+        lastOpenAiMessageMsAgo: Date.now() - debugLastOpenAiMessageAtMs,
+        speechStartedCount: debugSpeechStartedCount,
+        responseCreatedCount: debugResponseCreatedCount,
+        responseDoneCount: debugResponseDoneCount,
+        audioDeltaCount: debugAudioDeltaCount,
+      });
       openaiReady = false;
     });
 
     openaiWs.on("error", (err) => {
-      const msg = err && err.message ? String(err.message) : "";
-      if (msg.includes("response_cancel_not_active")) {
-        console.log(nowIso(), "OpenAI WS non-fatal error (ignored):", msg);
+      const msgText = err && err.message ? String(err.message) : "";
+      if (msgText.includes("response_cancel_not_active")) {
+        console.log(nowIso(), "OpenAI WS non-fatal error (ignored):", msgText);
         return;
       }
 
@@ -1486,6 +1545,8 @@ wss.on("connection", (twilioWs) => {
             totalCalls: callerRuntime.totalCalls,
             sms_opted_in: callerRuntime.sms_opted_in,
           });
+        } else {
+          console.log(nowIso(), "Caller runtime not found for callSid", callSid);
         }
       }
 
@@ -1495,7 +1556,14 @@ wss.on("connection", (twilioWs) => {
 
     if (msg.event === "media") {
       if (!turnDetectionEnabled) return;
-      if (suppressCallerAudioToOpenAI) return;
+
+      if (suppressCallerAudioToOpenAI) {
+        if (!debugSuppressedCallerAudioLogged) {
+          debugSuppressedCallerAudioLogged = true;
+          console.log(nowIso(), "Caller audio suppressed (suppressCallerAudioToOpenAI=true)");
+        }
+        return;
+      }
 
       if (openaiReady && msg.media && msg.media.payload) {
         if (requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
