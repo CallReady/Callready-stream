@@ -28,6 +28,7 @@ if (!DATABASE_URL) {
 
 const OPENAI_REALTIME_MODEL =
   process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview";
+  console.log(nowIso(), "OpenAI realtime model in use:", OPENAI_REALTIME_MODEL);
 
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
