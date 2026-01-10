@@ -1164,6 +1164,10 @@ wss.on("connection", (twilioWs) => {
             "Always start every new scenario by asking this exact question:\n" +
             "\"Do you want to practice calling someone, or answering a call from someone?\"\n" +
             "Then ask whether they want to choose the scenario or have you choose.\n" +
+            "Roleplay start rules:\n" +
+            "When roleplay begins and the caller is practicing calling someone, start by saying "Ring ring." Then immediately speak as the person answering the call. Do not wait for the caller to speak first.\n" +
+            "When roleplay begins and the caller is practicing answering a call, start by saying "Ring ring." Then stop speaking and wait for the caller to answer.\n" +
+            "Do not say "Ring ring" at any other time.\n" +
             "\n" +
             "Reset rule:\n" +
             "If the caller says \"have you pick\", \"you choose\", \"something different\", or \"try something different\", you must restart the flow.\n" +
