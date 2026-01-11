@@ -897,43 +897,49 @@ wss.on("connection", (twilioWs) => {
     return String(m);
   }
 
-  function buildDynamicOpenerSpeech() {
-    const base =
-      "Welcome to CallReady, helping people practice phone calls in a calm, supportive way when real calls feel overwhelming. " +
-      "I'm an AI helper, so you can practice without pressure. " +
-      "If you get stuck, you can say help me, and I'll give you a simple line to try. " +
-      "If you can, try to be somewhere quiet so I can hear you clearly. ";
+function buildDynamicOpenerSpeech() {
+  const base =
+    "Welcome to CallReady, helping people practice phone calls in a calm, supportive way when real calls feel overwhelming. " +
+    "I'm an AI helper, so you can practice without pressure. " +
+    "If you get stuck, you can say help me, and I'll give you a simple line to try. " +
+    "If you can, try to be somewhere quiet so I can hear you clearly. ";
 
-    if (!callerRuntime) {
-      return base;
-    }
+  if (!callerRuntime) {
+    return base;
+  }
 
-    const totalCalls = callerRuntime.totalCalls || 1;
-    const tier = String(callerRuntime.tier || "free");
-    const remainingMinutes = formatMinutesApprox(callerRuntime.remainingSeconds);
+  const totalCalls = callerRuntime.totalCalls || 1;
+  const tier = String(callerRuntime.tier || "free");
+  const remainingMinutes = formatMinutesApprox(callerRuntime.remainingSeconds);
+  const resetDate = formatResetDateForSpeech(callerRuntime.cycle_ends_at);
 
-    if (totalCalls <= 1) {
-      return base + "We've set you up with a free plan connected to your phone number. ";
-    }
+  if (totalCalls <= 1) {
+    return base + "We've set you up with a free plan connected to your phone number. ";
+  }
 
-    if (String(tier).toLowerCase() === "free") {
-      return (
-        "Welcome back to CallReady. " +
-        "You have about " +
-        remainingMinutes +
-        " minutes remaining this month on your free plan. " +
-        "Individual calls on the free plan are limited to 5 minutes. " +
-        "For more time, visit CallReady dot live. "
-      );
-    }
-
+  if (tier.toLowerCase() === "free") {
     return (
       "Welcome back to CallReady. " +
-      "You have about " +
+      "You have " +
       remainingMinutes +
-      " minutes remaining this month on your plan. "
+      " minutes remaining on your current plan until it resets on " +
+      resetDate +
+      ". " +
+      "Individual calls on the free plan are limited to 5 minutes. " +
+      "If you'd like more minutes, explore your options at CallReady dot Live. "
     );
   }
+
+  return (
+    "Welcome back to CallReady. " +
+    "You have " +
+    remainingMinutes +
+    " minutes remaining on your current plan until it resets on " +
+    resetDate +
+    ". "
+  );
+}
+
 
   function sendOpenerOnce(label) {
     console.log(nowIso(), "Sending opener", label ? "(" + label + ")" : "");
