@@ -21,6 +21,13 @@ const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 function nowIso() {
   return new Date().toISOString();
 }
+process.on("uncaughtException", (err) => {
+console.log(nowIso(), "FATAL uncaughtException:", err && err.stack ? err.stack : err);
+});
+
+process.on("unhandledRejection", (err) => {
+console.log(nowIso(), "FATAL unhandledRejection:", err && err.stack ? err.stack : err);
+});
 
 if (!DATABASE_URL) {
   console.log(nowIso(), "Warning: DATABASE_URL is not set, DB features disabled");
@@ -1164,9 +1171,17 @@ wss.on("connection", (twilioWs) => {
             "Do you want to practice making a call, or answering a call?\n" +
             "Then ask whether they want to choose the scenario or have you choose.\n" +
             "\n" +
-            "Roleplay start rules:\n" +
-            "When roleplay begins for an outgoing call, do the following in one continuous response. First, say exactly this phrase: Ring ring. Then, without pausing or waiting for the caller, immediately speak as the person answering the call. Do not ask a question before speaking as the person answering.\n" +
-            "When roleplay begins for an incoming call, do the following in one continuous response. First, say exactly this phrase: Ring ring. Then, without pausing or waiting for the caller, immediately say: Say hello to answer the call. Do not ask a question before speaking.\n" +
+            "When roleplay begins for an outgoing call, you must produce one single continuous spoken response with two parts.\n" +
+            "Part 1, say exactly this on its own line:\n" +
+            "Ring ring.\n" +
+            "Part 2, immediately continue speaking as the person answering the call. Do not pause, do not wait for the caller, and do not stop after Ring ring.\n" +
+            "Do not ask the caller a question before you speak as the person answering.\n" +
+            "\n" +
+            "When roleplay begins for an incoming call, you must produce one single short spoken response, then stop.\n" +
+            "Say exactly this on its own line:\n" +
+            "After the ring, say hello to begin the call. Ring ring.\n" +
+            "Then stop speaking and wait for the caller to answer.\n" +
+            "\n" +
             "Do not say Ring ring at any other time.\n" +
             "\n" +
             "Reset rule:\n" +
