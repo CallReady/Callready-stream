@@ -1275,12 +1275,8 @@ wss.on("connection", (twilioWs) => {
 
       if (msg.type === "response.created") {
         responseActive = true;
-        return;
-      if (msg.type === "response.created") {
-        responseActive = true;
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.created (post-opener)");
         return;
-        }
       }
 
       if (msg.type === "response.done") {
