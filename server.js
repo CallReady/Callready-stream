@@ -812,6 +812,7 @@ wss.on("connection", (twilioWs) => {
 
   let callerRuntime = null;
   let perCallCapSeconds = FREE_PER_CALL_SECONDS;
+  let twilioMediaCount = 0;
 
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
@@ -1263,11 +1264,17 @@ wss.on("connection", (twilioWs) => {
       if (msg.type === "response.created") {
         responseActive = true;
         return;
+      if (msg.type === "response.created") {
+        responseActive = true;
+        if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.created (post-opener)");
+        return;
+        }
       }
 
       if (msg.type === "response.done") {
         const text = extractTextFromResponseDone(msg);
         responseActive = false;
+        if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
 
         if (scenarioTagCaptureInFlight && !scenarioTagAlreadyCaptured && callSid) {
           const scenarioTag = extractTokenLineValue(text, "SCENARIO_TAG");
@@ -1378,8 +1385,11 @@ wss.on("connection", (twilioWs) => {
     if (!msg) return;
 
     if (msg.event === "start") {
-      streamSid = msg.start && msg.start.streamSid ? msg.start.streamSid : null;
-      callSid = msg.start && msg.start.callSid ? msg.start.callSid : null;
+      twilioMediaCount += 1;
+    if (twilioMediaCount % 50 === 1) {
+      console.log(nowIso(), "Twilio media packets received", { count: twilioMediaCount });
+      }streamSid = msg.start && msg.start.streamSid ? msg.start.streamSid : null;
+        callSid = msg.start && msg.start.callSid ? msg.start.callSid : null;
 
       console.log(nowIso(), "Twilio stream start:", streamSid || "(no streamSid)");
       console.log(nowIso(), "Twilio callSid:", callSid || "(no callSid)");
