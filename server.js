@@ -908,6 +908,19 @@ wss.on("connection", (twilioWs) => {
       },
     });
   }
+    function sendScenarioStartOnce(label) {
+  console.log(nowIso(), "Asking scenario start question", label ? (${label}) : "");
+
+  openaiSend({
+  type: "response.create",
+  response: {
+  modalities: ["audio", "text"],
+  instructions:
+  "Ask exactly one question, then stop speaking:\n" +
+  "Do you want to practice making a call, or answering a call?",
+  },
+  });
+  }
 
   function armOpenerRetryTimer() {
     if (openerRetryTimer) return;
@@ -1271,7 +1284,12 @@ wss.on("connection", (twilioWs) => {
               },
             },
           });
+          waitingForFirstCallerSpeech = false;
+          sawSpeechStarted = true;
+          requireCallerSpeechBeforeNextAI = false;
+          sawCallerSpeechSinceLastAIDone = true;
 
+          sendScenarioStartOnce("post-opener");
           return;
         }
 
