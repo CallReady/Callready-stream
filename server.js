@@ -129,6 +129,18 @@ function toMs(v) {
   const ms = d.getTime();
   return Number.isFinite(ms) ? ms : null;
 }
+function addMonthsUtc(dateObj, monthsToAdd) {
+  const d = dateObj instanceof Date ? dateObj : new Date(dateObj);
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth();
+  const day = d.getUTCDate();
+  const hh = d.getUTCHours();
+  const mm = d.getUTCMinutes();
+  const ss = d.getUTCSeconds();
+  const ms = d.getUTCMilliseconds();
+  return new Date(Date.UTC(y, m + monthsToAdd, day, hh, mm, ss, ms));
+}
+
 
 function parseIntOrDefault(v, d) {
   const n = parseInt(String(v || ""), 10);
@@ -298,20 +310,34 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
 
     const cycleEndsMs = row ? toMs(row.cycle_ends_at) : null;
 
-    if (!cycleEndsMs || nowMs >= cycleEndsMs) {
+        if (!cycleEndsMs || nowMs >= cycleEndsMs) {
       try {
+        const anchorAt = row && row.cycle_anchor_at ? new Date(String(row.cycle_anchor_at)) : new Date();
+        let n = 1;
+        let nextEndsAt = addMonthsUtc(anchorAt, n);
+
+        while (Number.isFinite(nextEndsAt.getTime()) && nowMs >= nextEndsAt.getTime()) {
+          n += 1;
+          nextEndsAt = addMonthsUtc(anchorAt, n);
+        }
+
+        const anchorIso = anchorAt.toISOString();
+        const endsIso = nextEndsAt.toISOString();
+
         await pool.query(
           "update callers set " +
-            "cycle_anchor_at = now(), " +
-            "cycle_ends_at = (now() + interval '1 month'), " +
+            "cycle_anchor_at = coalesce(cycle_anchor_at, $2::timestamptz), " +
+            "cycle_ends_at = $3::timestamptz, " +
             "cycle_seconds_used = 0 " +
             "where phone_e164 = $1",
-          [fromPhoneE164]
+          [fromPhoneE164, anchorIso, endsIso]
         );
 
         console.log(nowIso(), "Cycle rolled over and reset", {
           phone_e164: fromPhoneE164,
           prior_cycle_ends_at: row && row.cycle_ends_at ? String(row.cycle_ends_at) : null,
+          new_cycle_anchor_at: anchorIso,
+          new_cycle_ends_at: endsIso,
         });
       } catch (e) {
         console.log(nowIso(), "Cycle rollover update failed:", e && e.message ? e.message : e);
