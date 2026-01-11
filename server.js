@@ -1,3 +1,4 @@
+//this is a strong fallback version
 "use strict";
 
 const express = require("express");
@@ -50,7 +51,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1-tier-enforcement-1-cycle-bucket-1-fixed-opener-1-tier-lock-3";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1-tier-enforcement-1-cycle-bucket-1-fixed-opener-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -129,43 +130,19 @@ function toMs(v) {
   const ms = d.getTime();
   return Number.isFinite(ms) ? ms : null;
 }
-function addMonthsUtc(dateObj, monthsToAdd) {
-  const d = dateObj instanceof Date ? dateObj : new Date(dateObj);
-  const y = d.getUTCFullYear();
-  const m = d.getUTCMonth();
-  const day = d.getUTCDate();
-  const hh = d.getUTCHours();
-  const mm = d.getUTCMinutes();
-  const ss = d.getUTCSeconds();
-  const ms = d.getUTCMilliseconds();
-  return new Date(Date.UTC(y, m + monthsToAdd, day, hh, mm, ss, ms));
-}
-
 
 function parseIntOrDefault(v, d) {
   const n = parseInt(String(v || ""), 10);
   return Number.isFinite(n) ? n : d;
 }
-function formatResetDateForSpeech(isoOrDate) {
-  const d = isoOrDate ? new Date(isoOrDate) : null;
-  if (!d || !Number.isFinite(d.getTime())) return "your reset date";
-  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  const m = months[d.getUTCMonth()] || "your reset month";
-  const day = d.getUTCDate();
-  const y = d.getUTCFullYear();
-  return m + " " + String(day) + ", " + String(y);
-}
-
 
 const FREE_MONTHLY_MINUTES = parseIntOrDefault(process.env.FREE_MONTHLY_MINUTES, 30);
 const MEMBER_MONTHLY_MINUTES = parseIntOrDefault(process.env.MEMBER_MONTHLY_MINUTES, 120);
-const POWER_MONTHLY_MINUTES = parseIntOrDefault(process.env.POWER_MONTHLY_MINUTES, 300);
+const POWER_MONTHLY_MINUTES = parseIntOrDefault(process.env.POWER_MONTHLY_MINUTES, 600);
 
 const FREE_PER_CALL_SECONDS = parseIntOrDefault(process.env.FREE_PER_CALL_SECONDS, 300);
-
-// Member and Power have no per-call time limit. Set a very large default so the call is only capped by remaining monthly seconds.
-const MEMBER_PER_CALL_SECONDS = parseIntOrDefault(process.env.MEMBER_PER_CALL_SECONDS, 31536000);
-const POWER_PER_CALL_SECONDS = parseIntOrDefault(process.env.POWER_PER_CALL_SECONDS, 31536000);
+const MEMBER_PER_CALL_SECONDS = parseIntOrDefault(process.env.MEMBER_PER_CALL_SECONDS, 900);
+const POWER_PER_CALL_SECONDS = parseIntOrDefault(process.env.POWER_PER_CALL_SECONDS, 1800);
 
 function tierMonthlyAllowanceSeconds(tier) {
   const t = String(tier || "free").toLowerCase();
@@ -277,7 +254,6 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
       remainingSeconds: tierMonthlyAllowanceSeconds("free"),
       perCallCapSeconds: FREE_PER_CALL_SECONDS,
       totalCalls: 1,
-      cycleEndsAt: null,
     };
   }
 
@@ -288,7 +264,6 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
       remainingSeconds: tierMonthlyAllowanceSeconds("free"),
       perCallCapSeconds: FREE_PER_CALL_SECONDS,
       totalCalls: 1,
-      cycleEndsAt: null,
     };
   }
 
@@ -310,34 +285,20 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
 
     const cycleEndsMs = row ? toMs(row.cycle_ends_at) : null;
 
-        if (!cycleEndsMs || nowMs >= cycleEndsMs) {
+    if (!cycleEndsMs || nowMs >= cycleEndsMs) {
       try {
-        const anchorAt = row && row.cycle_anchor_at ? new Date(String(row.cycle_anchor_at)) : new Date();
-        let n = 1;
-        let nextEndsAt = addMonthsUtc(anchorAt, n);
-
-        while (Number.isFinite(nextEndsAt.getTime()) && nowMs >= nextEndsAt.getTime()) {
-          n += 1;
-          nextEndsAt = addMonthsUtc(anchorAt, n);
-        }
-
-        const anchorIso = anchorAt.toISOString();
-        const endsIso = nextEndsAt.toISOString();
-
         await pool.query(
           "update callers set " +
-            "cycle_anchor_at = coalesce(cycle_anchor_at, $2::timestamptz), " +
-            "cycle_ends_at = $3::timestamptz, " +
+            "cycle_anchor_at = now(), " +
+            "cycle_ends_at = (now() + interval '1 month'), " +
             "cycle_seconds_used = 0 " +
             "where phone_e164 = $1",
-          [fromPhoneE164, anchorIso, endsIso]
+          [fromPhoneE164]
         );
 
         console.log(nowIso(), "Cycle rolled over and reset", {
           phone_e164: fromPhoneE164,
           prior_cycle_ends_at: row && row.cycle_ends_at ? String(row.cycle_ends_at) : null,
-          new_cycle_anchor_at: anchorIso,
-          new_cycle_ends_at: endsIso,
         });
       } catch (e) {
         console.log(nowIso(), "Cycle rollover update failed:", e && e.message ? e.message : e);
@@ -404,7 +365,6 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
       remainingSeconds: remaining,
       perCallCapSeconds,
       totalCalls: totalCalls2,
-      cycleEndsAt: row2 && row2.cycle_ends_at ? String(row2.cycle_ends_at) : null,
     };
   } catch (e) {
     console.log(nowIso(), "DB tier check failed, defaulting to free:", e && e.message ? e.message : e);
@@ -415,7 +375,6 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
       remainingSeconds: tierMonthlyAllowanceSeconds("free"),
       perCallCapSeconds: FREE_PER_CALL_SECONDS,
       totalCalls: 1,
-      cycleEndsAt: null,
     };
   }
 }
@@ -664,16 +623,7 @@ app.post("/voice", async (req, res) => {
         fireAndForgetCallEndLog(callSid, "no_minutes_remaining");
       }
 
-      const resetDate = formatResetDateForSpeech(tierDecision.cycleEndsAt);
-      vr.say(
-        "Welcome back to CallReady. " +
-        "You've used all your minutes for this month. " +
-        "Your plan resets on " +
-        resetDate +
-        ". " +
-        "If you'd like more minutes, explore your options at CallReady dot Live."
-      );
-
+      vr.say(TWILIO_NO_MINUTES_LEFT);
       vr.hangup();
       res.type("text/xml").send(vr.toString());
       return;
@@ -923,49 +873,49 @@ wss.on("connection", (twilioWs) => {
     return String(m);
   }
 
-function buildDynamicOpenerSpeech() {
-  const base =
-    "Welcome to CallReady, helping people practice phone calls in a calm, supportive way when real calls feel overwhelming. " +
-    "I'm an AI helper, so you can practice without pressure. " +
-    "If you get stuck, you can say help me, and I'll give you a simple line to try. " +
-    "If you can, try to be somewhere quiet so I can hear you clearly. ";
+  function buildDynamicOpenerSpeech() {
+    const base =
+      "Welcome to CallReady, helping people practice phone calls in a calm, supportive way when real calls feel overwhelming. " +
+      "I'm an AI helper, so you can practice without pressure. " +
+      "If you get stuck, you can say help me, and I'll give you a simple line to try. " +
+      "If you can, try to be somewhere quiet so I can hear you clearly. ";
 
-  if (!callerRuntime) {
-    return base;
-  }
+    if (!callerRuntime) {
+      return base;
+    }
 
-  const totalCalls = callerRuntime.totalCalls || 1;
-  const tier = String(callerRuntime.tier || "free");
-  const remainingMinutes = formatMinutesApprox(callerRuntime.remainingSeconds);
-  const resetDate = formatResetDateForSpeech(callerRuntime.cycle_ends_at);
+    const totalCalls = callerRuntime.totalCalls || 1;
+    const tier = String(callerRuntime.tier || "free");
+    const remainingMinutes = formatMinutesApprox(callerRuntime.remainingSeconds);
+    const capMinutes = formatMinutesApprox(perCallCapSeconds);
 
-  if (totalCalls <= 1) {
-    return base + "We've set you up with a free plan connected to your phone number. ";
-  }
+    if (totalCalls <= 1) {
+      return base + "We've set you up with a free plan connected to your phone number. ";
+    }
 
-  if (tier.toLowerCase() === "free") {
+    if (String(tier).toLowerCase() === "free") {
+      return (
+        "Welcome back to CallReady. " +
+        "You have about " +
+        remainingMinutes +
+        " minutes remaining this month on your free plan. " +
+        "Practice calls on this plan are limited to about " +
+        capMinutes +
+        " minutes. " +
+        "For more time, visit CallReady dot live. "
+      );
+    }
+
     return (
       "Welcome back to CallReady. " +
-      "You have " +
+      "You have about " +
       remainingMinutes +
-      " minutes remaining on your current plan until it resets on " +
-      resetDate +
-      ". " +
-      "Individual calls on the free plan are limited to 5 minutes. " +
-      "If you'd like more minutes, explore your options at CallReady dot Live. "
+      " minutes remaining this month on your plan. " +
+      "This call is limited to about " +
+      capMinutes +
+      " minutes. "
     );
   }
-
-  return (
-    "Welcome back to CallReady. " +
-    "You have " +
-    remainingMinutes +
-    " minutes remaining on your current plan until it resets on " +
-    resetDate +
-    ". "
-  );
-}
-
 
   function sendOpenerOnce(label) {
     console.log(nowIso(), "Sending opener", label ? "(" + label + ")" : "");
@@ -1262,7 +1212,7 @@ function buildDynamicOpenerSpeech() {
             "Wait for caller response.\n" +
             "If caller indicates they would like feedback, give 1 short sentence about what the caller did well and one short sentence about what they might try next time.\n" +
             "Then ask exactly one question:\n" +
-            "Do you want to practice this scenario again, practice something else, or end your session?\n" +
+            "Do you want to practice thispractice another scenario, or end the call?\n" +
             "If the caller says they want another scenario, restart the call flow and ask the mode question again.\n" +
             "If the caller says end the call, follow the Ending rule.\n" +
             "\n" +
@@ -1330,8 +1280,12 @@ function buildDynamicOpenerSpeech() {
 
       if (msg.type === "response.created") {
         responseActive = true;
+        return;
+      if (msg.type === "response.created") {
+        responseActive = true;
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.created (post-opener)");
         return;
+        }
       }
 
       if (msg.type === "response.done") {
