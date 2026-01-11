@@ -1166,8 +1166,8 @@ wss.on("connection", (twilioWs) => {
             "Do you want to practice calling someone, or answering a call from someone?\"\n" +
             "Then ask whether they want to choose the scenario or have you choose.\n" +
             "Roleplay start rules:\n" +
-            "When roleplay begins for an outgoing call, say: Ring ring. Then immediately speak as the person answering the call.\n"
-            "When roleplay begins for an incoming call, say: Ring ring. Then say: start the call by saying hello.\n"
+            "When roleplay begins for an outgoing call, say: Ring ring. Then immediately speak as the person answering the call.\n" +
+            "When roleplay begins for an incoming call, say: Ring ring. Then say: start the call by saying hello.\n" +
             "Do not say /Ring ring/ at any other time.\n" +
             "No mind-reading rule:\n" +
             "Never say things like \"I understand you want to...\" or \"So you are calling to...\" as part of the greeting.\n" +
