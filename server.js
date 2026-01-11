@@ -1,4 +1,3 @@
-//this is a strong fallback version
 "use strict";
 
 const express = require("express");
@@ -51,7 +50,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1-tier-enforcement-1-cycle-bucket-1-fixed-opener-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1-tier-enforcement-1-cycle-bucket-1-fixed-opener-1-tier-lock-2";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -138,11 +137,13 @@ function parseIntOrDefault(v, d) {
 
 const FREE_MONTHLY_MINUTES = parseIntOrDefault(process.env.FREE_MONTHLY_MINUTES, 30);
 const MEMBER_MONTHLY_MINUTES = parseIntOrDefault(process.env.MEMBER_MONTHLY_MINUTES, 120);
-const POWER_MONTHLY_MINUTES = parseIntOrDefault(process.env.POWER_MONTHLY_MINUTES, 600);
+const POWER_MONTHLY_MINUTES = parseIntOrDefault(process.env.POWER_MONTHLY_MINUTES, 300);
 
 const FREE_PER_CALL_SECONDS = parseIntOrDefault(process.env.FREE_PER_CALL_SECONDS, 300);
-const MEMBER_PER_CALL_SECONDS = parseIntOrDefault(process.env.MEMBER_PER_CALL_SECONDS, 900);
-const POWER_PER_CALL_SECONDS = parseIntOrDefault(process.env.POWER_PER_CALL_SECONDS, 1800);
+
+// Member and Power have no per-call time limit. We set a very large cap and still clamp to remaining monthly seconds.
+const MEMBER_PER_CALL_SECONDS = parseIntOrDefault(process.env.MEMBER_PER_CALL_SECONDS, 86400);
+const POWER_PER_CALL_SECONDS = parseIntOrDefault(process.env.POWER_PER_CALL_SECONDS, 86400);
 
 function tierMonthlyAllowanceSeconds(tier) {
   const t = String(tier || "free").toLowerCase();
@@ -156,6 +157,28 @@ function tierPerCallCapSeconds(tier) {
   if (t === "power" || t === "power_user" || t === "poweruser") return POWER_PER_CALL_SECONDS;
   if (t === "member") return MEMBER_PER_CALL_SECONDS;
   return FREE_PER_CALL_SECONDS;
+}
+
+function formatResetDateForSpeech(isoOrDate) {
+  const d = isoOrDate ? new Date(isoOrDate) : null;
+  if (!d || !Number.isFinite(d.getTime())) return "your reset date";
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const m = months[d.getUTCMonth()] || "your reset month";
+  const day = d.getUTCDate();
+  const y = d.getUTCFullYear();
+  return m + " " + String(day) + ", " + String(y);
+}
+
+function buildNoMinutesSpeech(tierDecision) {
+  const resetDate = tierDecision && tierDecision.cycleEndsAt ? formatResetDateForSpeech(tierDecision.cycleEndsAt) : "your reset date";
+  return (
+    "Welcome back to CallReady. " +
+    "You've used all your minutes for this month. " +
+    "Your plan resets on " +
+    resetDate +
+    ". " +
+    "If you'd like more minutes, explore your options at CallReady dot Live."
+  );
 }
 
 async function upsertCallerOnCallStart(fromPhoneE164, callSid) {
@@ -254,6 +277,7 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
       remainingSeconds: tierMonthlyAllowanceSeconds("free"),
       perCallCapSeconds: FREE_PER_CALL_SECONDS,
       totalCalls: 1,
+      cycleEndsAt: null,
     };
   }
 
@@ -264,6 +288,7 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
       remainingSeconds: tierMonthlyAllowanceSeconds("free"),
       perCallCapSeconds: FREE_PER_CALL_SECONDS,
       totalCalls: 1,
+      cycleEndsAt: null,
     };
   }
 
@@ -365,6 +390,7 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
       remainingSeconds: remaining,
       perCallCapSeconds,
       totalCalls: totalCalls2,
+      cycleEndsAt: row2 && row2.cycle_ends_at ? String(row2.cycle_ends_at) : null,
     };
   } catch (e) {
     console.log(nowIso(), "DB tier check failed, defaulting to free:", e && e.message ? e.message : e);
@@ -375,6 +401,7 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
       remainingSeconds: tierMonthlyAllowanceSeconds("free"),
       perCallCapSeconds: FREE_PER_CALL_SECONDS,
       totalCalls: 1,
+      cycleEndsAt: null,
     };
   }
 }
@@ -623,7 +650,7 @@ app.post("/voice", async (req, res) => {
         fireAndForgetCallEndLog(callSid, "no_minutes_remaining");
       }
 
-      vr.say(TWILIO_NO_MINUTES_LEFT);
+      vr.say(buildNoMinutesSpeech(tierDecision));
       vr.hangup();
       res.type("text/xml").send(vr.toString());
       return;
@@ -885,36 +912,34 @@ wss.on("connection", (twilioWs) => {
     }
 
     const totalCalls = callerRuntime.totalCalls || 1;
-    const tier = String(callerRuntime.tier || "free");
+    const tier = String(callerRuntime.tier || "free").toLowerCase();
     const remainingMinutes = formatMinutesApprox(callerRuntime.remainingSeconds);
-    const capMinutes = formatMinutesApprox(perCallCapSeconds);
+    const resetDate = callerRuntime.cycle_ends_at ? formatResetDateForSpeech(callerRuntime.cycle_ends_at) : "your reset date";
+
+    const remainingLine =
+      "You have " +
+      remainingMinutes +
+      " minutes remaining on your current plan until it resets on " +
+      resetDate +
+      ". ";
 
     if (totalCalls <= 1) {
-      return base + "We've set you up with a free plan connected to your phone number. ";
+      if (tier === "free") {
+        return base + "We've set you up with a free plan connected to your phone number. " + remainingLine + "Individual calls on the free plan are limited to 5 minutes. ";
+      }
+      return base + remainingLine;
     }
 
-    if (String(tier).toLowerCase() === "free") {
+    if (tier === "free") {
       return (
         "Welcome back to CallReady. " +
-        "You have about " +
-        remainingMinutes +
-        " minutes remaining this month on your free plan. " +
-        "Practice calls on this plan are limited to about " +
-        capMinutes +
-        " minutes. " +
-        "For more time, visit CallReady dot live. "
+        remainingLine +
+        "Individual calls on the free plan are limited to 5 minutes. " +
+        "If you'd like more minutes, explore your options at CallReady dot Live. "
       );
     }
 
-    return (
-      "Welcome back to CallReady. " +
-      "You have about " +
-      remainingMinutes +
-      " minutes remaining this month on your plan. " +
-      "This call is limited to about " +
-      capMinutes +
-      " minutes. "
-    );
+    return "Welcome back to CallReady. " + remainingLine;
   }
 
   function sendOpenerOnce(label) {
