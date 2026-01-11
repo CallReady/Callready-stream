@@ -32,7 +32,7 @@ const OPENAI_REALTIME_MODEL =
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "coral";
 
 const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1-tier-enforcement-1-cycle-bucket-1";
+  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1-tier-enforcement-1-cycle-bucket-1-fixed-opener-1";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -97,12 +97,6 @@ function monthBucketFirstDayUtc() {
   const y = d.getUTCFullYear();
   const m = d.getUTCMonth();
   return new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
-}
-
-function dateKey(v) {
-  if (!v) return null;
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
-  return String(v).slice(0, 10);
 }
 
 function toInt(v, fallback) {
@@ -866,10 +860,7 @@ wss.on("connection", (twilioWs) => {
       "Before we start, try to be somewhere quiet, because background noise can make it harder to hear you. ";
 
     if (!callerRuntime) {
-      return (
-        base +
-        "Quick question first. Do you want to practice calling someone, or answering a call from someone?"
-      );
+      return base;
     }
 
     const totalCalls = callerRuntime.totalCalls || 1;
@@ -878,11 +869,7 @@ wss.on("connection", (twilioWs) => {
     const capMinutes = formatMinutesApprox(perCallCapSeconds);
 
     if (totalCalls <= 1) {
-      return (
-        base +
-        "You're set up with a free trial plan tied to your phone number. " +
-        "Quick question first. Do you want to practice calling someone, or answering a call from someone?"
-      );
+      return base + "You're set up with a free trial plan tied to your phone number. ";
     }
 
     if (String(tier).toLowerCase() === "free") {
@@ -894,8 +881,7 @@ wss.on("connection", (twilioWs) => {
         "Practice calls are limited to about " +
         capMinutes +
         " minutes. " +
-        "For more time, visit CallReady dot live. " +
-        "Quick question first. Do you want to practice calling someone, or answering a call from someone?"
+        "For more time, visit CallReady dot live. "
       );
     }
 
@@ -906,8 +892,7 @@ wss.on("connection", (twilioWs) => {
       " minutes remaining this month on your plan. " +
       "This call is limited to about " +
       capMinutes +
-      " minutes. " +
-      "Quick question first. Do you want to practice calling someone, or answering a call from someone?"
+      " minutes. "
     );
   }
 
@@ -1098,7 +1083,7 @@ wss.on("connection", (twilioWs) => {
       "\nReturn caller context:\n" +
       `Last time, we practiced ${scenario}.\n` +
       "Ask exactly one question:\n" +
-      "\"Do you want to focus on that again or move on to something new?\"\n"
+      "Do you want to focus on that again or move on to something new?\n"
     );
   }
 
@@ -1135,8 +1120,8 @@ wss.on("connection", (twilioWs) => {
           modalities: ["audio", "text"],
           input_audio_transcription: { model: "whisper-1" },
           instructions:
-            "You are CallReady. You help teens and young adults practice real phone calls.\n" +
-            "Speak with a friendly, warm tone that sounds like a calm, encouraging young adult woman.\n" +
+            "You are CallReady. You help people practice phone calls in a calm, supportive way when real calls feel overwhelming.\n" +
+            "Speak with a friendly, warm tone that sounds calm and encouraging.\n" +
             "\n" +
             "Speaking style:\n" +
             "Sound natural, relaxed, and friendly, like a real phone call.\n" +
@@ -1159,34 +1144,21 @@ wss.on("connection", (twilioWs) => {
             "Conversation rules:\n" +
             "Do not allow the conversation to drift away from helping the caller practice phone skills.\n" +
             "Ask one question at a time. After you ask a question, stop speaking and wait.\n" +
-            "Never interject with helpful hints or tips unless the caller specifically asks for it or is clearly lost or confused." +
+            "Do not interject with hints or tips during a scenario unless the caller asks for help.\n" +
             "\n" +
             "Call flow:\n" +
             "Always start every new scenario by asking this exact question:\n" +
-            "Do you want to practice calling someone, or answering a call from someone?\"\n" +
+            "Do you want to practice making a call, or answering a call?\n" +
             "Then ask whether they want to choose the scenario or have you choose.\n" +
+            "\n" +
             "Roleplay start rules:\n" +
             "When roleplay begins for an outgoing call, say: Ring ring. Then immediately speak as the person answering the call.\n" +
-            "When roleplay begins for an incoming call, say: Ring ring. Then say: start the call by saying hello.\n" +
-            "Do not say /Ring ring/ at any other time.\n" +
-            "No mind-reading rule:\n" +
-            "Never say things like \"I understand you want to...\" or \"So you are calling to...\" as part of the greeting.\n" +
-            "Do not front-load scenario details during the greeting.\n" +
-            "The greeting must sound like real life, nothing more.\n" +
-            "\n" +
+            "When roleplay begins for an incoming call, say: Ring ring. Then stop speaking and wait for the caller to answer.\n" +
+            "Do not say Ring ring at any other time.\n" +
             "\n" +
             "Reset rule:\n" +
-            "If the caller says \"have you pick\", \"you choose\", \"something different\", or \"try something different\", you must restart the flow.\n" +
-            "That means you MUST ask the mode question again:\n" +
-            "Do you want to practice calling someone, or answering a call from someone?\"\n" +
-            "Do not reuse the prior mode automatically.\n" +
-            "Tell them what scenario you've chosen and if they will be making the call or answering it\n" +
+            "If the caller says have you pick, you choose, something different, or try something different, restart the flow and ask the mode question again.\n" +
             "\n" +
-            "End of scenario:\n" +
-            "When it is clear that the scenario is at an end, say: That wraps the scenario, would you like some feedback about how you did?/\n" +
-            "If the caller says no or similar, ask if they would like to try that scenario again or try something else\n" +
-            "Follow their answer to restart a new scenario\n" +
-            "If the caller requests feedback, tell them one good thing they did, one thing they can work on for next time, and encourage them to keep practicing. Then return to asking whether they want to practice it again, try something else, or end our practice session.\n" +
             "Ending rule:\n" +
             "If the caller asks to end the call, quit, stop, hang up, or says they do not want to do this anymore, you MUST do BOTH in the SAME response:\n" +
             "1) Say exactly: Ending practice now.\n" +
