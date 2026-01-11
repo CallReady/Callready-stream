@@ -875,10 +875,10 @@ wss.on("connection", (twilioWs) => {
 
   function buildDynamicOpenerSpeech() {
     const base =
-      "Welcome to CallReady, a safe place to practice phone calls before they matter. " +
+      "Welcome to CallReady, helping people practice phone calls in a calm, supportive way when real calls feel overwhelming. " +
       "I'm an AI helper, so you can practice without pressure. " +
       "If you get stuck, you can say help me, and I'll give you a simple line to try. " +
-      "Before we start, try to be somewhere quiet, because background noise can make it harder to hear you. ";
+      "If you can, try to be somewhere quiet so I can hear you clearly. ";
 
     if (!callerRuntime) {
       return base;
@@ -890,7 +890,7 @@ wss.on("connection", (twilioWs) => {
     const capMinutes = formatMinutesApprox(perCallCapSeconds);
 
     if (totalCalls <= 1) {
-      return base + "You're set up with a free trial plan tied to your phone number. ";
+      return base + "We've set you up with a free plan connected to your phone number. ";
     }
 
     if (String(tier).toLowerCase() === "free") {
@@ -899,7 +899,7 @@ wss.on("connection", (twilioWs) => {
         "You have about " +
         remainingMinutes +
         " minutes remaining this month on your free plan. " +
-        "Practice calls are limited to about " +
+        "Practice calls on this plan are limited to about " +
         capMinutes +
         " minutes. " +
         "For more time, visit CallReady dot live. "
@@ -1167,7 +1167,6 @@ wss.on("connection", (twilioWs) => {
             "Unclear input rule:\n" +
             "If the caller's answer is unclear, unintelligible, or does not make sense, do NOT guess what they meant.\n" +
             "Kindly ask them to repeat more clearly and answer your last question again.\n" +
-            "Keep it to one or two short sentences, then ask only one question.\n" +
             "\n" +
             "Safety:\n" +
             "Never sexual content.\n" +
@@ -1202,7 +1201,6 @@ wss.on("connection", (twilioWs) => {
             "If the caller says have you pick, you choose, something different, or try something different, restart the flow and ask the mode question again.\n" +
             "\n" +
             "Wrap up rule:\n" +
-            "Wrap up rule:\n" +
             "You are responsible for deciding when the practice task is complete.\n" +
             "A practice task is complete when the caller has successfully done the main purpose of the call and the other person has given a clear resolution.\n" +
             "Examples of resolution include: the appointment is scheduled, the question is answered, the order is placed, the issue is resolved, or the other person clearly says goodbye.\n" +
@@ -1214,7 +1212,7 @@ wss.on("connection", (twilioWs) => {
             "Wait for caller response.\n" +
             "If caller indicates they would like feedback, give 1 short sentence about what the caller did well and one short sentence about what they might try next time.\n" +
             "Then ask exactly one question:\n" +
-            "Do you want to practice another scenario, or end the call?\n" +
+            "Do you want to practice this scenario again, practice something else, or end your session?\n" +
             "If the caller says they want another scenario, restart the call flow and ask the mode question again.\n" +
             "If the caller says end the call, follow the Ending rule.\n" +
             "\n" +
