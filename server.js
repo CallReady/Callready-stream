@@ -32,6 +32,17 @@ console.log(nowIso(), "FATAL unhandledRejection:", err && err.stack ? err.stack 
 if (!DATABASE_URL) {
   console.log(nowIso(), "Warning: DATABASE_URL is not set, DB features disabled");
 }
+process.on("SIGTERM", () => {
+console.log(nowIso(), "FATAL received SIGTERM, process is being terminated");
+});
+
+process.on("SIGINT", () => {
+console.log(nowIso(), "FATAL received SIGINT, process is being interrupted");
+});
+
+process.on("exit", (code) => {
+console.log(nowIso(), "FATAL process exit", { code });
+});
 
 const OPENAI_REALTIME_MODEL =
   process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview";
@@ -904,7 +915,7 @@ wss.on("connection", (twilioWs) => {
   }
 
   function sendOpenerOnce(label) {
-    console.log(nowIso(), "Sending opener", label ? `(${label})` : "");
+    console.log(nowIso(), "Sending opener", label ? "(" + label + ")" : "");
     const openerSpeech = buildDynamicOpenerSpeech();
 
     openaiSend({
