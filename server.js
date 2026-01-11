@@ -1165,8 +1165,8 @@ wss.on("connection", (twilioWs) => {
             "Then ask whether they want to choose the scenario or have you choose.\n" +
             "\n" +
             "Roleplay start rules:\n" +
-            "When roleplay begins for an outgoing call, say: "Ring ring" and then immediately speak as the person answering the call.\n" +
-            "When roleplay begins for an incoming call, say: "Ring ring" and hen stop speaking and wait for the caller to answer.\n" +
+            "When roleplay begins for an outgoing call, do the following in one continuous response. First, say exactly this phrase: Ring ring. Then, without pausing or waiting for the caller, immediately speak as the person answering the call. Do not ask a question before speaking as the person answering.\n" +
+            "When roleplay begins for an incoming call, do the following in one continuous response. First, say exactly this phrase: Ring ring. Then, without pausing or waiting for the caller, immediately say: Say hello to answer the call. Do not ask a question before speaking.\n" +
             "Do not say Ring ring at any other time.\n" +
             "\n" +
             "Reset rule:\n" +
