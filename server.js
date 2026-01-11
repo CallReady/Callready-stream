@@ -134,6 +134,16 @@ function parseIntOrDefault(v, d) {
   const n = parseInt(String(v || ""), 10);
   return Number.isFinite(n) ? n : d;
 }
+function formatResetDateForSpeech(isoOrDate) {
+  const d = isoOrDate ? new Date(isoOrDate) : null;
+  if (!d || !Number.isFinite(d.getTime())) return "your reset date";
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const m = months[d.getUTCMonth()] || "your reset month";
+  const day = d.getUTCDate();
+  const y = d.getUTCFullYear();
+  return m + " " + String(day) + ", " + String(y);
+}
+
 
 const FREE_MONTHLY_MINUTES = parseIntOrDefault(process.env.FREE_MONTHLY_MINUTES, 30);
 const MEMBER_MONTHLY_MINUTES = parseIntOrDefault(process.env.MEMBER_MONTHLY_MINUTES, 120);
@@ -255,6 +265,7 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
       remainingSeconds: tierMonthlyAllowanceSeconds("free"),
       perCallCapSeconds: FREE_PER_CALL_SECONDS,
       totalCalls: 1,
+      cycleEndsAt: null,
     };
   }
 
@@ -265,6 +276,7 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
       remainingSeconds: tierMonthlyAllowanceSeconds("free"),
       perCallCapSeconds: FREE_PER_CALL_SECONDS,
       totalCalls: 1,
+      cycleEndsAt: null,
     };
   }
 
@@ -366,6 +378,7 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
       remainingSeconds: remaining,
       perCallCapSeconds,
       totalCalls: totalCalls2,
+      cycleEndsAt: row2 && row2.cycle_ends_at ? String(row2.cycle_ends_at) : null,
     };
   } catch (e) {
     console.log(nowIso(), "DB tier check failed, defaulting to free:", e && e.message ? e.message : e);
@@ -376,6 +389,7 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
       remainingSeconds: tierMonthlyAllowanceSeconds("free"),
       perCallCapSeconds: FREE_PER_CALL_SECONDS,
       totalCalls: 1,
+      cycleEndsAt: null,
     };
   }
 }
@@ -624,7 +638,16 @@ app.post("/voice", async (req, res) => {
         fireAndForgetCallEndLog(callSid, "no_minutes_remaining");
       }
 
-      vr.say(TWILIO_NO_MINUTES_LEFT);
+      const resetDate = formatResetDateForSpeech(tierDecision.cycleEndsAt);
+      vr.say(
+        "Welcome back to CallReady. " +
+        "You've used all your minutes for this month. " +
+        "Your plan resets on " +
+        resetDate +
+        ". " +
+        "If you'd like more minutes, explore your options at CallReady dot Live."
+      );
+
       vr.hangup();
       res.type("text/xml").send(vr.toString());
       return;
