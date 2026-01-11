@@ -592,6 +592,7 @@ async function isAlreadyOptedInByPhone(fromPhoneE164) {
 app.get("/", (req, res) => res.status(200).send("CallReady server up"));
 
 app.get("/health", (req, res) => res.status(200).json({ ok: true, version: CALLREADY_VERSION }));
+app.get("/healthz", (req, res) => res.status(200).json({ ok: true, version: CALLREADY_VERSION }));
 
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
 
