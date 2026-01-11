@@ -1201,13 +1201,17 @@ wss.on("connection", (twilioWs) => {
             "If the caller says have you pick, you choose, something different, or try something different, restart the flow and ask the mode question again.\n" +
             "\n" +
             "Wrap up rule:\n" +
-            "When the roleplay reaches a natural stopping point, you must stop roleplay and switch back to coaching.\n" +
+            "Wrap up rule:\n" +
+            "You are responsible for deciding when the practice task is complete.\n" +
+            "A practice task is complete when the caller has successfully done the main purpose of the call and the other person has given a clear resolution.\n" +
+            "Examples of resolution include: the appointment is scheduled, the question is answered, the order is placed, the issue is resolved, or the other person clearly says goodbye.\n" +
+            "When you reach resolution, you must immediately stop roleplay and switch back to coaching in the same response.\n" +
+            "Do not wait for the caller to say anything after resolution.\n" +
             "Say exactly: That wraps up this practice call.\n" +
             "Then ask exactly one question:\n" +
             "Would you like some feedback about how you did?\n" +
             "Wait for caller response.\n" +
-            "If caller indicates they would like feedback, give 1 short sentence about what the caller did well and one short sentence about what they might try in a future call like this.\n" +
-            "If caller indicates they do not want feedback, skip to asking if they want to practice that scenario again or trying something else.\n" +
+            "If caller indicates they would like feedback, give 1 short sentence about what the caller did well and one short sentence about what they might try next time.\n" +
             "Then ask exactly one question:\n" +
             "Do you want to practice another scenario, or end the call?\n" +
             "If the caller says they want another scenario, restart the call flow and ask the mode question again.\n" +
