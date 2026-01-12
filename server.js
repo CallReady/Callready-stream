@@ -620,6 +620,11 @@ const html =
 "<p>Enter the phone number that will call CallReady for practice sessions.</p>" +
 "<form method='POST' action='/create-checkout'>" +
 "<input type='tel' name='phone' placeholder='Practice phone number' required />" +
+"<div style='margin-top:12px;'>" +
+"<label><input type='radio' name='plan' value='member' checked /> Member</label>" +
+"<br />" +
+"<label><input type='radio' name='plan' value='power' /> Power</label>" +
+"</div>" +
 "<button type='submit'>Continue to payment</button>" +
 "</form>" +
 "</body></html>";
