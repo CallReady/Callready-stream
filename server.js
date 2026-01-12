@@ -6,6 +6,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const twilio = require("twilio");
 const { Pool } = require("pg");
+const Stripe = require("stripe");
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
@@ -16,6 +17,8 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const PUBLIC_WSS_URL = process.env.PUBLIC_WSS_URL;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 const DATABASE_URL = process.env.DATABASE_URL;
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 
@@ -596,6 +599,14 @@ app.get("/", (req, res) => res.status(200).send("CallReady server up"));
 
 app.get("/health", (req, res) => res.status(200).json({ ok: true, version: CALLREADY_VERSION }));
 app.get("/healthz", (req, res) => res.status(200).json({ ok: true, version: CALLREADY_VERSION }));
+app.get("/stripe-health", (req, res) => {
+if (!stripe) {
+res.status(500).json({ ok: false, error: "Stripe not configured" });
+return;
+}
+
+res.status(200).json({ ok: true });
+});
 
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
 
