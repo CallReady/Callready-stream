@@ -608,7 +608,7 @@ app.get("/route-check", (req, res) => res.status(200).send("route-check-ok"));
 app.get("/stripe-webhook", (req, res) => {
   res.status(200).send("stripe-webhook-ok");
 });
-app.post("/stripe-webhook", express.raw({ type: "application/json" }), (req, res) => {
+app.post("/stripe-webhook", express.raw({ type: "application/json" }), async (req, res) => {
 try {
 if (!stripe) {
 console.log(nowIso(), "stripe-webhook: Stripe not configured");
