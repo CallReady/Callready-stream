@@ -604,6 +604,9 @@ app.get("/", (req, res) => res.status(200).send("CallReady server up"));
 app.get("/health", (req, res) => res.status(200).json({ ok: true, version: CALLREADY_VERSION }));
 app.get("/healthz", (req, res) => res.status(200).json({ ok: true, version: CALLREADY_VERSION }));
 app.get("/route-check", (req, res) => res.status(200).send("route-check-ok"));
+app.get("/stripe-webhook", (req, res) => {
+  res.status(200).send("stripe-webhook-ok");
+});
 app.get("/stripe-health", (req, res) => {
 if (!stripe) {
 res.status(500).json({ ok: false, error: "Stripe not configured" });
