@@ -23,6 +23,7 @@ const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 console.log(nowIso(), "Stripe configured at boot:", !!STRIPE_SECRET_KEY);
 const STRIPE_PRICE_MEMBER = process.env.STRIPE_PRICE_MEMBER;
 const STRIPE_PRICE_POWER = process.env.STRIPE_PRICE_POWER;
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 
@@ -606,6 +607,43 @@ app.get("/healthz", (req, res) => res.status(200).json({ ok: true, version: CALL
 app.get("/route-check", (req, res) => res.status(200).send("route-check-ok"));
 app.get("/stripe-webhook", (req, res) => {
   res.status(200).send("stripe-webhook-ok");
+});
+app.post("/stripe-webhook", express.raw({ type: "application/json" }), (req, res) => {
+try {
+if (!stripe) {
+console.log(nowIso(), "stripe-webhook: Stripe not configured");
+res.status(500).send("Stripe not configured");
+return;
+}
+
+if (!STRIPE_WEBHOOK_SECRET) {
+  console.log(nowIso(), "stripe-webhook: Missing STRIPE_WEBHOOK_SECRET");
+  res.status(500).send("Missing webhook secret");
+  return;
+}
+
+const sig = req.headers && req.headers["stripe-signature"] ? String(req.headers["stripe-signature"]) : "";
+
+if (!sig) {
+  console.log(nowIso(), "stripe-webhook: Missing stripe-signature header");
+  res.status(400).send("Missing signature");
+  return;
+}
+
+const event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+
+console.log(nowIso(), "stripe-webhook event received", {
+  type: event.type,
+  id: event.id,
+});
+
+res.status(200).json({ received: true });
+
+
+} catch (e) {
+console.log(nowIso(), "stripe-webhook signature verification failed:", e && e.message ? e.message : e);
+res.status(400).send("Webhook Error");
+}
 });
 app.get("/stripe-health", (req, res) => {
 if (!stripe) {
