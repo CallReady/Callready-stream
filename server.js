@@ -22,6 +22,7 @@ const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 console.log(nowIso(), "Stripe configured at boot:", !!STRIPE_SECRET_KEY);
 const STRIPE_PRICE_MEMBER = process.env.STRIPE_PRICE_MEMBER;
+const STRIPE_PRICE_POWER = process.env.STRIPE_PRICE_POWER;
 
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 
