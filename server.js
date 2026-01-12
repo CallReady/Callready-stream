@@ -601,6 +601,19 @@ app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to PO
 
 app.post("/voice", async (req, res) => {
   try {
+    const forceUnavailable =
+    req.query &&
+    String(req.query.force_unavailable || "") === "1";
+
+    if (forceUnavailable) {
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    vr.redirect({ method: "POST" }, "/unavailable");
+
+    res.type("text/xml").send(vr.toString());
+    return;
+    }
     const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
     const from = req.body && req.body.From ? String(req.body.From) : "";
 
