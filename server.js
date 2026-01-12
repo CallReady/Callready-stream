@@ -615,8 +615,8 @@ const html =
 "<h2>CallReady Membership</h2>" +
 "<p>Enter the phone number that will call CallReady for practice sessions.</p>" +
 "<form method='POST' action='/create-checkout'>" +
-"<input type="tel" name="phone" placeholder="Practice phone number" required />" +
-"<button type="submit">Continue to payment</button>" +
+"<input type='tel' name='phone' placeholder='Practice phone number' required />" +
+"<button type='submit'>Continue to payment</button>" +
 "</form>" +
 "</body></html>";
 
