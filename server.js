@@ -1114,7 +1114,7 @@ return;
 
 try {
 const client = twilioClient();
-const base = PUBLIC_BASE_URL.replace(//+$/, "");
+const base = PUBLIC_BASE_URL.replace(/\/+$/, "");
 const url = base + "/unavailable";
 
 console.log(nowIso(), "Redirecting call to /unavailable now", callSid, "reason:", reason);
