@@ -1362,7 +1362,6 @@ closeAll("Redirect to /unavailable failed");
       if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.created (post-opener)");
       return;
       }
-      }
 
       if (msg.type === "response.done") {
         const text = extractTextFromResponseDone(msg);
