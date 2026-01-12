@@ -610,6 +610,9 @@ return;
 res.status(200).json({ ok: true });
 });
 app.get("/subscribe", (req, res) => {
+res.redirect(302, "/subscribe/");
+});
+app.get("/subscribe/", (req, res) => {
 const html =
 "<html><body>" +
 "<h2>CallReady Membership</h2>" +
