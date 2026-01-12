@@ -641,6 +641,34 @@ tier: md && md.tier ? String(md.tier) : null,
 customer: session && session.customer ? String(session.customer) : null,
 subscription: session && session.subscription ? String(session.subscription) : null,
 });
+if (pool && md && md.practice_phone && md.tier) {
+const phone = String(md.practice_phone).trim();
+const tier = String(md.tier).toLowerCase();
+
+try {
+await pool.query(
+"insert into callers (phone_e164, tier, cycle_anchor_at, cycle_ends_at, cycle_seconds_used) " +
+"values ($1, $2, now(), (now() + interval '1 month'), 0) " +
+"on conflict (phone_e164) do update set " +
+"tier = excluded.tier, " +
+"cycle_anchor_at = now(), " +
+"cycle_ends_at = (now() + interval '1 month'), " +
+"cycle_seconds_used = 0",
+[phone, tier]
+);
+
+console.log(nowIso(), "Upgraded caller tier from checkout", {
+  phone_e164: phone,
+  tier: tier,
+});
+
+
+} catch (e) {
+console.log(nowIso(), "Failed to upgrade caller tier:", e && e.message ? e.message : e);
+}
+} else {
+console.log(nowIso(), "checkout.session.completed missing metadata or DB not configured");
+}
 }
 
 console.log(nowIso(), "stripe-webhook event received", {
