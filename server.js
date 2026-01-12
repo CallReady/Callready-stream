@@ -715,20 +715,29 @@ if (!PUBLIC_BASE_URL) {
 
 const phoneRaw = req.body && req.body.phone ? String(req.body.phone) : "";
 const phone = phoneRaw.trim();
-
+const planRaw = req.body && req.body.plan ? String(req.body.plan) : "member";
+const plan = planRaw.trim().toLowerCase();
 if (!phone) {
   res.status(400).send("Missing phone number.");
   return;
+}
+let priceId = STRIPE_PRICE_MEMBER;
+if (plan === "power") {
+if (!STRIPE_PRICE_POWER) {
+  res.status(500).send("Missing STRIPE_PRICE_POWER.");
+  return;
+}
+priceId = STRIPE_PRICE_POWER;
 }
 
 const base = String(PUBLIC_BASE_URL).replace(/\/+$/, "");
 
 const session = await stripe.checkout.sessions.create({
   mode: "subscription",
-  line_items: [{ price: STRIPE_PRICE_MEMBER, quantity: 1 }],
+  line_items: [{ price: priceId, quantity: 1 }],
   success_url: base + "/subscribe/success",
   cancel_url: base + "/subscribe/cancel",
-  metadata: { practice_phone: phone },
+  metadata: { practice_phone: phone, tier: plan },
 });
 
 if (!session || !session.url) {
