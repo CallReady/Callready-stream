@@ -20,6 +20,7 @@ const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 const DATABASE_URL = process.env.DATABASE_URL;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
+console.log(nowIso(), "Stripe configured at boot:", !!STRIPE_SECRET_KEY);
 const STRIPE_PRICE_MEMBER = process.env.STRIPE_PRICE_MEMBER;
 
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
