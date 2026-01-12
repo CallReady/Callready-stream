@@ -93,6 +93,8 @@ const TWILIO_NO_MINUTES_LEFT =
   "To get more time, please visit CallReady dot live. " +
   "If you have questions, you can email support at CallReady dot live. " +
   "Thanks for calling, and we hope you will practice again soon.";
+  const TWILIO_SERVICE_UNAVAILABLE =
+"CallReady is temporarily unavailable right now. Please try again in a little bit. Goodbye.";
 
 function safeJsonParse(str) {
   try {
@@ -649,6 +651,18 @@ app.post("/voice", async (req, res) => {
 // /end supports:
 // - retry=1 for the retry prompt
 // - skip_transition=1 to go straight to opt-in language (used when AI ends the call)
+app.post("/unavailable", async (req, res) => {
+try {
+const VoiceResponse = twilio.twiml.VoiceResponse;
+const vr = new VoiceResponse();
+vr.say(TWILIO_SERVICE_UNAVAILABLE);
+vr.hangup();
+res.type("text/xml").send(vr.toString());
+} catch (err) {
+console.error("Error building /unavailable TwiML:", err);
+res.status(500).send("Error");
+}
+});
 app.post("/end", async (req, res) => {
   try {
     const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -788,6 +802,7 @@ wss.on("connection", (twilioWs) => {
   let openerAudioDeltaCount = 0;
   let openerResent = false;
   let openerRetryTimer = null;
+  let openerNoAudioTimer = null;
 
   let turnDetectionEnabled = false;
 
@@ -920,6 +935,13 @@ wss.on("connection", (twilioWs) => {
   function sendOpenerOnce(label) {
     console.log(nowIso(), "Sending opener", label ? "(" + label + ")" : "");
     const openerSpeech = buildDynamicOpenerSpeech();
+    if (openerNoAudioTimer) {
+clearTimeout(openerNoAudioTimer);
+}
+openerNoAudioTimer = setTimeout(() => {
+console.log(nowIso(), "No opener audio received, redirecting to /unavailable");
+redirectCallToUnavailable("opener_no_audio");
+}, 3000);
 
     openaiSend({
       type: "response.create",
@@ -1055,7 +1077,47 @@ wss.on("connection", (twilioWs) => {
       closeAll("Redirect to /end failed");
     }
   }
+async function redirectCallToUnavailable(reason) {
+if (endRedirectRequested) return;
+endRedirectRequested = true;
 
+if (!callSid) {
+console.log(nowIso(), "Cannot redirect to /unavailable, missing callSid", reason);
+closeAll("Missing callSid for unavailable redirect");
+return;
+}
+
+if (!hasTwilioRest()) {
+console.log(nowIso(), "Cannot redirect to /unavailable, missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN", reason);
+closeAll("Missing Twilio REST creds for unavailable redirect");
+return;
+}
+
+if (!PUBLIC_BASE_URL) {
+console.log(nowIso(), "Cannot redirect to /unavailable, missing PUBLIC_BASE_URL", reason);
+closeAll("Missing PUBLIC_BASE_URL for unavailable redirect");
+return;
+}
+
+try {
+const client = twilioClient();
+const base = PUBLIC_BASE_URL.replace(//+$/, "");
+const url = base + "/unavailable";
+
+console.log(nowIso(), "Redirecting call to /unavailable now", callSid, "reason:", reason);
+
+await client.calls(callSid).update({ url: url, method: "POST" });
+
+console.log(nowIso(), "Redirected call to /unavailable via Twilio REST", callSid);
+
+closeOpenAIOnly("Redirected to /unavailable");
+
+
+} catch (err) {
+console.log(nowIso(), "Twilio REST redirect to /unavailable error:", err && err.message ? err.message : err);
+closeAll("Redirect to /unavailable failed");
+}
+}
   function maybeStartSessionTimer() {
     if (sessionTimerStarted) return;
     sessionTimerStarted = true;
@@ -1241,6 +1303,10 @@ wss.on("connection", (twilioWs) => {
       if (!msg) return;
 
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
+        if (openerNoAudioTimer) {
+          clearTimeout(openerNoAudioTimer);
+          openerNoAudioTimer = null;
+          }
         if (!turnDetectionEnabled && openerSent) {
           openerAudioDeltaCount += 1;
           if (openerAudioDeltaCount === 1) {
