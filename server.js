@@ -1,4 +1,4 @@
-//fixing a few small errors that AI pointed out in previous code
+//stable version althought not tested thoroughly - subscribe path working
 "use strict";
 
 const express = require("express");
