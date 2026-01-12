@@ -1,4 +1,4 @@
-//this is a new strong fallback version with unavailable code
+//fixing a few small errors that AI pointed out in previous code
 "use strict";
 
 const express = require("express");
@@ -1358,13 +1358,10 @@ closeAll("Redirect to /unavailable failed");
       }
 
       if (msg.type === "response.created") {
-        responseActive = true;
-        return;
-      if (msg.type === "response.created") {
-        responseActive = true;
-        if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.created (post-opener)");
-        return;
-        }
+      responseActive = true;
+      if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.created (post-opener)");
+      return;
+      }
       }
 
       if (msg.type === "response.done") {
@@ -1461,7 +1458,11 @@ closeAll("Redirect to /unavailable failed");
     openaiWs.on("close", () => {
       console.log(nowIso(), "OpenAI WS closed");
       openaiReady = false;
-    });
+
+      if (!endRedirectRequested) {
+      redirectCallToUnavailable("openai_ws_closed");
+      }
+      });
 
     openaiWs.on("error", (err) => {
       const msgText = err && err.message ? String(err.message) : "";
@@ -1484,7 +1485,8 @@ closeAll("Redirect to /unavailable failed");
       twilioMediaCount += 1;
     if (twilioMediaCount % 50 === 1) {
       console.log(nowIso(), "Twilio media packets received", { count: twilioMediaCount });
-      }streamSid = msg.start && msg.start.streamSid ? msg.start.streamSid : null;
+      }
+      streamSid = msg.start && msg.start.streamSid ? msg.start.streamSid : null;
         callSid = msg.start && msg.start.callSid ? msg.start.callSid : null;
 
       console.log(nowIso(), "Twilio stream start:", streamSid || "(no streamSid)");
