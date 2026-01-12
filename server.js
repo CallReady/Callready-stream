@@ -631,6 +631,17 @@ if (!sig) {
 }
 
 const event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+if (event && event.type === "checkout.session.completed") {
+const session = event.data && event.data.object ? event.data.object : null;
+const md = session && session.metadata ? session.metadata : null;
+
+console.log(nowIso(), "checkout.session.completed metadata", {
+practice_phone: md && md.practice_phone ? String(md.practice_phone) : null,
+tier: md && md.tier ? String(md.tier) : null,
+customer: session && session.customer ? String(session.customer) : null,
+subscription: session && session.subscription ? String(session.subscription) : null,
+});
+}
 
 console.log(nowIso(), "stripe-webhook event received", {
   type: event.type,
