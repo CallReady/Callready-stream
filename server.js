@@ -9,6 +9,7 @@ const { Pool } = require("pg");
 const Stripe = require("stripe");
 
 const app = express();
+app.set("strict routing", true);
 app.use(express.urlencoded({ extended: false }));
 
 const PORT = process.env.PORT || 10000;
