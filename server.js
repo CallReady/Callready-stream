@@ -690,6 +690,55 @@ app.post("/voice", async (req, res) => {
   }
 });
 
+app.post("/create-checkout", async (req, res) => {
+try {
+if (!stripe) {
+res.status(500).send("Stripe not configured.");
+return;
+}
+
+if (!STRIPE_PRICE_MEMBER) {
+  res.status(500).send("Missing STRIPE_PRICE_MEMBER.");
+  return;
+}
+
+if (!PUBLIC_BASE_URL) {
+  res.status(500).send("Missing PUBLIC_BASE_URL.");
+  return;
+}
+
+const phoneRaw = req.body && req.body.phone ? String(req.body.phone) : "";
+const phone = phoneRaw.trim();
+
+if (!phone) {
+  res.status(400).send("Missing phone number.");
+  return;
+}
+
+const base = String(PUBLIC_BASE_URL).replace(/\/+$/, "");
+
+const session = await stripe.checkout.sessions.create({
+  mode: "subscription",
+  line_items: [{ price: STRIPE_PRICE_MEMBER, quantity: 1 }],
+  success_url: base + "/subscribe/success",
+  cancel_url: base + "/subscribe/cancel",
+  metadata: { practice_phone: phone },
+});
+
+if (!session || !session.url) {
+  res.status(500).send("Could not create checkout session.");
+  return;
+}
+
+res.redirect(303, session.url);
+
+
+} catch (e) {
+console.log(nowIso(), "create-checkout error:", e && e.message ? e.message : e);
+res.status(500).send("Checkout error.");
+}
+});
+
 // /end supports:
 // - retry=1 for the retry prompt
 // - skip_transition=1 to go straight to opt-in language (used when AI ends the call)
