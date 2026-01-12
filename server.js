@@ -19,6 +19,7 @@ const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 const DATABASE_URL = process.env.DATABASE_URL;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
+const STRIPE_PRICE_MEMBER = process.env.STRIPE_PRICE_MEMBER;
 
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 
@@ -606,6 +607,19 @@ return;
 }
 
 res.status(200).json({ ok: true });
+});
+app.get("/subscribe", (req, res) => {
+const html =
+"<html><body>" +
+"<h2>CallReady Membership</h2>" +
+"<p>Enter the phone number that will call CallReady for practice sessions.</p>" +
+"<form method="POST" action="/create-checkout">" +
+"<input type="tel" name="phone" placeholder="Practice phone number" required />" +
+"<button type="submit">Continue to payment</button>" +
+"</form>" +
+"</body></html>";
+
+res.status(200).send(html);
 });
 
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
