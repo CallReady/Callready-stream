@@ -700,6 +700,54 @@ console.log(nowIso(), "checkout.session.completed missing metadata or DB not con
 }
 }
 
+if (event && (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated")) {
+const sub = event.data && event.data.object ? event.data.object : null;
+
+const customerId = sub && sub.customer ? String(sub.customer) : "";
+const subscriptionId = sub && sub.id ? String(sub.id) : "";
+const status = sub && sub.status ? String(sub.status) : "";
+const cancelAtPeriodEnd = sub && typeof sub.cancel_at_period_end !== "undefined" ? !!sub.cancel_at_period_end : null;
+
+const periodEndSec = sub && sub.current_period_end ? parseInt(String(sub.current_period_end), 10) : null;
+const periodEndIso = periodEndSec && Number.isFinite(periodEndSec) ? new Date(periodEndSec * 1000).toISOString() : null;
+
+console.log(nowIso(), "subscription event details", {
+type: event.type,
+stripe_customer_id: customerId || null,
+stripe_subscription_id: subscriptionId || null,
+stripe_status: status || null,
+cancel_at_period_end: cancelAtPeriodEnd,
+current_period_end: periodEndIso,
+});
+
+if (pool && customerId) {
+try {
+await pool.query(
+"update billing_subscriptions set " +
+"stripe_subscription_id = coalesce($2, stripe_subscription_id), " +
+"stripe_status = coalesce($3, stripe_status), " +
+"cancel_at_period_end = $4, " +
+"current_period_end = $5, " +
+"updated_at = now() " +
+"where stripe_customer_id = $1",
+[customerId, subscriptionId || null, status || null, cancelAtPeriodEnd, periodEndIso]
+);
+
+console.log(nowIso(), "Updated billing_subscriptions from subscription event", {
+stripe_customer_id: customerId,
+stripe_subscription_id: subscriptionId || null,
+stripe_status: status || null,
+cancel_at_period_end: cancelAtPeriodEnd,
+current_period_end: periodEndIso,
+});
+} catch (e) {
+console.log(nowIso(), "Failed to update billing_subscriptions from subscription event:", e && e.message ? e.message : e);
+}
+} else {
+console.log(nowIso(), "subscription event missing customer id or DB not configured");
+}
+}
+
 console.log(nowIso(), "stripe-webhook event received", {
   type: event.type,
   id: event.id,
