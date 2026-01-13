@@ -748,6 +748,72 @@ console.log(nowIso(), "subscription event missing customer id or DB not configur
 }
 }
 
+if (event && event.type === "invoice.payment_failed") {
+const inv = event.data && event.data.object ? event.data.object : null;
+
+const customerId = inv && inv.customer ? String(inv.customer) : "";
+const subscriptionId = inv && inv.subscription ? String(inv.subscription) : "";
+const status = inv && inv.status ? String(inv.status) : "";
+
+console.log(nowIso(), "invoice.payment_failed details", {
+stripe_customer_id: customerId || null,
+stripe_subscription_id: subscriptionId || null,
+invoice_status: status || null,
+});
+
+if (pool && customerId) {
+try {
+const r = await pool.query(
+"select phone_e164 from billing_subscriptions where stripe_customer_id = $1 limit 1",
+[customerId]
+);
+
+const phone = r && r.rows && r.rows[0] && r.rows[0].phone_e164 ? String(r.rows[0].phone_e164) : "";
+
+if (phone) {
+try {
+await pool.query(
+"update callers set tier = 'free' where phone_e164 = $1",
+[phone]
+);
+
+console.log(nowIso(), "Downgraded caller tier due to payment_failed", {
+phone_e164: phone,
+});
+} catch (e) {
+console.log(nowIso(), "Failed to downgrade caller tier on payment_failed:", e && e.message ? e.message : e);
+}
+} else {
+console.log(nowIso(), "invoice.payment_failed: could not find phone for customer", { stripe_customer_id: customerId });
+}
+
+try {
+await pool.query(
+"update billing_subscriptions set " +
+"stripe_subscription_id = coalesce($2, stripe_subscription_id), " +
+"stripe_status = $3, " +
+"updated_at = now() " +
+"where stripe_customer_id = $1",
+[customerId, subscriptionId || null, "payment_failed"]
+);
+
+console.log(nowIso(), "Updated billing_subscriptions on payment_failed", {
+stripe_customer_id: customerId,
+stripe_subscription_id: subscriptionId || null,
+stripe_status: "payment_failed",
+});
+} catch (e) {
+console.log(nowIso(), "Failed to update billing_subscriptions on payment_failed:", e && e.message ? e.message : e);
+}
+
+} catch (e) {
+console.log(nowIso(), "invoice.payment_failed handler DB error:", e && e.message ? e.message : e);
+}
+} else {
+console.log(nowIso(), "invoice.payment_failed missing customer id or DB not configured");
+}
+}
+
 console.log(nowIso(), "stripe-webhook event received", {
   type: event.type,
   id: event.id,
