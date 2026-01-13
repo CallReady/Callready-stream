@@ -916,46 +916,76 @@ const html =
 "<html><head><meta charset='utf-8' />" +
 "<meta name='viewport' content='width=device-width, initial-scale=1' />" +
 "<title>CallReady Membership</title>" +
+"<link rel='preconnect' href='https://fonts.googleapis.com' />" +
+"<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin />" +
+"<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap' rel='stylesheet' />" +
 "<style>" +
-"body{font-family:Arial,Helvetica,sans-serif;background:#F6F8F9;color:#2F3A40;margin:0;padding:24px;}" +
-".wrap{max-width:760px;margin:0 auto;}" +
-".card{background:#fff;border:1px solid #e6eaee;border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,0.06);padding:22px;}" +
-"h2{margin:0 0 8px 0;font-size:22px;}" +
-"p{margin:0 0 16px 0;line-height:1.4;}" +
-"label{display:block;font-size:14px;margin:0 0 6px 0;}" +
-"input[type='tel']{width:100%;padding:12px 12px;border:1px solid #cfd6dc;border-radius:10px;font-size:16px;}" +
-".plans{display:grid;grid-template-columns:1fr;gap:10px;margin-top:14px;}" +
-"@media(min-width:640px){.plans{grid-template-columns:1fr 1fr;}}" +
-".plan{border:1px solid #cfd6dc;border-radius:12px;padding:12px 12px;background:#fff;}" +
-".plan:hover{border-color:#3A6F8F;}" +
+":root{" +
+"--bg:#F6F8F9;" +
+"--card:#ffffff;" +
+"--text:#2F3A40;" +
+"--muted:#5a6a73;" +
+"--border:#e6eaee;" +
+"--primary:#3A6F8F;" +
+"--primary2:#6E8F7B;" +
+"}" +
+"body{font-family:Inter,Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:24px;}" +
+".wrap{max-width:860px;margin:0 auto;}" +
+".card{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.07);padding:22px;}" +
+".brand{display:flex;align-items:center;gap:12px;margin-bottom:10px;}" +
+".logo{max-height:48px;max-width:240px;object-fit:contain;}" +
+"h2{margin:8px 0 8px 0;font-size:22px;letter-spacing:-0.2px;}" +
+"p{margin:0 0 16px 0;line-height:1.45;color:var(--muted);}" +
+"label{display:block;font-size:14px;margin:0 0 6px 0;color:var(--text);}" +
+"input[type='tel']{width:100%;padding:12px 12px;border:1px solid #cfd6dc;border-radius:12px;font-size:16px;}" +
+".helper{margin-top:8px;font-size:12px;color:var(--muted);}" +
+".plans{display:grid;grid-template-columns:1fr;gap:12px;margin-top:16px;}" +
+"@media(min-width:720px){.plans{grid-template-columns:1fr 1fr;}}" +
+".plan{border:1px solid #cfd6dc;border-radius:14px;padding:14px;background:#fff;}" +
+".plan:hover{border-color:var(--primary);}" +
 ".plan input{margin-right:8px;}" +
-".plan-title{font-weight:700;margin-bottom:4px;}" +
-".plan-note{font-size:13px;color:#4a5a63;line-height:1.3;}" +
-".actions{margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}" +
-"button{background:#3A6F8F;color:#fff;border:0;border-radius:12px;padding:12px 16px;font-size:16px;cursor:pointer;}" +
+".plan-title{font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px;}" +
+".plan-note{font-size:13px;color:var(--muted);line-height:1.4;margin:0 0 10px 0;}" +
+".plan-list{margin:0;padding-left:18px;font-size:13px;color:var(--muted);line-height:1.4;}" +
+".actions{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}" +
+"button{background:var(--primary);color:#fff;border:0;border-radius:14px;padding:12px 16px;font-size:16px;font-weight:600;cursor:pointer;}" +
 "button:hover{filter:brightness(0.95);}" +
-".fine{margin-top:14px;font-size:12px;color:#5a6a73;}" +
+".fine{margin-top:14px;font-size:12px;color:var(--muted);line-height:1.4;}" +
 "</style></head><body>" +
 "<div class='wrap'><div class='card'>" +
+"<div class='brand'>" +
+"<img class='logo' src='https://cdn.builder.io/api/v1/image/assets%2F279137d3cf234c9bb6c4cf3f6b1c4939%2Fcab85975882a4da19b5eaa18e422c537' alt='CallReady logo' />" +
+"</div>" +
 "<h2>CallReady Membership</h2>" +
-"<p>Enter the phone number that will call CallReady for practice sessions.</p>" +
+"<p>Choose a plan, then enter the phone number that will call CallReady for practice sessions.</p>" +
 "<form method='POST' action='/create-checkout'>" +
 "<label for='phone'>Practice phone number</label>" +
 "<input id='phone' type='tel' name='phone' placeholder='+1 (555) 555-5555' required />" +
+"<div class='helper'>Use the same number you will call from.</div>" +
 "<div class='plans'>" +
 "<label class='plan'>" +
 "<div class='plan-title'><input type='radio' name='plan' value='member' checked /> Member</div>" +
-"<div class='plan-note'>A steady monthly pool of practice minutes for common calls.</div>" +
+"<div class='plan-note'>A steady monthly pool for calm, repeatable practice. Perfect if you are building comfort one call at a time.</div>" +
+"<ul class='plan-list'>" +
+"<li>Practice common calls: scheduling, quick questions, follow-ups</li>" +
+"<li>Supportive guidance when you get stuck</li>" +
+"<li>Best for a consistent weekly practice routine</li>" +
+"</ul>" +
 "</label>" +
 "<label class='plan'>" +
 "<div class='plan-title'><input type='radio' name='plan' value='power' /> Power</div>" +
-"<div class='plan-note'>More monthly minutes for frequent practice and longer sessions.</div>" +
+"<div class='plan-note'>More monthly minutes for frequent practice and longer sessions. Ideal for job searches, appointments, and tougher scenarios.</div>" +
+"<ul class='plan-list'>" +
+"<li>More practice time for longer, multi-step conversations</li>" +
+"<li>Better for practicing several times per week</li>" +
+"<li>Best for building momentum fast</li>" +
+"</ul>" +
 "</label>" +
 "</div>" +
 "<div class='actions'>" +
 "<button type='submit'>Continue to payment</button>" +
 "</div>" +
-"<div class='fine'>You can cancel anytime. If you cancel at period end, access stays active until the period ends.</div>" +
+"<div class='fine'>Cancel anytime. If you cancel at period end, access stays active until the period ends.</div>" +
 "</form>" +
 "</div></div>" +
 "</body></html>";
