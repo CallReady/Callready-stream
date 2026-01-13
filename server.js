@@ -617,17 +617,17 @@ return;
 }
 
 if (!STRIPE_WEBHOOK_SECRET) {
-  console.log(nowIso(), "stripe-webhook: Missing STRIPE_WEBHOOK_SECRET");
-  res.status(500).send("Missing webhook secret");
-  return;
+console.log(nowIso(), "stripe-webhook: Missing STRIPE_WEBHOOK_SECRET");
+res.status(500).send("Missing webhook secret");
+return;
 }
 
 const sig = req.headers && req.headers["stripe-signature"] ? String(req.headers["stripe-signature"]) : "";
 
 if (!sig) {
-  console.log(nowIso(), "stripe-webhook: Missing stripe-signature header");
-  res.status(400).send("Missing signature");
-  return;
+console.log(nowIso(), "stripe-webhook: Missing stripe-signature header");
+res.status(400).send("Missing signature");
+return;
 }
 
 const event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
@@ -658,39 +658,40 @@ await pool.query(
 );
 
 console.log(nowIso(), "Upgraded caller tier from checkout", {
-  phone_e164: phone,
-  tier: tier,
+phone_e164: phone,
+tier: tier,
 });
 
 const customerId = session && session.customer ? String(session.customer) : "";
 const subscriptionId = session && session.subscription ? String(session.subscription) : "";
 
 if (customerId && subscriptionId) {
-  try {
-    await pool.query(
-      "insert into billing_subscriptions (phone_e164, stripe_customer_id, stripe_subscription_id, stripe_status, created_at, updated_at) " +
-      "values ($1, $2, $3, $4, now(), now()) " +
-      "on conflict (phone_e164) do update set " +
-      "stripe_customer_id = excluded.stripe_customer_id, " +
-      "stripe_subscription_id = excluded.stripe_subscription_id, " +
-      "stripe_status = excluded.stripe_status, " +
-      "updated_at = now()",
-      [phone, customerId, subscriptionId, "active"]
-    );
+try {
+await pool.query(
+"insert into billing_subscriptions (phone_e164, stripe_customer_id, stripe_subscription_id, stripe_status, created_at, updated_at) " +
+"values ($1, $2, $3, $4, now(), now()) " +
+"on conflict (phone_e164) do update set " +
+"stripe_customer_id = excluded.stripe_customer_id, " +
+"stripe_subscription_id = excluded.stripe_subscription_id, " +
+"stripe_status = excluded.stripe_status, " +
+"updated_at = now()",
+[phone, customerId, subscriptionId, "active"]
+);
 
-    console.log(nowIso(), "Upserted billing_subscriptions from checkout", {
-      phone_e164: phone,
-      stripe_customer_id: customerId,
-      stripe_subscription_id: subscriptionId,
-      stripe_status: "active",
-    });
-  } catch (e) {
-    console.log(nowIso(), "Failed to upsert billing_subscriptions:", e && e.message ? e.message : e);
-  }
-} else {
-  console.log(nowIso(), "checkout.session.completed missing customer or subscription id");
+console.log(nowIso(), "Upserted billing_subscriptions from checkout", {
+  phone_e164: phone,
+  stripe_customer_id: customerId,
+  stripe_subscription_id: subscriptionId,
+  stripe_status: "active",
+});
+
+
+} catch (e) {
+console.log(nowIso(), "Failed to upsert billing_subscriptions:", e && e.message ? e.message : e);
 }
-
+} else {
+console.log(nowIso(), "checkout.session.completed missing customer or subscription id");
+}
 
 } catch (e) {
 console.log(nowIso(), "Failed to upgrade caller tier:", e && e.message ? e.message : e);
@@ -745,6 +746,80 @@ console.log(nowIso(), "Failed to update billing_subscriptions from subscription 
 }
 } else {
 console.log(nowIso(), "subscription event missing customer id or DB not configured");
+}
+}
+
+if (event && event.type === "customer.subscription.deleted") {
+const sub = event.data && event.data.object ? event.data.object : null;
+
+const customerId = sub && sub.customer ? String(sub.customer) : "";
+const subscriptionId = sub && sub.id ? String(sub.id) : "";
+const status = sub && sub.status ? String(sub.status) : "";
+
+const periodEndSec = sub && sub.current_period_end ? parseInt(String(sub.current_period_end), 10) : null;
+const periodEndIso = periodEndSec && Number.isFinite(periodEndSec) ? new Date(periodEndSec * 1000).toISOString() : null;
+
+console.log(nowIso(), "customer.subscription.deleted details", {
+stripe_customer_id: customerId || null,
+stripe_subscription_id: subscriptionId || null,
+stripe_status: status || null,
+current_period_end: periodEndIso,
+});
+
+if (pool && customerId) {
+try {
+const r = await pool.query(
+"select phone_e164 from billing_subscriptions where stripe_customer_id = $1 limit 1",
+[customerId]
+);
+
+const phone = r && r.rows && r.rows[0] && r.rows[0].phone_e164 ? String(r.rows[0].phone_e164) : "";
+
+if (phone) {
+try {
+await pool.query(
+"update callers set tier = 'free' where phone_e164 = $1",
+[phone]
+);
+
+console.log(nowIso(), "Downgraded caller tier due to subscription.deleted", {
+phone_e164: phone,
+});
+} catch (e) {
+console.log(nowIso(), "Failed to downgrade caller tier on subscription.deleted:", e && e.message ? e.message : e);
+}
+} else {
+console.log(nowIso(), "customer.subscription.deleted: could not find phone for customer", { stripe_customer_id: customerId });
+}
+
+try {
+await pool.query(
+"update billing_subscriptions set " +
+"stripe_subscription_id = coalesce($2, stripe_subscription_id), " +
+"stripe_status = $3, " +
+"cancel_at_period_end = $4, " +
+"current_period_end = $5, " +
+"updated_at = now() " +
+"where stripe_customer_id = $1",
+[customerId, subscriptionId || null, (status || "canceled"), false, periodEndIso]
+);
+
+console.log(nowIso(), "Updated billing_subscriptions on subscription.deleted", {
+stripe_customer_id: customerId,
+stripe_subscription_id: subscriptionId || null,
+stripe_status: (status || "canceled"),
+cancel_at_period_end: false,
+current_period_end: periodEndIso,
+});
+} catch (e) {
+console.log(nowIso(), "Failed to update billing_subscriptions on subscription.deleted:", e && e.message ? e.message : e);
+}
+
+} catch (e) {
+console.log(nowIso(), "customer.subscription.deleted handler DB error:", e && e.message ? e.message : e);
+}
+} else {
+console.log(nowIso(), "customer.subscription.deleted missing customer id or DB not configured");
 }
 }
 
@@ -815,12 +890,11 @@ console.log(nowIso(), "invoice.payment_failed missing customer id or DB not conf
 }
 
 console.log(nowIso(), "stripe-webhook event received", {
-  type: event.type,
-  id: event.id,
+type: event.type,
+id: event.id,
 });
 
 res.status(200).json({ received: true });
-
 
 } catch (e) {
 console.log(nowIso(), "stripe-webhook signature verification failed:", e && e.message ? e.message : e);
