@@ -912,22 +912,57 @@ res.status(200).json({ ok: true });
 
 app.get("/subscribe", (req, res) => {
 const html =
-"<html><body>" +
+"<!doctype html>" +
+"<html><head><meta charset='utf-8' />" +
+"<meta name='viewport' content='width=device-width, initial-scale=1' />" +
+"<title>CallReady Membership</title>" +
+"<style>" +
+"body{font-family:Arial,Helvetica,sans-serif;background:#F6F8F9;color:#2F3A40;margin:0;padding:24px;}" +
+".wrap{max-width:760px;margin:0 auto;}" +
+".card{background:#fff;border:1px solid #e6eaee;border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,0.06);padding:22px;}" +
+"h2{margin:0 0 8px 0;font-size:22px;}" +
+"p{margin:0 0 16px 0;line-height:1.4;}" +
+"label{display:block;font-size:14px;margin:0 0 6px 0;}" +
+"input[type='tel']{width:100%;padding:12px 12px;border:1px solid #cfd6dc;border-radius:10px;font-size:16px;}" +
+".plans{display:grid;grid-template-columns:1fr;gap:10px;margin-top:14px;}" +
+"@media(min-width:640px){.plans{grid-template-columns:1fr 1fr;}}" +
+".plan{border:1px solid #cfd6dc;border-radius:12px;padding:12px 12px;background:#fff;}" +
+".plan:hover{border-color:#3A6F8F;}" +
+".plan input{margin-right:8px;}" +
+".plan-title{font-weight:700;margin-bottom:4px;}" +
+".plan-note{font-size:13px;color:#4a5a63;line-height:1.3;}" +
+".actions{margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}" +
+"button{background:#3A6F8F;color:#fff;border:0;border-radius:12px;padding:12px 16px;font-size:16px;cursor:pointer;}" +
+"button:hover{filter:brightness(0.95);}" +
+".fine{margin-top:14px;font-size:12px;color:#5a6a73;}" +
+"</style></head><body>" +
+"<div class='wrap'><div class='card'>" +
 "<h2>CallReady Membership</h2>" +
 "<p>Enter the phone number that will call CallReady for practice sessions.</p>" +
 "<form method='POST' action='/create-checkout'>" +
-"<input type='tel' name='phone' placeholder='Practice phone number' required />" +
-"<div style='margin-top:12px;'>" +
-"<label><input type='radio' name='plan' value='member' checked /> Member</label>" +
-"<br />" +
-"<label><input type='radio' name='plan' value='power' /> Power</label>" +
+"<label for='phone'>Practice phone number</label>" +
+"<input id='phone' type='tel' name='phone' placeholder='+1 (555) 555-5555' required />" +
+"<div class='plans'>" +
+"<label class='plan'>" +
+"<div class='plan-title'><input type='radio' name='plan' value='member' checked /> Member</div>" +
+"<div class='plan-note'>A steady monthly pool of practice minutes for common calls.</div>" +
+"</label>" +
+"<label class='plan'>" +
+"<div class='plan-title'><input type='radio' name='plan' value='power' /> Power</div>" +
+"<div class='plan-note'>More monthly minutes for frequent practice and longer sessions.</div>" +
+"</label>" +
 "</div>" +
+"<div class='actions'>" +
 "<button type='submit'>Continue to payment</button>" +
+"</div>" +
+"<div class='fine'>You can cancel anytime. If you cancel at period end, access stays active until the period ends.</div>" +
 "</form>" +
+"</div></div>" +
 "</body></html>";
 
 res.status(200).send(html);
 });
+
 
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
 
