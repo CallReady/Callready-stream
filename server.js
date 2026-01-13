@@ -1633,11 +1633,15 @@ closeAll("Redirect to /unavailable failed");
 
   function responseTextRequestsEnd(text) {
     if (!text) return false;
-    const t = String(text).toUpperCase();
-    if (t.includes(AI_END_CALL_TRIGGER)) return true;
-    if (t.includes("END CALL NOW")) return true;
+
+    const v = extractTokenLineValue(text, "CALLREADY_END");
+    if (v) console.log(nowIso(), "CALLREADY_END detected", { value: v });
+    if (v && String(v).toUpperCase().includes("END_CALL_NOW")) return true;
+
+    if (String(text).toUpperCase().includes(AI_END_CALL_TRIGGER)) return true;
+
     return false;
-  }
+    }
 
   function buildReturnCallerInstructions(ctx) {
     if (!ctx || !ctx.scenario_tag) return "";
@@ -1749,7 +1753,7 @@ closeAll("Redirect to /unavailable failed");
             "Ending rule:\n" +
             "If the caller asks to end the call, quit, stop, hang up, or says they do not want to do this anymore, you MUST do BOTH in the SAME response:\n" +
             "1) Say exactly: Ending practice now.\n" +
-            "2) In TEXT ONLY, output this exact token on its own line: END_CALL_NOW\n" +
+            "2) In TEXT ONLY, output exactly one line and nothing else: CALLREADY_END: END_CALL_NOW\n" +
             "Never say the token out loud.\n" +
             "Do not ask any follow up questions.\n" +
             "Do not include any other text after the token line.\n" +
