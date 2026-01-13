@@ -662,6 +662,35 @@ console.log(nowIso(), "Upgraded caller tier from checkout", {
   tier: tier,
 });
 
+const customerId = session && session.customer ? String(session.customer) : "";
+const subscriptionId = session && session.subscription ? String(session.subscription) : "";
+
+if (customerId && subscriptionId) {
+  try {
+    await pool.query(
+      "insert into billing_subscriptions (phone_e164, stripe_customer_id, stripe_subscription_id, stripe_status, created_at, updated_at) " +
+      "values ($1, $2, $3, $4, now(), now()) " +
+      "on conflict (phone_e164) do update set " +
+      "stripe_customer_id = excluded.stripe_customer_id, " +
+      "stripe_subscription_id = excluded.stripe_subscription_id, " +
+      "stripe_status = excluded.stripe_status, " +
+      "updated_at = now()",
+      [phone, customerId, subscriptionId, "active"]
+    );
+
+    console.log(nowIso(), "Upserted billing_subscriptions from checkout", {
+      phone_e164: phone,
+      stripe_customer_id: customerId,
+      stripe_subscription_id: subscriptionId,
+      stripe_status: "active",
+    });
+  } catch (e) {
+    console.log(nowIso(), "Failed to upsert billing_subscriptions:", e && e.message ? e.message : e);
+  }
+} else {
+  console.log(nowIso(), "checkout.session.completed missing customer or subscription id");
+}
+
 
 } catch (e) {
 console.log(nowIso(), "Failed to upgrade caller tier:", e && e.message ? e.message : e);
