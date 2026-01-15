@@ -964,7 +964,9 @@ const html =
 "<div class='brand'><img class='logo' src='https://cdn.builder.io/api/v1/image/assets%2F279137d3cf234c9bb6c4cf3f6b1c4939%2Fcab85975882a4da19b5eaa18e422c537' alt='CallReady logo' /></div>" +
 "<h2>Practice phone calls without pressure</h2>" +
 "<p>You already have a free plan just by calling CallReady. Upgrade if you want more practice time.</p>" +
-
+((req.query && String(req.query.error || "") === "phone")
+? "<div style='margin:12px 0;padding:12px 14px;border:1px solid #d8a3a3;background:#fff5f5;border-radius:12px;color:#7a1f1f;font-size:14px;line-height:1.35;'>Please enter a valid U.S. phone number, for example: 555 555 5555.</div>"
+: "") +
 "<div class='compare'>" +
 "<div class='tier'><h3>Free</h3><ul><li>30 minutes per month</li><li>5 minute session cap</li></ul></div>" +
 "<div class='tier'><h3>Member, $15 per month</h3><ul><li>120 minutes per month</li><li>Steady, unrushed practice</li></ul></div>" +
@@ -974,7 +976,7 @@ const html =
 "<form method='POST' action='/create-checkout'>" +
 "<label for='phone'>Practice phone number</label>" +
 "<input id='phone' type='tel' name='phone' placeholder='555 555 5555' pattern='^[0-9\\s\\-()]{10,15}$' required />" +
-
+"<div style='margin-top:8px;font-size:12px;color:var(--muted);'>Use the same number you will call from. U.S. numbers only.</div>" +
 "<div class='plans'>" +
 "<label class='plan'><div class='plan-title'><input type='radio' name='plan' value='member' checked /> Member</div></label>" +
 "<label class='plan'><div class='plan-title'><input type='radio' name='plan' value='power' /> Member Plus</div></label>" +
