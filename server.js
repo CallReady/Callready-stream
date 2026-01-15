@@ -978,8 +978,8 @@ const html =
 "<p>Choose a plan, then enter the phone number that will call CallReady for practice sessions.</p>" +
 "<form method='POST' action='/create-checkout'>" +
 "<label for='phone'>Practice phone number</label>" +
-"<input id='phone' type='tel' name='phone' placeholder='+1 555 555 5555' pattern='^\\+\\d{1,3}\\s?\\d{3}\\s?\\d{3}\\s?\\d{4}$' required />" +
-"<div class='helper'>Use the same number you will call from, including country code</div>" +
+"<input id='phone' type='tel' name='phone' placeholder='555 555 5555' pattern='^[0-9\\s\\-()]{10,15}$' required />" +
+"<div class='helper'>Use the same number you will call from. U.S. numbers only.</div>" +
 "<div class='plans'>" + 
 "<label class='plan'>" +
 "<div class='plan-title'><input type='radio' name='plan' value='member' checked /> Member</div>" +
@@ -1094,20 +1094,33 @@ if (!PUBLIC_BASE_URL) {
 }
 
 const phoneRaw = req.body && req.body.phone ? String(req.body.phone) : "";
-const phone = phoneRaw.trim();
+const trimmed = phoneRaw.trim();
+const digitsOnly = trimmed.replace(/\D/g, "");
+
+let phone = "";
+if (digitsOnly.length === 10) {
+  phone = "+1" + digitsOnly;
+} else if (digitsOnly.length === 11 && digitsOnly.startsWith("1")) {
+  phone = "+" + digitsOnly;
+} else {
+  phone = "";
+}
+
+if (!phone) {
+  res.status(400).send("Please enter a valid U.S. phone number, for example: 555 555 5555.");
+  return;
+}
+
 const planRaw = req.body && req.body.plan ? String(req.body.plan) : "member";
 const plan = planRaw.trim().toLowerCase();
-if (!phone) {
-  res.status(400).send("Missing phone number.");
-  return;
-}
+
 let priceId = STRIPE_PRICE_MEMBER;
 if (plan === "power") {
-if (!STRIPE_PRICE_POWER) {
-  res.status(500).send("Missing STRIPE_PRICE_POWER.");
-  return;
-}
-priceId = STRIPE_PRICE_POWER;
+  if (!STRIPE_PRICE_POWER) {
+    res.status(500).send("Missing STRIPE_PRICE_POWER.");
+    return;
+  }
+  priceId = STRIPE_PRICE_POWER;
 }
 
 const base = String(PUBLIC_BASE_URL).replace(/\/+$/, "");
