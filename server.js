@@ -991,7 +991,7 @@ const html =
 "</ul>" +
 "</label>" +
 "<label class='plan'>" +
-"<div class='plan-title'><input type='radio' name='plan' value='power' /> Power</div>" +
+"<div class='plan-title'><input type='radio' name='plan' value='power' /> Member Plus</div>" +
 "<div class='plan-note'>More monthly minutes for frequent practice and longer sessions. Ideal for job searches, appointments, and tougher scenarios.</div>" +
 "<ul class='plan-list'>" +
 "<li>More practice time for longer, multi-step conversations</li>" +
