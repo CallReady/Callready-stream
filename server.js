@@ -1,4 +1,4 @@
-//stable version althought not tested thoroughly - subscribe path working
+//stable version - added correct tiers to paid plans and verified with test calling
 "use strict";
 
 const express = require("express");
@@ -99,7 +99,6 @@ const OPTIN_CONFIRM_SMS =
 const TWILIO_NO_MINUTES_LEFT =
   "Welcome back to CallReady. It looks like you do not have any practice minutes remaining on your plan right now. " +
   "To get more time, please visit CallReady dot live. " +
-  "If you have questions, you can email support at CallReady dot live. " +
   "Thanks for calling, and we hope you will practice again soon.";
   const TWILIO_SERVICE_UNAVAILABLE =
 "CallReady is temporarily unavailable right now. Please try again in a little bit. Goodbye.";
