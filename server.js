@@ -976,6 +976,9 @@ const html =
 "</div>" +
 "<h2>CallReady Membership</h2>" +
 "<p>Choose a plan, then enter the phone number that will call CallReady for practice sessions.</p>" +
+((req.query && String(req.query.error || "") === "phone")
+? "<div style='margin:12px 0;padding:12px 14px;border:1px solid #d8a3a3;background:#fff5f5;border-radius:12px;color:#7a1f1f;font-size:14px;line-height:1.35;'>Please enter a valid U.S. phone number, for example: 555 555 5555.</div>"
+: "") +
 "<form method='POST' action='/create-checkout'>" +
 "<label for='phone'>Practice phone number</label>" +
 "<input id='phone' type='tel' name='phone' placeholder='555 555 5555' pattern='^[0-9\\s\\-()]{10,15}$' required />" +
@@ -1107,8 +1110,8 @@ if (digitsOnly.length === 10) {
 }
 
 if (!phone) {
-  res.status(400).send("Please enter a valid U.S. phone number, for example: 555 555 5555.");
-  return;
+res.redirect(303, "/subscribe?error=phone");
+return;
 }
 
 const planRaw = req.body && req.body.plan ? String(req.body.plan) : "member";
