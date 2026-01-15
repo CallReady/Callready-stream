@@ -1397,26 +1397,23 @@ wss.on("connection", (twilioWs) => {
 
     if (String(tier).toLowerCase() === "free") {
       return (
-        "Welcome back to CallReady. " +
-        "You have about " +
-        remainingMinutes +
-        " minutes remaining this month on your free plan. " +
-        "Practice calls on this plan are limited to about " +
-        capMinutes +
-        " minutes. " +
-        "For more time, visit CallReady dot live. "
+      "Welcome back to CallReady. " +
+      "You have about " +
+      remainingMinutes +
+      " minutes remaining this month on your free plan. " +
+      "Practice calls on this plan are limited to about " +
+      capMinutes +
+      " minutes. " +
+      "For more time, visit CallReady dot live. "
       );
-    }
+      }
 
     return (
       "Welcome back to CallReady. " +
       "You have about " +
       remainingMinutes +
-      " minutes remaining this month on your plan. " +
-      "This call is limited to about " +
-      capMinutes +
-      " minutes. "
-    );
+      " minutes remaining this month on your plan. "
+      );
   }
 
   function sendOpenerOnce(label) {
