@@ -162,10 +162,16 @@ function tierMonthlyAllowanceSeconds(tier) {
 }
 
 function tierPerCallCapSeconds(tier) {
-  const t = String(tier || "free").toLowerCase();
-  if (t === "power" || t === "power_user" || t === "poweruser") return POWER_PER_CALL_SECONDS;
-  if (t === "member") return MEMBER_PER_CALL_SECONDS;
-  return FREE_PER_CALL_SECONDS;
+const t = String(tier || "free").toLowerCase();
+
+// If MEMBER_PER_CALL_SECONDS or POWER_PER_CALL_SECONDS is 0, treat that as "no per-call cap".
+if (t === "power" || t === "power_user" || t === "poweruser") {
+return POWER_PER_CALL_SECONDS > 0 ? POWER_PER_CALL_SECONDS : null;
+}
+if (t === "member") {
+return MEMBER_PER_CALL_SECONDS > 0 ? MEMBER_PER_CALL_SECONDS : null;
+}
+return FREE_PER_CALL_SECONDS;
 }
 
 async function upsertCallerOnCallStart(fromPhoneE164, callSid) {
@@ -335,7 +341,20 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
     if (remaining < 0) remaining = 0;
 
     const baseCap = tierPerCallCapSeconds(tier2);
-    const perCallCapSeconds = remaining > 0 ? Math.max(1, Math.min(baseCap, remaining)) : 0;
+
+      // If baseCap is null, there is no per-session cap.
+      // The call can run up to whatever remains in the monthly pool.
+      let perCallCapSeconds = 0;
+
+      if (remaining > 0) {
+      if (baseCap === null) {
+      perCallCapSeconds = Math.max(1, remaining);
+      } else {
+      perCallCapSeconds = Math.max(1, Math.min(baseCap, remaining));
+      }
+      } else {
+      perCallCapSeconds = 0;
+      }
 
     if (perCallCapSeconds > 0) {
       try {
@@ -1587,25 +1606,36 @@ closeAll("Redirect to /unavailable failed");
 }
 }
   function maybeStartSessionTimer() {
-    if (sessionTimerStarted) return;
-    sessionTimerStarted = true;
+if (sessionTimerStarted) return;
 
-    const capMs = Math.max(1, perCallCapSeconds || FREE_PER_CALL_SECONDS) * 1000;
+// No per-session timer for paid tiers
+if (callerRuntime) {
+const t = String(callerRuntime.tier || "free").toLowerCase();
+if (t === "member" || t === "power" || t === "power_user" || t === "poweruser") {
+return;
+}
+}
 
-    sessionTimer = setTimeout(() => {
-      (async () => {
-        console.log(nowIso(), "Session timer fired, ending session, redirecting to /end", { perCallCapSeconds });
-        cancelOpenAIResponseIfAnyOnce("redirecting to /end");
+sessionTimerStarted = true;
 
-        await requestScenarioTagTextOnlyOnce("timer_end");
+const capMs = Math.max(1, perCallCapSeconds || FREE_PER_CALL_SECONDS) * 1000;
 
-        prepForEnding();
-        await redirectCallToEnd("Session timer fired", { skipTransition: false });
-      })().catch(() => {});
-    }, capMs);
+sessionTimer = setTimeout(() => {
+(async () => {
+console.log(nowIso(), "Session timer fired, ending session, redirecting to /end", { perCallCapSeconds });
+cancelOpenAIResponseIfAnyOnce("redirecting to /end");
 
-    console.log(nowIso(), "Session timer started after first caller speech_started", { perCallCapSeconds });
-  }
+  await requestScenarioTagTextOnlyOnce("timer_end");
+
+  prepForEnding();
+  await redirectCallToEnd("Session timer fired", { skipTransition: false });
+})().catch(() => {});
+
+
+}, capMs);
+
+console.log(nowIso(), "Session timer started after first caller speech_started", { perCallCapSeconds });
+}
 
   function extractTextFromResponseDone(msg) {
     let out = "";
