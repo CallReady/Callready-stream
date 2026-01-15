@@ -978,9 +978,9 @@ const html =
 "<p>Choose a plan, then enter the phone number that will call CallReady for practice sessions.</p>" +
 "<form method='POST' action='/create-checkout'>" +
 "<label for='phone'>Practice phone number</label>" +
-"<input id='phone' type='tel' name='phone' placeholder='+1 (555) 555-5555' required />" +
-"<div class='helper'>Use the same number you will call from.</div>" +
-"<div class='plans'>" +
+"<input id='phone' type='tel' name='phone' placeholder='+1 555 555 5555' pattern='^\\+\\d{1,3}\\s?\\d{3}\\s?\\d{3}\\s?\\d{4}$' required />" +
+"<div class='helper'>Use the same number you will call from, including country code</div>" +
+"<div class='plans'>" + 
 "<label class='plan'>" +
 "<div class='plan-title'><input type='radio' name='plan' value='member' checked /> Member</div>" +
 "<div class='plan-note'>A steady monthly pool for calm, repeatable practice. Perfect if you are building comfort one call at a time.</div>" +
