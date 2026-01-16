@@ -994,8 +994,9 @@ app.get("/subscribe", (req, res) => {
     "});" +
     "</script>" +
     "</head><body>" +
-    "<div class='wrap'><div class='card'>" +
+    "<div class='wrap'>" +
     "<a href='/' class='backLink'>← Back to CallReady</a>" +
+    "<div class='card'>" +
     "<div class='brand'>" +
     "<img class='logo' src='https://cdn.builder.io/api/v1/image/assets%2F279137d3cf234c9bb6c4cf3f6b1c4939%2Fcab85975882a4da19b5eaa18e422c537' alt='CallReady logo' />" +
     "</div>" +
