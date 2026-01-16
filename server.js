@@ -997,7 +997,7 @@ app.get("/subscribe", (req, res) => {
     "</script>" +
     "</head><body>" +
     "<div class='wrap'>" +
-    "<a href='/' class='backLink'>← Back to CallReady</a>" +
+    "<a href='https://callready.live' class='backLink'>← Back to CallReady</a>" +
     "<div class='card'>" +
     "<div class='brand'>" +
     "<img class='logo' src='https://cdn.builder.io/api/v1/image/assets%2F279137d3cf234c9bb6c4cf3f6b1c4939%2Fcab85975882a4da19b5eaa18e422c537' alt='CallReady logo' />" +
@@ -1018,7 +1018,7 @@ app.get("/subscribe", (req, res) => {
     "<div class='tierName'>Free</div>" +
     "<div class='tierPrice'>$0<small>no signup</small></div>" +
     "</div>" +
-    "<div class='tierNote'>Your free membership is created automatically when you call CallReady from your phone. A great way to try CallReady and get a little practice in right away.</div>" +
+    "<div class='tierNote'>Your free membership is created automatically when you call CallReady from your phone. It's a great way to try CallReady and get a little practice in right away.</div>" +
     "<ul class='tierList'>" +
     "<li>30 minutes per month</li>" +
     "<li>Sessions capped at 5 minutes</li>" +
