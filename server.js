@@ -97,7 +97,7 @@ const OPTIN_CONFIRM_SMS =
   "CallReady: You are opted in to receive texts about your practice sessions. Msg and data rates may apply. Reply STOP to opt out, HELP for help.";
 
 const TWILIO_NO_MINUTES_LEFT =
-  "Welcome back to CallReady. It looks like you do not have any practice minutes remaining on your plan right now. " +
+  "Welcome back to CallReady. It looks like you do not have any practice minutes remaining on your membership right now. " +
   "To get more time, please visit CallReady dot live. " +
   "Thanks for calling, and we hope you will practice again soon.";
   const TWILIO_SERVICE_UNAVAILABLE =
@@ -963,7 +963,7 @@ const html =
 "<div class='wrap'><div class='card'>" +
 "<div class='brand'><img class='logo' src='https://cdn.builder.io/api/v1/image/assets%2F279137d3cf234c9bb6c4cf3f6b1c4939%2Fcab85975882a4da19b5eaa18e422c537' alt='CallReady logo' /></div>" +
 "<h2>Practice phone calls without pressure</h2>" +
-"<p>You already have a free plan just by calling CallReady. Upgrade if you want more practice time.</p>" +
+"<p>You already have a free membership just by calling CallReady. Upgrade if you want more practice time.</p>" +
 ((req.query && String(req.query.error || "") === "phone")
 ? "<div style='margin:12px 0;padding:12px 14px;border:1px solid #d8a3a3;background:#fff5f5;border-radius:12px;color:#7a1f1f;font-size:14px;line-height:1.35;'>Please enter a valid U.S. phone number, for example: 555 555 5555.</div>"
 : "") +
@@ -1016,7 +1016,7 @@ const html =
 "<h2>You're all set</h2>" +
 "<p>Your membership is active for the phone number you entered.</p>" +
 "<p>Next step, call the CallReady number from that phone to start practicing.</p>" +
-"<div class='actions'><a class='btn' href='/subscribe'>Back to plans</a></div>" +
+"<div class='actions'><a class='btn' href='/subscribe'>Back to memberships</a></div>" +
 "</div></div></body></html>";
 
 res.status(200).send(html);
@@ -1046,8 +1046,8 @@ const html =
 "<div class='wrap'><div class='card'>" +
 "<div class='brand'><img class='logo' src='https://cdn.builder.io/api/v1/image/assets%2F279137d3cf234c9bb6c4cf3f6b1c4939%2Fcab85975882a4da19b5eaa18e422c537' alt='CallReady logo' /></div>" +
 "<h2>Checkout canceled</h2>" +
-"<p>No changes were made. You can still use the free plan anytime by calling CallReady.</p>" +
-"<div class='actions'><a class='btn' href='/subscribe'>Back to plans</a></div>" +
+"<p>No changes were made. You can still use the free membership anytime by calling CallReady.</p>" +
+"<div class='actions'><a class='btn' href='/subscribe'>Back to memberships</a></div>" +
 "</div></div></body></html>";
 
 res.status(200).send(html);
@@ -1445,7 +1445,7 @@ wss.on("connection", (twilioWs) => {
     const capMinutes = formatMinutesApprox(perCallCapSeconds);
 
     if (totalCalls <= 1) {
-      return base + "We've set you up with a free plan connected to your phone number. ";
+      return base + "You’re using the free CallReady membership, which is automatically connected to your phone number. ";
     }
 
     if (String(tier).toLowerCase() === "free") {
@@ -1453,11 +1453,11 @@ wss.on("connection", (twilioWs) => {
       "Welcome back to CallReady. " +
       "You have about " +
       remainingMinutes +
-      " minutes remaining this month on your free plan. " +
-      "Practice calls on this plan are limited to about " +
+      " minutes remaining this month on your free membership. " +
+      "Practice calls on this membership are limited to about " +
       capMinutes +
       " minutes. " +
-      "For more time, visit CallReady dot live. "
+      “If you ever want more practice time, you can learn about other membership options at CallReady dot live.”
       );
       }
 
@@ -1465,7 +1465,7 @@ wss.on("connection", (twilioWs) => {
       "Welcome back to CallReady. " +
       "You have about " +
       remainingMinutes +
-      " minutes remaining this month on your plan. "
+      " minutes remaining this month on your membership. "
       );
   }
 
