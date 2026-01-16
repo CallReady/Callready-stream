@@ -933,7 +933,7 @@ app.get("/subscribe", (req, res) => {
     "<!doctype html>" +
     "<html><head><meta charset='utf-8' />" +
     "<meta name='viewport' content='width=device-width, initial-scale=1' />" +
-    "<title>CallReady Membership</title>" +
+    "<title>CallReady Memberships</title>" +
     "<link rel='preconnect' href='https://fonts.googleapis.com' />" +
     "<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin />" +
     "<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap' rel='stylesheet' />" +
@@ -998,7 +998,7 @@ app.get("/subscribe", (req, res) => {
     "<div class='brand'>" +
     "<img class='logo' src='https://cdn.builder.io/api/v1/image/assets%2F279137d3cf234c9bb6c4cf3f6b1c4939%2Fcab85975882a4da19b5eaa18e422c537' alt='CallReady logo' />" +
     "</div>" +
-    "<h2>CallReady Membership</h2>" +
+    "<h2>CallReady Memberships</h2>" +
     "<p>You already have a free membership just by calling CallReady. Upgrade if you want more practice time.</p>" +
 
     ((req.query && String(req.query.error || "") === "phone")
@@ -1014,7 +1014,7 @@ app.get("/subscribe", (req, res) => {
     "<div class='tierName'>Free</div>" +
     "<div class='tierPrice'>$0<small>no signup</small></div>" +
     "</div>" +
-    "<div class='tierNote'>Your account is created automatically when you call CallReady from your phone.</div>" +
+    "<div class='tierNote'>Your free membership is created automatically when you call CallReady from your phone. A great way to try CallReady and get a little practice in right away.</div>" +
     "<ul class='tierList'>" +
     "<li>30 minutes per month</li>" +
     "<li>Sessions capped at 5 minutes</li>" +
@@ -1047,7 +1047,7 @@ app.get("/subscribe", (req, res) => {
     "<div class='tierNote'>For frequent practice, longer calls, and tougher situations like job searches and appointments.</div>" +
     "<ul class='tierList'>" +
     "<li>600 minutes per month</li>" +
-    "<li>Best if you want to practice several times per week</li>" +
+    "<li>Best if you want to practice several times per week or a little every day</li>" +
     "</ul>" +
     "</label>" +
 
