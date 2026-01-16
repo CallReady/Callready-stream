@@ -969,7 +969,7 @@ const html =
 : "") +
 "<div class='compare'>" +
 "<div class='tier'><h3>Free</h3><ul><li>30 minutes per month</li><li>5 minute session cap</li></ul></div>" +
-"<div class='tier'><h3>Member, $15 per month</h3><ul><li>120 minutes per month</li><li>Steady, unrushed practice</li></ul></div>" +
+"<div class='tier'><h3>Member, $15 per month</h3><ul><li>150 minutes per month</li><li>Steady, unrushed practice</li></ul></div>" +
 "<div class='tier'><h3>Member Plus, $30 per month</h3><ul><li>600 minutes per month</li><li>Frequent, longer practice sessions</li></ul></div>" +
 "</div>" +
 
