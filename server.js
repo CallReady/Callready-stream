@@ -146,7 +146,7 @@ function parseIntOrDefault(v, d) {
 }
 
 const FREE_MONTHLY_MINUTES = parseIntOrDefault(process.env.FREE_MONTHLY_MINUTES, 30);
-const MEMBER_MONTHLY_MINUTES = parseIntOrDefault(process.env.MEMBER_MONTHLY_MINUTES, 120);
+const MEMBER_MONTHLY_MINUTES = parseIntOrDefault(process.env.MEMBER_MONTHLY_MINUTES, 150);
 const POWER_MONTHLY_MINUTES = parseIntOrDefault(process.env.POWER_MONTHLY_MINUTES, 600);
 
 const FREE_PER_CALL_SECONDS = parseIntOrDefault(process.env.FREE_PER_CALL_SECONDS, 300);
