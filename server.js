@@ -1457,7 +1457,7 @@ wss.on("connection", (twilioWs) => {
       "Practice calls on this membership are limited to about " +
       capMinutes +
       " minutes. " +
-      “If you ever want more practice time, you can learn about other membership options at CallReady dot live.”
+      "If you ever want more practice time, you can learn about other membership options at CallReady dot live."
       );
       }
 
