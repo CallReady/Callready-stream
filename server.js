@@ -963,7 +963,7 @@ const html =
 "<div class='wrap'><div class='card'>" +
 "<div class='brand'><img class='logo' src='https://cdn.builder.io/api/v1/image/assets%2F279137d3cf234c9bb6c4cf3f6b1c4939%2Fcab85975882a4da19b5eaa18e422c537' alt='CallReady logo' /></div>" +
 "<h2>Practice phone calls without pressure</h2>" +
-"<p>CallReady Membership gives you more time to practice phone calls in a calm, supportive way. Everyone automatically has a free membership just by calling CallReady, with a small monthly limit for quick practice. A paid membership simply adds more monthly practice time, so you can repeat scenarios, take longer calls, and build confidence without rushing. There is no app to install and no setup beyond using your phone. Membership is optional, can be canceled anytime, and is meant to support practice, not pressure.</p>" +
+"<p>You already have a free membership just by calling CallReady. Upgrade if you want more practice time.</p>" +
 ((req.query && String(req.query.error || "") === "phone")
 ? "<div style='margin:12px 0;padding:12px 14px;border:1px solid #d8a3a3;background:#fff5f5;border-radius:12px;color:#7a1f1f;font-size:14px;line-height:1.35;'>Please enter a valid U.S. phone number, for example: 555 555 5555.</div>"
 : "") +
