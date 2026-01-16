@@ -947,6 +947,8 @@ app.get("/subscribe", (req, res) => {
     "--primary:#3A6F8F;" +
     "}" +
     "body{font-family:Inter,Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:24px;}" +
+    ".backLink{display:inline-block;margin-bottom:24px;font-size:14px;color:var(--primary);text-decoration:none;}" +
+    ".backLink:hover{text-decoration:underline;}" +
     ".wrap{max-width:940px;margin:0 auto;}" +
     ".card{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.07);padding:22px;}" +
     ".brand{display:flex;align-items:center;gap:12px;margin-bottom:10px;}" +
