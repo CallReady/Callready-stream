@@ -1961,7 +1961,7 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
         "2) In TEXT ONLY, output exactly one line and nothing else: CALLREADY_END: END_CALL_NOW\n" +
         "Never say the token out loud.\n" +
         "Do not ask any follow up questions.\n" +
-        "Do not include any other text after the token line.\n"
+        "Do not include any other text after the token line.\n" +
             returnCallerBlock,
         },
       });
