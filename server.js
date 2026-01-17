@@ -1555,8 +1555,6 @@ function buildDynamicOpenerSpeech() {
   );
 }
 
-  }
-
   function sendOpenerOnce(label) {
     console.log(nowIso(), "Sending opener", label ? "(" + label + ")" : "");
     const openerSpeech = buildDynamicOpenerSpeech();
