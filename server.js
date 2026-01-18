@@ -145,13 +145,13 @@ function parseIntOrDefault(v, d) {
   return Number.isFinite(n) ? n : d;
 }
 
-const FREE_MONTHLY_MINUTES = parseIntOrDefault(process.env.FREE_MONTHLY_MINUTES, 30);
-const MEMBER_MONTHLY_MINUTES = parseIntOrDefault(process.env.MEMBER_MONTHLY_MINUTES, 150);
-const POWER_MONTHLY_MINUTES = parseIntOrDefault(process.env.POWER_MONTHLY_MINUTES, 600);
+const FREE_MONTHLY_MINUTES = parseIntOrDefault(process.env.FREE_MONTHLY_MINUTES, 20);
+const MEMBER_MONTHLY_MINUTES = parseIntOrDefault(process.env.MEMBER_MONTHLY_MINUTES, 120);
+const POWER_MONTHLY_MINUTES = parseIntOrDefault(process.env.POWER_MONTHLY_MINUTES, 400);
 
 const FREE_PER_CALL_SECONDS = parseIntOrDefault(process.env.FREE_PER_CALL_SECONDS, 300);
-const MEMBER_PER_CALL_SECONDS = parseIntOrDefault(process.env.MEMBER_PER_CALL_SECONDS, 900);
-const POWER_PER_CALL_SECONDS = parseIntOrDefault(process.env.POWER_PER_CALL_SECONDS, 1800);
+const MEMBER_PER_CALL_SECONDS = parseIntOrDefault(process.env.MEMBER_PER_CALL_SECONDS, 9999);
+const POWER_PER_CALL_SECONDS = parseIntOrDefault(process.env.POWER_PER_CALL_SECONDS, 9999);
 
 function tierMonthlyAllowanceSeconds(tier) {
   const t = String(tier || "free").toLowerCase();
