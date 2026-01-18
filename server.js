@@ -1020,7 +1020,7 @@ app.get("/subscribe", (req, res) => {
     "</div>" +
     "<div class='tierNote'>Your free membership is created automatically when you call CallReady from your phone. It's a great way to try CallReady and get a little practice in right away.</div>" +
     "<ul class='tierList'>" +
-    "<li>30 minutes per month</li>" +
+    "<li>20 minutes per month</li>" +
     "<li>Sessions capped at 5 minutes</li>" +
     "</ul>" +
     "</div>" +
@@ -1035,7 +1035,7 @@ app.get("/subscribe", (req, res) => {
     "</div>" +
     "<div class='tierNote'>Steady practice time to build comfort and consistency, without rushing.</div>" +
     "<ul class='tierList'>" +
-    "<li>150 minutes per month</li>" +
+    "<li>120 minutes per month</li>" +
     "<li>Great for a simple weekly practice habit</li>" +
     "</ul>" +
     "</label>" +
@@ -1050,7 +1050,7 @@ app.get("/subscribe", (req, res) => {
     "</div>" +
     "<div class='tierNote'>For frequent practice, longer calls, and tougher situations like job searches and appointments.</div>" +
     "<ul class='tierList'>" +
-    "<li>600 minutes per month</li>" +
+    "<li>400 minutes per month</li>" +
     "<li>Best if you want to practice several times per week or a little every day</li>" +
     "</ul>" +
     "</label>" +
