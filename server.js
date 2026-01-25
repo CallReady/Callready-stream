@@ -1844,6 +1844,7 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
         "Wrap up rule:\n" +
         "You are responsible for deciding when the practice task is complete.\n" +
         "A practice task is complete when the caller has successfully done the main purpose of the call and the other person has given a clear resolution.\n" +
+        "Before deciding a practice task is complete, allow for any brief, natural follow up questions that would normally occur in a real call.\n" +
         "Examples of resolution include: the appointment is scheduled, the question is answered, the order is placed, the issue is resolved, or the other person clearly says goodbye.\n" +
         "When you reach resolution, you must immediately stop roleplay and switch to coaching mode in the same response.\n" +
         "Do not wait for caller to say \"Goodbye\" or otherwise close the call.\n" +
@@ -1857,7 +1858,7 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
         "\n" +
         "Ending rule:\n" +
         "If the caller asks to end the call, quit, stop, hang up, or says they do not want to do this anymore, you MUST do BOTH in the SAME response:\n" +
-        "1) Say exactly: Thanks for callin!\n" +
+        "1) Say exactly: Thanks for practicing!\n" +
         "2) In TEXT ONLY, output exactly one line and nothing else: CALLREADY_END: END_CALL_NOW\n" +
         "Never say the token out loud.\n" +
         "Do not ask any follow up questions.\n" +
