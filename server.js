@@ -76,21 +76,21 @@ const TWILIO_END_TRANSITION =
   "You did something important today by practicing, and that counts, even if it felt awkward or imperfect.";
 
 const TWILIO_OPTIN_PROMPT =
-  "You can choose to receive text messages from CallReady dot Live. " +
+  "You can choose to receive text messages from CallReady. " +
   "If you opt in, we can text you short reminders about what you practiced, what to work on next, and new features as we add them. " +
-  "To agree to receive text messages from CallReady dot Live, press 1 now. " +
+  "To agree to receive text messages from CallReady, press 1 now. " +
   "If you do not want text messages, press 2 now.";
 
 const GATHER_RETRY_PROMPT =
   "I didn't get a response from you. Press 1 to receive texts, or press 2 to skip.";
 
 const IN_CALL_CONFIRM_YES =
-  "Thanks. You are opted in to receive text messages from CallReady dot Live. " +
+  "Thanks. You are opted in to receive text messages from CallReady. " +
   "Message and data rates may apply. You can opt out any time by replying STOP. " +
   "Thanks for practicing today. Have a great day and call again soon!";
 
 const IN_CALL_CONFIRM_NO =
-  "No problem. You will not receive text messages from CallReady dot Live. " +
+  "No problem. You will not receive text messages from CallReady. " +
   "Thanks for practicing with us today. We hope to hear from you again soon. Have a great day and call again soon!";
 
 const OPTIN_CONFIRM_SMS =
@@ -101,7 +101,7 @@ const TWILIO_NO_MINUTES_LEFT =
   "To get more time, please visit CallReady dot live. " +
   "Thanks for calling, and we hope you will practice again soon.";
   const TWILIO_SERVICE_UNAVAILABLE =
-"We're sorry but CallReady.Live is temporarily unavailable right now. Please try again in a little bit. Thank you!";
+"CallReady is temporarily unavailable right now. Please try again in a little bit. Goodbye.";
 
 function safeJsonParse(str) {
   try {
@@ -1271,7 +1271,7 @@ app.post("/end", async (req, res) => {
           vr.say(TWILIO_END_TRANSITION);
         }
 
-        vr.say("Thanks for calling CallReady dot Live. We hope you'll call again soon! Have a great day!");
+        vr.say("Thanks for calling CallReady. We hope you'll call again soon! Have a great day!");
         vr.hangup();
         res.type("text/xml").send(vr.toString());
         return;
@@ -1465,7 +1465,7 @@ wss.on("connection", (twilioWs) => {
 
 function buildDynamicOpenerSpeech() {
 const base =
-"Hi, this is CallReady dot Live. \n" +
+"Hi, this is CallReady. \n" +
 "We help you practice phone calls step by step, so they feel more manageable. \n" +
 "Let me know at any time if you need help. \n";
 
@@ -1751,7 +1751,7 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
           modalities: ["audio", "text"],
           input_audio_transcription: { model: "whisper-1" },
           instructions:
-        "You are CallReady dot Live. You help people practice phone calls in a calm, supportive way when real calls feel overwhelming.\n" +
+        "You are CallReady. You help people practice phone calls in a calm, supportive way when real calls feel overwhelming.\n" +
         "Speak with a calm, neutral, and supportive tone.\n" +
         "\n" +
         "Speaking style:\n" +
