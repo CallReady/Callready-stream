@@ -1464,43 +1464,44 @@ wss.on("connection", (twilioWs) => {
   }
 
 function buildDynamicOpenerSpeech() {
-const base =
-"Hi, this is CallReady. \n" +
-"We help you practice phone calls step by step, so they feel more manageable. \n" +
-"Let me know at any time if you need help. \n";
+  const base =
+    "Hi, this is CallReady. " +
+    "This is a safe place to practice phone calls step by step, as many times as you need. " +
+    "If you want a quick prompt, just say help me. " +
+    "When you're ready, we can start. ";
 
-if (!callerRuntime) {
-return base;
-}
+  if (!callerRuntime) {
+    return base;
+  }
 
-const totalCalls = callerRuntime.totalCalls || 1;
-const tier = String(callerRuntime.tier || "free");
-const remainingMinutes = formatMinutesApprox(callerRuntime.remainingSeconds);
-const capMinutes = formatMinutesApprox(perCallCapSeconds);
+  const totalCalls = callerRuntime.totalCalls || 1;
+  const tier = String(callerRuntime.tier || "free");
+  const remainingMinutes = formatMinutesApprox(callerRuntime.remainingSeconds);
+  const capMinutes = formatMinutesApprox(perCallCapSeconds);
 
-if (totalCalls <= 1) {
-return (
-base +
-"Looks like this is your first call from this number. Just so you know, practice calls are about " +
-capMinutes +
-" minutes. "
-);
-}
+  if (totalCalls <= 1) {
+    return base + "It looks like this is your first time here, you're on the free membership connected to this number. ";
+  }
 
-if (String(tier).toLowerCase() === "free") {
-return (
-base +
-"We're glad you called again! Before we get started, " +
-"you have about " +
-remainingMinutes +
-" minutes left on your free membership this month. " +
-"Each practice call is about " +
-capMinutes +
-" minutes. " 
-);
-}
+  if (String(tier).toLowerCase() === "free") {
+    return (
+      "Welcome back. " +
+      "You have about " +
+      remainingMinutes +
+      " minutes left this month on the free membership. " +
+      "Each practice call is about " +
+      capMinutes +
+      " minutes. " +
+      "If you want more time, you can check memberships at CallReady dot live. "
+    );
+  }
 
-return base + "We're glad you called again! Before we get started, you have about " + remainingMinutes + " minutes left this month. ";
+  return (
+    "Welcome back. " +
+    "You have about " +
+    remainingMinutes +
+    " minutes left this month. "
+  );
 }
 
   function sendOpenerOnce(label) {
