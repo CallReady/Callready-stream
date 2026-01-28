@@ -487,6 +487,35 @@ function fireAndForgetCallEndLog(callSid, endedReason) {
   } catch {}
 }
 
+async function fetchPriorCallContextByCallSid(callSid) {
+  if (!pool) return null;
+  if (!callSid) return null;
+
+  try {
+    const cur = await pool.query("select phone_e164 from calls where call_sid = $1 limit 1", [callSid]);
+
+    const phone = cur && cur.rows && cur.rows[0] ? cur.rows[0].phone_e164 : null;
+    if (!phone) return null;
+
+    const prev = await pool.query(
+      "select scenario_tag, last_focus_skill, last_coaching_note, started_at from calls where phone_e164 = $1 and call_sid <> $2 and started_at is not null order by started_at desc limit 1",
+      [phone, callSid]
+    );
+
+    const row = prev && prev.rows && prev.rows[0] ? prev.rows[0] : null;
+    if (!row) return null;
+
+    return {
+      scenario_tag: row.scenario_tag || null,
+      last_focus_skill: row.last_focus_skill || null,
+      last_coaching_note: row.last_coaching_note || null,
+    };
+  } catch (e) {
+    console.log(nowIso(), "DB fetch failed for prior call context:", e && e.message ? e.message : e);
+    return null;
+  }
+}
+
 async function fetchCallerRuntimeContextByCallSid(callSid) {
   if (!pool) return null;
   if (!callSid) return null;
@@ -528,6 +557,22 @@ async function fetchCallerRuntimeContextByCallSid(callSid) {
   } catch (e) {
     console.log(nowIso(), "DB fetch failed for caller runtime context:", e && e.message ? e.message : e);
     return null;
+  }
+}
+
+async function setScenarioTagOnce(callSid, tag) {
+  if (!pool) return;
+  if (!callSid) return;
+  if (!tag) return;
+
+  try {
+    await pool.query("update calls set scenario_tag = coalesce(scenario_tag, $2) where call_sid = $1", [
+      callSid,
+      tag,
+    ]);
+    console.log(nowIso(), "Set scenario_tag (once)", { callSid, scenario_tag: tag });
+  } catch (e) {
+    console.log(nowIso(), "DB update failed for scenario_tag:", e && e.message ? e.message : e);
   }
 }
 
@@ -1402,6 +1447,12 @@ wss.on("connection", (twilioWs) => {
 
   let lastCancelAtMs = 0;
 
+  let priorContext = null;
+
+  let scenarioTagAlreadyCaptured = false;
+  let scenarioTagCaptureInFlight = false;
+  let scenarioTagCaptureResolve = null;
+
   let callerRuntime = null;
   let perCallCapSeconds = FREE_PER_CALL_SECONDS;
   let twilioMediaCount = 0;
@@ -1466,7 +1517,7 @@ wss.on("connection", (twilioWs) => {
 function buildDynamicOpenerSpeech() {
   const base =
     "Hi, this is CallReady. " +
-    "This is a safe place to practice phone calls step by step, as many times as you need. " +
+    "We can practice a phone call together, no pressure. " +
     "If you want a quick prompt, just say help me. " +
     "When you're ready, we can start. ";
 
@@ -1573,6 +1624,41 @@ redirectCallToUnavailable("opener_no_audio");
     openaiSend({ type: "session.update", session: { turn_detection: null } });
   }
 
+  async function requestScenarioTagTextOnlyOnce(reason) {
+    if (scenarioTagAlreadyCaptured) return;
+    if (scenarioTagCaptureInFlight) return;
+    if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
+
+    scenarioTagCaptureInFlight = true;
+
+    console.log(nowIso(), "Requesting end-only scenario tag", reason);
+
+    const p = new Promise((resolve) => {
+      scenarioTagCaptureResolve = resolve;
+      setTimeout(() => {
+        if (scenarioTagCaptureResolve) {
+          scenarioTagCaptureResolve();
+          scenarioTagCaptureResolve = null;
+        }
+      }, 900);
+    });
+
+    openaiSend({
+      type: "response.create",
+      response: {
+        modalities: ["text"],
+        instructions:
+          "Output exactly one line and nothing else:\n" +
+          "SCENARIO_TAG: <short_snake_case>\n" +
+          "Example: SCENARIO_TAG: mcdonalds_hours_incoming\n" +
+          "Do not add any extra words.",
+      },
+    });
+
+    await p;
+    scenarioTagCaptureInFlight = false;
+  }
+
   async function redirectCallToEnd(reason, opts) {
     if (endRedirectRequested) return;
     endRedirectRequested = true;
@@ -1675,6 +1761,8 @@ sessionTimer = setTimeout(() => {
 console.log(nowIso(), "Session timer fired, ending session, redirecting to /end", { perCallCapSeconds });
 cancelOpenAIResponseIfAnyOnce("redirecting to /end");
 
+  await requestScenarioTagTextOnlyOnce("timer_end");
+
   prepForEnding();
   await redirectCallToEnd("Session timer fired", { skipTransition: false });
 })().catch(() => {});
@@ -1721,6 +1809,18 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
     return false;
     }
 
+  function buildReturnCallerInstructions(ctx) {
+    if (!ctx || !ctx.scenario_tag) return "";
+    const scenario = String(ctx.scenario_tag);
+
+    return (
+      "\nReturn caller context:\n" +
+      `Last time, we practiced ${scenario}.\n` +
+      "Ask exactly one question:\n" +
+      "Do you want to focus on that again or move on to something new?\n"
+    );
+  }
+
   function startOpenAIRealtime() {
     if (!OPENAI_API_KEY) {
       console.error("Missing OPENAI_API_KEY");
@@ -1740,6 +1840,8 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
     openaiWs.on("open", () => {
       openaiReady = true;
       console.log(nowIso(), "OpenAI WS open");
+
+      const returnCallerBlock = buildReturnCallerInstructions(priorContext);
 
       openaiSend({
         type: "session.update",
@@ -1863,6 +1965,7 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
         "Never say the token out loud.\n" +
         "Do not ask any follow up questions.\n" +
         "Do not include any other text after the token line.\n" +
+            returnCallerBlock,
         },
       });
 
@@ -1932,6 +2035,19 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
         responseActive = false;
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
 
+        if (scenarioTagCaptureInFlight && !scenarioTagAlreadyCaptured && callSid) {
+          const scenarioTag = extractTokenLineValue(text, "SCENARIO_TAG");
+          if (scenarioTag) {
+            scenarioTagAlreadyCaptured = true;
+            setScenarioTagOnce(callSid, scenarioTag);
+          }
+
+          if (scenarioTagCaptureResolve) {
+            scenarioTagCaptureResolve();
+            scenarioTagCaptureResolve = null;
+          }
+        }
+
         if (openerSent && !turnDetectionEnabled) {
           turnDetectionEnabled = true;
           waitingForFirstCallerSpeech = true;
@@ -1975,6 +2091,8 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
           if (!endRedirectRequested && aiRequestedEnd) {
             (async () => {
               cancelOpenAIResponseIfAnyOnce("AI requested end");
+
+              await requestScenarioTagTextOnlyOnce("ai_end");
 
               prepForEnding();
               await redirectCallToEnd("AI requested end", { skipTransition: true });
@@ -2041,6 +2159,10 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
       console.log(nowIso(), "Twilio callSid:", callSid || "(no callSid)");
 
       if (callSid) {
+        priorContext = await fetchPriorCallContextByCallSid(callSid);
+        if (priorContext) {
+          console.log(nowIso(), "Loaded prior call context", priorContext);
+        }
 
         callerRuntime = await fetchCallerRuntimeContextByCallSid(callSid);
         if (callerRuntime) {
