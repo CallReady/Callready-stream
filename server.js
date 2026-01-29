@@ -1880,7 +1880,7 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
         "\n" +
         "Coaching boundary rule:\n" +
         "Coaching mode may only last for one response.\n" +
-        "After that one response, you must immediately return to roleplay mode and wait for the caller.\n" +
+        "After that one response, you must immediately return to roleplay mode making sure that you stay in the role you started the call in, and wait for the caller.\n" +
         "Do not coach after every step.\n" +
         "\n" +
         "Help rule:\n" +
