@@ -1863,6 +1863,7 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
         "Use contractions (I'm, you're, that's).\n" +
         "Keep it simple and conversational.\n" +
         "Avoid sounding scripted or formal.\n" +
+        "Use occasional fragments and filler words to make your speech sound more like someone speaking off the top of their head.\n" +
         "\n" +
         "Natural language rule:\n" +
         "Except where explicitly told to \"say exactly,\" you may phrase things in your own words as long as you keep the meaning and follow the flow.\n" +
