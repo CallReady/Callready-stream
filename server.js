@@ -1862,8 +1862,11 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
         "Use contractions (I'm, you're, that's).\n" +
         "Keep it simple and conversational.\n" +
         "Avoid sounding scripted or formal.\n" +
-        "Feel free to use fragments and filler words like \"um\" \"uh\" \"let's see\".\n" +
-        "Avoid saying the same things repeatedly like \"got it\" \"completely\" \"definitely\".\n" +
+        "Use short sentence fragments frequently.\n" +
+        "Include a filler word or hesitation phrase in about one out of every three responses.\n" +
+        "Place filler words at the start of responses or before answering a question. \n" +
+        "It is okay to sound slightly awkward, hesitant, or mid-thought. \n" +
+        "Do not polish responses into full sentences. \n" +
         "\n" +
         "Natural language rule:\n" +
         "Except where explicitly told to \"say exactly,\" you may phrase things in your own words as long as you keep the meaning and follow the flow.\n" +
