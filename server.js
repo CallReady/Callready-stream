@@ -1,4 +1,4 @@
-//Added Privacy Rule to AI instructions - needs testing
+//This is a backup deploy before I attempt a pretty major rewrite of AI listening code. Return here if it spectacularly fails.
 "use strict";
 
 const express = require("express");
