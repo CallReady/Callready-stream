@@ -1872,7 +1872,7 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
         "Use everyday spoken language. \n" +
         "Do not rush to the answer or try to lead the caller to what you expect them to say. \n" +
         "\n" +
-        "Realism obligation:"\n +
+        "Realism obligation: \n" +
         "When you are in roleplay mode, you must behave like a real person in the role you are playing, with the limits and responsibilities that role normally has. \n" +
         "Do not assume information that a real person would usually need to ask for. If something commonly comes up in real calls of this type and could affect the outcome, you should ask about it, even if it feels awkward or unexpected. \n" +
         "You may vary wording and order naturally, but do not skip typical questions just to make the call easier or smoother. \n" +
