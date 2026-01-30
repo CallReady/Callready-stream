@@ -1444,6 +1444,9 @@ wss.on("connection", (twilioWs) => {
   let endRedirectRequested = false;
 
   let suppressCallerAudioToOpenAI = false;
+  let aiSpeaking = false;
+  let aiSpeakingTailTimer = null;
+
 
   let lastCancelAtMs = 0;
 
@@ -1466,6 +1469,10 @@ wss.on("connection", (twilioWs) => {
 
     try {
       if (sessionTimer) clearTimeout(sessionTimer);
+    } catch {}
+
+    try {
+      if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
     } catch {}
 
     try {
@@ -2015,6 +2022,14 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
           return;
         }
 
+        if (!aiSpeaking) {
+          aiSpeaking = true;
+          try {
+        if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
+          } catch {}
+          aiSpeakingTailTimer = null;
+        }
+
         twilioSend({ event: "media", streamSid, media: { payload: msg.delta } });
         return;
       }
@@ -2092,6 +2107,19 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
           requireCallerSpeechBeforeNextAI = false;
           sawCallerSpeechSinceLastAIDone = true;
 
+                  try {
+            if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
+          } catch {}
+
+          aiSpeakingTailTimer = setTimeout(() => {
+            aiSpeaking = false;
+
+            try {
+              openaiSend({ type: "input_audio_buffer.clear" });
+            } catch {}
+          }, 600);
+
+
           sendScenarioStartOnce("post-opener");
           return;
         }
@@ -2110,6 +2138,19 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
             })().catch(() => {});
             return;
           }
+
+          try {
+            if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
+          } catch {}
+
+          aiSpeakingTailTimer = setTimeout(() => {
+            aiSpeaking = false;
+
+            try {
+              openaiSend({ type: "input_audio_buffer.clear" });
+            } catch {}
+          }, 600);
+  
 
           requireCallerSpeechBeforeNextAI = true;
           sawCallerSpeechSinceLastAIDone = false;
@@ -2202,11 +2243,10 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
     if (msg.event === "media") {
       if (!turnDetectionEnabled) return;
       if (suppressCallerAudioToOpenAI) return;
+      if (aiSpeaking) return;
+
 
       if (openaiReady && msg.media && msg.media.payload) {
-        if (requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
-          sawCallerSpeechSinceLastAIDone = true;
-        }
 
         openaiSend({
           type: "input_audio_buffer.append",
