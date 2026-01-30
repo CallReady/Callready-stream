@@ -1536,7 +1536,7 @@ function buildDynamicOpenerSpeech() {
 
   if (String(tier).toLowerCase() === "free") {
     return (
-      "Welcome back. " +
+      "Welcome back to CallReady. " +
       "You have about " +
       remainingMinutes +
       " minutes left this month on the free membership. " +
@@ -1548,7 +1548,7 @@ function buildDynamicOpenerSpeech() {
   }
 
   return (
-    "Welcome back. " +
+    "Welcome back to CallReady. " +
     "You have about " +
     remainingMinutes +
     " minutes left this month. "
