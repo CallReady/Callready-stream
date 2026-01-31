@@ -1448,6 +1448,9 @@ wss.on("connection", (twilioWs) => {
   let aiSpeakingTailTimer = null;
   let aiAudioBytesThisResponse = 0;
   let listenBlockUntilMs = 0;
+  let endingRequested = false;
+  let endFallbackTimer = null;
+
 
 
 
@@ -1473,6 +1476,12 @@ wss.on("connection", (twilioWs) => {
     try {
       if (sessionTimer) clearTimeout(sessionTimer);
     } catch {}
+    
+    try {
+      if (endFallbackTimer) clearTimeout(endFallbackTimer);
+    } catch {}
+    endFallbackTimer = null;
+
 
     try {
       if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
@@ -1623,6 +1632,9 @@ redirectCallToUnavailable("opener_no_audio");
   }
 
   function prepForEnding() {
+    endingRequested = true;
+    clearEndFallbackTimer();
+
     suppressCallerAudioToOpenAI = true;
 
     waitingForFirstCallerSpeech = false;
@@ -1668,6 +1680,85 @@ redirectCallToUnavailable("opener_no_audio");
     await p;
     scenarioTagCaptureInFlight = false;
   }
+
+    function clearEndFallbackTimer() {
+      try {
+        if (endFallbackTimer) clearTimeout(endFallbackTimer);
+      } catch {}
+      endFallbackTimer = null;
+    }
+
+    async function hardHangupViaTwilio(reason) {
+      if (!callSid) return;
+      if (!hasTwilioRest()) return;
+
+      try {
+        const client = twilioClient();
+        console.log(nowIso(), "Hard hangup via Twilio REST", callSid, "reason:", reason);
+        await client.calls(callSid).update({ status: "completed" });
+      } catch (e) {
+        console.log(nowIso(), "Hard hangup failed:", e && e.message ? e.message : e);
+      }
+    }
+
+    async function redirectToEndWithRetry(reason, opts) {
+      const maxAttempts = 3;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          await redirectCallToEnd(reason, opts);
+          return true;
+        } catch (e) {
+          console.log(nowIso(), "Redirect to /end attempt failed", { attempt, reason });
+
+          try {
+            await new Promise((r) => setTimeout(r, 250 * attempt));
+          } catch {}
+        }
+      }
+
+      return false;
+    }
+
+    async function requestEnd(reason, opts) {
+      if (endingRequested) return;
+      endingRequested = true;
+
+      console.log(nowIso(), "Ending requested:", reason);
+
+      suppressCallerAudioToOpenAI = true;
+
+      try {
+        cancelOpenAIResponseIfAnyOnce("ending");
+      } catch {}
+
+      try {
+        openaiSend({ type: "input_audio_buffer.clear" });
+      } catch {}
+
+      try {
+        openaiSend({ type: "session.update", session: { turn_detection: null } });
+      } catch {}
+
+      clearEndFallbackTimer();
+      endFallbackTimer = setTimeout(() => {
+        (async () => {
+          if (endRedirectRequested) return;
+
+          console.log(nowIso(), "End fallback timer fired, forcing hangup");
+          await hardHangupViaTwilio("end_fallback_timer");
+          closeAll("End fallback hangup");
+        })().catch(() => {});
+      }, 4000);
+
+      const ok = await redirectToEndWithRetry(reason, opts);
+
+      if (!ok && !endRedirectRequested) {
+        await hardHangupViaTwilio("redirect_failed");
+        closeAll("Redirect failed, hung up");
+      }
+    }
+
 
   async function redirectCallToEnd(reason, opts) {
     if (endRedirectRequested) return;
@@ -1774,7 +1865,7 @@ cancelOpenAIResponseIfAnyOnce("redirecting to /end");
   await requestScenarioTagTextOnlyOnce("timer_end");
 
   prepForEnding();
-  await redirectCallToEnd("Session timer fired", { skipTransition: false });
+  await requestEnd("Session timer fired", { skipTransition: false });
 })().catch(() => {});
 
 
@@ -2155,7 +2246,8 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
               await requestScenarioTagTextOnlyOnce("ai_end");
 
               prepForEnding();
-              await redirectCallToEnd("AI requested end", { skipTransition: true });
+              await requestEnd("AI requested end", { skipTransition: true });
+
             })().catch(() => {});
             return;
           }
@@ -2198,7 +2290,8 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
       console.log(nowIso(), "OpenAI WS closed");
       openaiReady = false;
 
-      if (!endRedirectRequested) {
+      if (!endingRequested && !endRedirectRequested) {
+
       redirectCallToUnavailable("openai_ws_closed");
       }
       });
@@ -2283,6 +2376,9 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
         const endedReason = endRedirectRequested ? "redirected_to_end" : "hangup_or_stream_stop";
         fireAndForgetCallEndLog(callSid, endedReason);
       }
+
+      clearEndFallbackTimer();
+
 
       closeAll("Twilio stop");
       return;
