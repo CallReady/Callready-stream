@@ -1448,6 +1448,9 @@ wss.on("connection", (twilioWs) => {
   let aiSpeakingTailTimer = null;
   let aiSpeakingStartMs = 0;
   let aiAudioDeltaCountThisResponse = 0;
+  let aiAudioBytesThisResponse = 0;
+  let listenBlockUntilMs = 0;
+
 
 
 
@@ -2012,6 +2015,15 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
           openerNoAudioTimer = null;
           }
                   aiAudioDeltaCountThisResponse += 1;
+        const b = Buffer.from(msg.delta, "base64").length;
+        aiAudioBytesThisResponse += b;
+
+        // g711_ulaw is 8000 samples per second, 1 byte per sample
+        const audioMs = Math.floor((aiAudioBytesThisResponse / 8000) * 1000);
+
+        // Block listening until estimated playback end plus a small safety buffer
+        listenBlockUntilMs = Date.now() + audioMs + 250;
+
 
         if (!turnDetectionEnabled && openerSent) {
           openerAudioDeltaCount += 1;
@@ -2068,6 +2080,8 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
       responseActive = true;
       aiSpeakingStartMs = Date.now();
       aiAudioDeltaCountThisResponse = 0;
+      aiAudioBytesThisResponse = 0;
+
 
       if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.created (post-opener)");
       return;
@@ -2265,6 +2279,8 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
     if (msg.event === "media") {
       if (!turnDetectionEnabled) return;
       if (suppressCallerAudioToOpenAI) return;
+      if (Date.now() < listenBlockUntilMs) return;
+
       if (aiSpeaking) {
         droppedMediaWhileAiSpeaking += 1;
 
