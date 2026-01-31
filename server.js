@@ -1462,6 +1462,9 @@ wss.on("connection", (twilioWs) => {
   let callerRuntime = null;
   let perCallCapSeconds = FREE_PER_CALL_SECONDS;
   let twilioMediaCount = 0;
+  let droppedMediaWhileAiSpeaking = 0;
+  let forwardedMediaToOpenAi = 0;
+
 
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
@@ -2256,10 +2259,27 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
     if (msg.event === "media") {
       if (!turnDetectionEnabled) return;
       if (suppressCallerAudioToOpenAI) return;
-      if (aiSpeaking) return;
+      if (aiSpeaking) {
+        droppedMediaWhileAiSpeaking += 1;
+
+        if (droppedMediaWhileAiSpeaking % 80 === 1) {
+          console.log(nowIso(), "DEBUG dropping caller audio because aiSpeaking", {
+            dropped: droppedMediaWhileAiSpeaking
+          });
+        }
+
+        return;
+      }
+
 
 
       if (openaiReady && msg.media && msg.media.payload) {
+        forwardedMediaToOpenAi += 1;
+        if (forwardedMediaToOpenAi % 80 === 1) {
+          console.log(nowIso(), "DEBUG forwarding caller audio to OpenAI", {
+            forwarded: forwardedMediaToOpenAi
+          });
+        }
 
         openaiSend({
           type: "input_audio_buffer.append",
