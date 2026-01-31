@@ -2043,6 +2043,8 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
       }
 
       if (msg.type === "input_audio_buffer.speech_started") {
+        console.log(nowIso(), "DEBUG VAD speech_started", { aiSpeaking, responseActive });
+
         sawSpeechStarted = true;
 
         if (waitingForFirstCallerSpeech) {
@@ -2055,6 +2057,10 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
         }
 
         sawCallerSpeechSinceLastAIDone = true;
+        return;
+      }
+      if (msg.type === "input_audio_buffer.speech_stopped") {
+        console.log(nowIso(), "DEBUG VAD speech_stopped", { aiSpeaking, responseActive });
         return;
       }
 
