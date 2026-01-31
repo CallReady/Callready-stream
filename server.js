@@ -1446,8 +1446,6 @@ wss.on("connection", (twilioWs) => {
   let suppressCallerAudioToOpenAI = false;
   let aiSpeaking = false;
   let aiSpeakingTailTimer = null;
-  let aiSpeakingStartMs = 0;
-  let aiAudioDeltaCountThisResponse = 0;
   let aiAudioBytesThisResponse = 0;
   let listenBlockUntilMs = 0;
 
@@ -1464,10 +1462,6 @@ wss.on("connection", (twilioWs) => {
 
   let callerRuntime = null;
   let perCallCapSeconds = FREE_PER_CALL_SECONDS;
-  let twilioMediaCount = 0;
-  let droppedMediaWhileAiSpeaking = 0;
-  let forwardedMediaToOpenAi = 0;
-
 
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
@@ -2014,7 +2008,6 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
           clearTimeout(openerNoAudioTimer);
           openerNoAudioTimer = null;
           }
-                  aiAudioDeltaCountThisResponse += 1;
         const b = Buffer.from(msg.delta, "base64").length;
         aiAudioBytesThisResponse += b;
 
@@ -2055,7 +2048,6 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
       }
 
       if (msg.type === "input_audio_buffer.speech_started") {
-        console.log(nowIso(), "DEBUG VAD speech_started", { aiSpeaking, responseActive });
 
         sawSpeechStarted = true;
 
@@ -2072,14 +2064,11 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
         return;
       }
       if (msg.type === "input_audio_buffer.speech_stopped") {
-        console.log(nowIso(), "DEBUG VAD speech_stopped", { aiSpeaking, responseActive });
         return;
       }
 
       if (msg.type === "response.created") {
       responseActive = true;
-      aiSpeakingStartMs = Date.now();
-      aiAudioDeltaCountThisResponse = 0;
       aiAudioBytesThisResponse = 0;
 
 
@@ -2090,10 +2079,6 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
       if (msg.type === "response.done") {
         const text = extractTextFromResponseDone(msg);
         responseActive = false;
-        console.log(nowIso(), "DEBUG ai response timing", {
-          deltaCount: aiAudioDeltaCountThisResponse,
-          ms: aiSpeakingStartMs ? (Date.now() - aiSpeakingStartMs) : null
-        });
 
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
 
@@ -2236,10 +2221,6 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
     if (!msg) return;
 
     if (msg.event === "start") {
-      twilioMediaCount += 1;
-    if (twilioMediaCount % 50 === 1) {
-      console.log(nowIso(), "Twilio media packets received", { count: twilioMediaCount });
-      }
       streamSid = msg.start && msg.start.streamSid ? msg.start.streamSid : null;
         callSid = msg.start && msg.start.callSid ? msg.start.callSid : null;
 
@@ -2282,26 +2263,10 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
       if (Date.now() < listenBlockUntilMs) return;
 
       if (aiSpeaking) {
-        droppedMediaWhileAiSpeaking += 1;
-
-        if (droppedMediaWhileAiSpeaking % 80 === 1) {
-          console.log(nowIso(), "DEBUG dropping caller audio because aiSpeaking", {
-            dropped: droppedMediaWhileAiSpeaking
-          });
-        }
-
-        return;
+      return;
       }
 
-
-
       if (openaiReady && msg.media && msg.media.payload) {
-        forwardedMediaToOpenAi += 1;
-        if (forwardedMediaToOpenAi % 80 === 1) {
-          console.log(nowIso(), "DEBUG forwarding caller audio to OpenAI", {
-            forwarded: forwardedMediaToOpenAi
-          });
-        }
 
         openaiSend({
           type: "input_audio_buffer.append",
