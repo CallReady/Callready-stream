@@ -1446,6 +1446,9 @@ wss.on("connection", (twilioWs) => {
   let suppressCallerAudioToOpenAI = false;
   let aiSpeaking = false;
   let aiSpeakingTailTimer = null;
+  let aiSpeakingStartMs = 0;
+  let aiAudioDeltaCountThisResponse = 0;
+
 
 
   let lastCancelAtMs = 0;
@@ -2005,6 +2008,8 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
           clearTimeout(openerNoAudioTimer);
           openerNoAudioTimer = null;
           }
+                  aiAudioDeltaCountThisResponse += 1;
+
         if (!turnDetectionEnabled && openerSent) {
           openerAudioDeltaCount += 1;
           if (openerAudioDeltaCount === 1) {
@@ -2052,6 +2057,9 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
 
       if (msg.type === "response.created") {
       responseActive = true;
+      aiSpeakingStartMs = Date.now();
+      aiAudioDeltaCountThisResponse = 0;
+
       if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.created (post-opener)");
       return;
       }
@@ -2059,6 +2067,11 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
       if (msg.type === "response.done") {
         const text = extractTextFromResponseDone(msg);
         responseActive = false;
+        console.log(nowIso(), "DEBUG ai response timing", {
+          deltaCount: aiAudioDeltaCountThisResponse,
+          ms: aiSpeakingStartMs ? (Date.now() - aiSpeakingStartMs) : null
+        });
+
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
 
         if (scenarioTagCaptureInFlight && !scenarioTagAlreadyCaptured && callSid) {
