@@ -511,7 +511,10 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
       remainingSeconds: remaining,
       perCallCapSeconds,
       totalCalls: totalCalls2,
+      cycle_sessions_used: sessionsUsed,
+      cycle_sessions_cap: sessionsCap
     };
+
   } catch (e) {
     console.log(nowIso(), "DB tier check failed, defaulting to free:", e && e.message ? e.message : e);
 
