@@ -461,12 +461,13 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
     // For tiers with no per-session cap, use a large number so callers still have a sane value.
     let perCallCapSeconds = 0;
 
-    if (baseCap === null) {
-      perCallCapSeconds = 9999;
-    } else {
-      perCallCapSeconds = Math.max(1, Number(baseCap) || 0);
-    }
+        const tCap = String(tier2 || "free").toLowerCase();
 
+    if (tCap === "free") {
+      perCallCapSeconds = Math.max(1, Number(baseCap) || 0);
+    } else {
+      perCallCapSeconds = 0;
+    }
 
     if (perCallCapSeconds > 0) {
   try {
