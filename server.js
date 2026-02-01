@@ -319,11 +319,13 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
 
   try {
     const r = await pool.query(
-      "select tier, total_calls, per_call_seconds_cap, " +
-        "cycle_anchor_at, cycle_ends_at, cycle_seconds_used " +
-        "from callers where phone_e164 = $1 limit 1",
-      [fromPhoneE164]
-    );
+    "select tier, total_calls, per_call_seconds_cap, " +
+    "cycle_anchor_at, cycle_ends_at, cycle_seconds_used, " +
+    "cycle_sessions_used, cycle_sessions_cap " +
+    "from callers where phone_e164 = $1 limit 1",
+  [fromPhoneE164]
+);
+
 
     const row = r && r.rows && r.rows[0] ? r.rows[0] : null;
 
@@ -353,11 +355,13 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
     }
 
     const r2 = await pool.query(
-      "select tier, total_calls, per_call_seconds_cap, " +
-        "cycle_anchor_at, cycle_ends_at, cycle_seconds_used " +
+        "select tier, total_calls, per_call_seconds_cap, " +
+        "cycle_anchor_at, cycle_ends_at, cycle_seconds_used, " +
+        "cycle_sessions_used, cycle_sessions_cap " +
         "from callers where phone_e164 = $1 limit 1",
       [fromPhoneE164]
     );
+
 
     const row2 = r2 && r2.rows && r2.rows[0] ? r2.rows[0] : null;
 
