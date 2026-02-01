@@ -1183,7 +1183,7 @@ app.get("/subscribe", (req, res) => {
     "<div class='tierNote'>Your free membership is created automatically when you call CallReady from your phone. It's a great way to try CallReady and get a little practice in right away.</div>" +
     "<ul class='tierList'>" +
     "<li>Up to 4 practice sessions per month</li>" +
-    "<li>Sessions end gently, with soft and hard limits</li>" +
+    "<li>Sessions can last between 4 and 7 minutes</li>" +
     "</ul>" +
     "</div>" +
 
@@ -1198,7 +1198,7 @@ app.get("/subscribe", (req, res) => {
     "<div class='tierNote'>Steady practice to build comfort and consistency, without rushing.</div>" +
     "<ul class='tierList'>" +
     "<li>Up to 12 practice sessions per month</li>" +
-    "<li>No per-call time limits, just guided practice with soft, humane endings</li>" +
+    "<li>Sessions can last between 8 and 12 minutes</li>" +
     "</ul>" +
     "</label>" +
 
@@ -1213,7 +1213,7 @@ app.get("/subscribe", (req, res) => {
     "<div class='tierNote'>For frequent practice or ongoing confidence building.</div>" +
     "<ul class='tierList'>" +
     "<li>Up to 30 practice sessions per month</li>" +
-    "<li>No per-call limits, just repeatable, low-pressure practice when you need it</li>" +
+    "<li>Sessions can last between 8 and 12 minutes for lots of low-pressure practice when you need it</li>" +
     "</ul>" +
     "</label>" +
 
