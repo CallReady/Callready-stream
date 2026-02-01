@@ -1441,7 +1441,7 @@ app.post("/end", async (req, res) => {
 
     if (!isRetry && isSoftEnd) {
       vr.say(
-        "Quick note. This practice call ran a little longer than your usual session, so we are going to end it here. You can call back anytime to keep practicing."
+        "Quick note, that last scenario took us just past the usual practice session time, so we’re going to wrap things up here for this session. You can call back any time and keep practicing, though!"
       );
     }
 
