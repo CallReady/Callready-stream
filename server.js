@@ -98,8 +98,8 @@ const OPTIN_CONFIRM_SMS =
   "CallReady: You are opted in to receive texts about your practice sessions. Msg and data rates may apply. Reply STOP to opt out, HELP for help.";
 
 const TWILIO_NO_MINUTES_LEFT =
-  "Welcome back to CallReady. It looks like you do not have any practice calls remaining on your membership for this month. " +
-  "To get more practice calls, please visit CallReady dot live. " +
+  "Welcome back to CallReady. It looks like you do not have any practice sessions remaining on your membership for this month. " +
+  "To get more sessions, please visit CallReady dot live. " +
   "Thanks for calling, and we hope you will practice again soon!";
 
   const TWILIO_SERVICE_UNAVAILABLE =
@@ -1639,7 +1639,7 @@ function buildDynamicOpenerSpeech() {
     "Welcome back to CallReady. " +
     "You have " +
     String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
-    " practice calls left this month. "
+    " practice sessions left this month. "
   );
 
 }
