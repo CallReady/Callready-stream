@@ -2538,17 +2538,22 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
               softThresholdSeconds: liveSoftThresholdSeconds,
               hardCeilingSeconds: liveHardCeilingSeconds,
               onHardCeiling: function () {
-                try {
-                  liveThresholdState.hitHardCeilingLive = true;
-                } catch {}
+            try {
+              if (endingRequested || endRedirectRequested) return;
 
-                try {
-                  console.log(nowIso(), "Hard ceiling callback fired (verification only)", {
-                    callSid: callSid || null,
-                    hardCeilingSeconds: liveHardCeilingSeconds
-                  });
-                } catch {}
-              }
+              console.log(nowIso(), "Hard ceiling reached, forcing end via /end", {
+                callSid: callSid || null,
+                hardCeilingSeconds: liveHardCeilingSeconds
+              });
+
+              (async () => {
+                cancelOpenAIResponseIfAnyOnce("hard_ceiling_end");
+                await requestScenarioTagTextOnlyOnce("hard_ceiling_end");
+                await requestEnd("hard_ceiling_end", { skipTransition: true });
+              })().catch(() => {});
+            } catch {}
+          }
+
             });
 
             console.log(nowIso(), "Live threshold timers armed (verification only)", {
