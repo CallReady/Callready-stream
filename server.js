@@ -459,15 +459,7 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
     // Session-based memberships:
     // perCallCapSeconds is the per-session cap for the tier, not dependent on remaining time.
     // For tiers with no per-session cap, use a large number so callers still have a sane value.
-    let perCallCapSeconds = 0;
-
-        const tCap = String(tier2 || "free").toLowerCase();
-
-    if (tCap === "free") {
-      perCallCapSeconds = Math.max(1, Number(baseCap) || 0);
-    } else {
-      perCallCapSeconds = 0;
-    }
+    const perCallCapSeconds = 0;
 
     if (perCallCapSeconds > 0) {
   try {
