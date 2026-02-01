@@ -174,6 +174,31 @@ return MEMBER_PER_CALL_SECONDS > 0 ? MEMBER_PER_CALL_SECONDS : null;
 return FREE_PER_CALL_SECONDS;
 }
 
+async function getThresholdsForPhone(phoneE164) {
+  if (!pool) return { soft: 240, hard: 420 };
+
+  try {
+    const r = await pool.query(
+      "select per_call_seconds_cap from callers where phone_e164 = $1 limit 1",
+      [phoneE164]
+    );
+
+    const cap =
+      r && r.rows && r.rows[0] && r.rows[0].per_call_seconds_cap != null
+        ? toInt(r.rows[0].per_call_seconds_cap, 0)
+        : 0;
+
+    const hard = cap > 0 ? cap : 420;
+
+    // Free: hard <= 420 (7 min), Paid: hard > 420 (12 min, etc.)
+    const soft = hard <= 420 ? 240 : 480;
+
+    return { soft, hard };
+  } catch (e) {
+    return { soft: 240, hard: 420 };
+  }
+}
+
 async function upsertCallerOnCallStart(fromPhoneE164, callSid) {
   if (!pool) return;
   if (!fromPhoneE164) return;
@@ -434,6 +459,44 @@ async function logCallEndToDb(callSid, endedReason) {
 
     if (row && row.phone_e164) {
       const dur = toInt(row.duration_seconds, 0);
+      const thresholds = await getThresholdsForPhone(row.phone_e164);
+
+      const overSoft = dur > thresholds.soft;
+      const hitHard = dur >= thresholds.hard;
+
+      // Counts only if it was a real attempt
+      const shouldCount = dur >= 30;
+
+      try {
+        await pool.query(
+          "update calls set " +
+            "soft_threshold_seconds = $2, " +
+            "hard_ceiling_seconds = $3, " +
+            "over_soft_threshold = $4, " +
+            "hit_hard_ceiling = $5, " +
+            "should_count = $6 " +
+            "where call_sid = $1",
+          [callSid, thresholds.soft, thresholds.hard, overSoft, hitHard, shouldCount]
+        );
+
+        console.log(nowIso(), "Classified call", {
+          callSid,
+          phone_e164: row.phone_e164,
+          duration_seconds: dur,
+          soft_threshold_seconds: thresholds.soft,
+          hard_ceiling_seconds: thresholds.hard,
+          over_soft_threshold: overSoft,
+          hit_hard_ceiling: hitHard,
+          should_count: shouldCount,
+        });
+      } catch (e) {
+        console.log(
+          nowIso(),
+          "DB update failed for calls classification:",
+          e && e.message ? e.message : e
+        );
+      }
+
       if (dur > 0) {
         const bucket = monthBucketFirstDayUtc();
 
