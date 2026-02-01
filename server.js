@@ -1737,8 +1737,17 @@ function buildDynamicOpenerSpeech() {
   const capMinutes = formatMinutesApprox(perCallCapSeconds);
 
   if (totalCalls <= 1) {
+  if (String(tier).toLowerCase() === "free") {
     return base + "It looks like this is your first time here, you're on the free membership connected to this number. ";
+    }
+
+    return (
+      "Welcome to CallReady. " +
+      "Your membership is active for this number. " +
+      "When you're ready, we can start."
+    );
   }
+
 
   if (String(tier).toLowerCase() === "free") {
   return (
