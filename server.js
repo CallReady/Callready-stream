@@ -2380,6 +2380,20 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
         }
 
         if (turnDetectionEnabled) {
+                    // Detect natural scenario wrap-up and whether we crossed the soft threshold
+          try {
+            const wrapPhrase = "That wraps up this practice call.";
+            const sawWrap = text && String(text).indexOf(wrapPhrase) !== -1;
+
+            if (sawWrap && liveThresholdState && liveThresholdState.overSoftThresholdLive) {
+              console.log(nowIso(), "Wrap-up detected after soft threshold (flag only)", {
+                callSid: callSid || null,
+                softThresholdSeconds: liveSoftThresholdSeconds,
+                hardCeilingSeconds: liveHardCeilingSeconds
+              });
+            }
+          } catch {}
+
           const aiRequestedEnd = responseTextRequestsEnd(text);
 
           if (!endRedirectRequested && aiRequestedEnd) {
