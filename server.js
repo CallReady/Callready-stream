@@ -2396,7 +2396,6 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
               (async () => {
                 cancelOpenAIResponseIfAnyOnce("soft_threshold_end");
                 await requestScenarioTagTextOnlyOnce("soft_threshold_end");
-                prepForEnding();
                 await requestEnd("soft_threshold_end", { skipTransition: true });
               })().catch(() => {});
             }
