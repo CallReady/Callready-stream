@@ -2495,15 +2495,17 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
       }
     });
 
-    openaiWs.on("close", () => {
+      openaiWs.on("close", () => {
       console.log(nowIso(), "OpenAI WS closed");
       openaiReady = false;
 
-      if (!endingRequested && !endRedirectRequested) {
+      if (closing) return;
+      if (endingRequested) return;
+      if (endRedirectRequested) return;
 
       redirectCallToUnavailable("openai_ws_closed");
-      }
-      });
+    });
+
 
     openaiWs.on("error", (err) => {
       const msgText = err && err.message ? String(err.message) : "";
