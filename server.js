@@ -179,25 +179,30 @@ async function getThresholdsForPhone(phoneE164) {
 
   try {
     const r = await pool.query(
-      "select per_call_seconds_cap from callers where phone_e164 = $1 limit 1",
+      "select tier from callers where phone_e164 = $1 limit 1",
       [phoneE164]
     );
 
-    const cap =
-      r && r.rows && r.rows[0] && r.rows[0].per_call_seconds_cap != null
-        ? toInt(r.rows[0].per_call_seconds_cap, 0)
-        : 0;
+    const tier =
+      r && r.rows && r.rows[0] && r.rows[0].tier != null
+        ? String(r.rows[0].tier).toLowerCase()
+        : "free";
 
-    const hard = cap > 0 ? cap : 420;
+    // Free: soft 4 minutes, hard 7 minutes
+    if (tier === "free") return { soft: 240, hard: 420 };
 
-    // Free: hard <= 420 (7 min), Paid: hard > 420 (12 min, etc.)
-    const soft = hard <= 420 ? 240 : 480;
+    // Member and Member Plus: soft 8 minutes, hard 12 minutes
+    if (tier === "member" || tier === "power" || tier === "power_user" || tier === "poweruser") {
+      return { soft: 480, hard: 720 };
+    }
 
-    return { soft, hard };
+    // Fallback
+    return { soft: 240, hard: 420 };
   } catch (e) {
     return { soft: 240, hard: 420 };
   }
 }
+
 
 async function upsertCallerOnCallStart(fromPhoneE164, callSid) {
   if (!pool) return;
