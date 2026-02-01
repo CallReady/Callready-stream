@@ -1584,6 +1584,7 @@ wss.on("connection", (twilioWs) => {
   let aiAudioBytesThisResponse = 0;
   let listenBlockUntilMs = 0;
   let endingRequested = false;
+  let softOverageNotePending = false;
   let endFallbackTimer = null;
   let liveThresholdState = null;
   let liveSoftThresholdSeconds = 0;
@@ -2386,12 +2387,14 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
             const sawWrap = text && String(text).indexOf(wrapPhrase) !== -1;
 
             if (sawWrap && liveThresholdState && liveThresholdState.overSoftThresholdLive) {
+              softOverageNotePending = true;
               console.log(nowIso(), "Wrap-up detected after soft threshold (flag only)", {
                 callSid: callSid || null,
                 softThresholdSeconds: liveSoftThresholdSeconds,
                 hardCeilingSeconds: liveHardCeilingSeconds
               });
             }
+
           } catch {}
 
           const aiRequestedEnd = responseTextRequestsEnd(text);
