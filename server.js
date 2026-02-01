@@ -589,12 +589,13 @@ async function fetchCallerRuntimeContextByCallSid(callSid) {
 
   try {
     const r = await pool.query(
-      "select c.phone_e164, cl.tier, cl.total_calls, cl.per_call_seconds_cap, cl.sms_opted_in, " +
-        "cl.cycle_anchor_at, cl.cycle_ends_at, cl.cycle_seconds_used " +
-        "from calls c join callers cl on cl.phone_e164 = c.phone_e164 " +
-        "where c.call_sid = $1 limit 1",
-      [callSid]
-    );
+    "select c.phone_e164, cl.tier, cl.total_calls, cl.per_call_seconds_cap, cl.sms_opted_in, " +
+    "cl.cycle_anchor_at, cl.cycle_ends_at, cl.cycle_seconds_used, " +
+    "cl.cycle_sessions_used, cl.cycle_sessions_cap " +
+    "from calls c join callers cl on cl.phone_e164 = c.phone_e164 " +
+    "where c.call_sid = $1 limit 1",
+  [callSid]
+);
 
     const row = r && r.rows && r.rows[0] ? r.rows[0] : null;
     if (!row) return null;
@@ -620,6 +621,9 @@ async function fetchCallerRuntimeContextByCallSid(callSid) {
       cycle_anchor_at: row.cycle_anchor_at ? String(row.cycle_anchor_at) : null,
       cycle_ends_at: row.cycle_ends_at ? String(row.cycle_ends_at) : null,
       cycle_seconds_used: used,
+      cycle_sessions_used: toInt(row.cycle_sessions_used, 0),
+      cycle_sessions_cap: toInt(row.cycle_sessions_cap, 0),
+
     };
   } catch (e) {
     console.log(nowIso(), "DB fetch failed for caller runtime context:", e && e.message ? e.message : e);
