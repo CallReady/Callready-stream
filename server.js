@@ -1294,6 +1294,16 @@ res.status(200).send(html);
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
 
 app.post("/voice", async (req, res) => {
+    if (String(process.env.CALLREADY_UNAVAILABLE || "") === "1") {
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    vr.redirect({ method: "POST" }, "/unavailable");
+
+    res.type("text/xml").send(vr.toString());
+    return;
+  }
+
   try {
     const forceUnavailable =
     req.query &&
