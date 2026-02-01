@@ -455,19 +455,17 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
 
     const baseCap = tierPerCallCapSeconds(tier2);
 
-      // If baseCap is null, there is no per-session cap.
-      // The call can run up to whatever remains in the monthly pool.
-      let perCallCapSeconds = 0;
+    // Session-based memberships:
+    // perCallCapSeconds is the per-session cap for the tier, not dependent on remaining time.
+    // For tiers with no per-session cap, use a large number so callers still have a sane value.
+    let perCallCapSeconds = 0;
 
-      if (remaining > 0) {
-      if (baseCap === null) {
-      perCallCapSeconds = Math.max(1, remaining);
-      } else {
-      perCallCapSeconds = Math.max(1, Math.min(baseCap, remaining));
-      }
-      } else {
-      perCallCapSeconds = 0;
-      }
+    if (baseCap === null) {
+      perCallCapSeconds = 9999;
+    } else {
+      perCallCapSeconds = Math.max(1, Number(baseCap) || 0);
+    }
+
 
     if (perCallCapSeconds > 0) {
       try {
