@@ -411,7 +411,8 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
       }
     } catch {}
 
-    const allowed = remaining > 0;
+    const allowed = sessionsRemaining > 0;
+
 
     console.log(nowIso(), "Tier check", {
       phone_e164: fromPhoneE164,
