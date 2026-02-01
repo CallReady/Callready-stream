@@ -1341,8 +1341,10 @@ app.post("/voice", async (req, res) => {
         from,
         callSid,
         tier: tierDecision.tier,
-        remainingSeconds: tierDecision.remainingSeconds,
+        sessions_used: tierDecision.cycle_sessions_used,
+        sessions_cap: tierDecision.cycle_sessions_cap
       });
+
 
       if (callSid) {
         fireAndForgetCallEndLog(callSid, "no_sessions_remaining");
