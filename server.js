@@ -2020,8 +2020,6 @@ console.log(nowIso(), "Session timer fired, ending session, redirecting to /end"
 cancelOpenAIResponseIfAnyOnce("redirecting to /end");
 
   await requestScenarioTagTextOnlyOnce("timer_end");
-
-  prepForEnding();
   await requestEnd("Session timer fired", { skipTransition: false });
 })().catch(() => {});
 
@@ -2421,8 +2419,6 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
               cancelOpenAIResponseIfAnyOnce("AI requested end");
 
               await requestScenarioTagTextOnlyOnce("ai_end");
-
-              prepForEnding();
               await requestEnd("AI requested end", { skipTransition: true });
 
             })().catch(() => {});
