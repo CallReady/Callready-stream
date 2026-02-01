@@ -76,6 +76,11 @@ const TWILIO_END_TRANSITION =
   "If you're interested in membership options to increase your time, please visit CallReady dot live. " +
   "You did something important today by practicing, and that counts, even if it felt awkward or imperfect.";
 
+const TWILIO_HARD_LIMIT_MESSAGE =
+  "Pardon the interruption, but we have reached the maximum time for this practice session, so we need to end the call now. " +
+  "You can call back anytime to keep practicing.";
+
+
 const TWILIO_OPTIN_PROMPT =
   "You can choose to receive text messages from CallReady. " +
   "If you opt in, we can text you short reminders about what you practiced, what to work on next, and new features as we add them. " +
@@ -1456,8 +1461,13 @@ app.post("/end", async (req, res) => {
         }
 
         if (!skipTransition) {
-          vr.say(TWILIO_END_TRANSITION);
+        if (req.query && String(req.query.hard_end || "") === "1") {
+            vr.say(TWILIO_HARD_LIMIT_MESSAGE);
+          } else {
+            vr.say(TWILIO_END_TRANSITION);
+          }
         }
+
 
         vr.say("Thanks for calling CallReady. We hope you found your practice session helpful. If you have feeback for us, please don't hesitate to email us at callready dot live at gmail dot com. We'd love to hear from you! Have a great day!");
         vr.hangup();
@@ -1940,10 +1950,16 @@ redirectCallToUnavailable("opener_no_audio");
       const client = twilioClient();
       const base = PUBLIC_BASE_URL.replace(/\/+$/, "");
       const softEnd = String(reason || "") === "soft_threshold_end";
-      const extra = softEnd ? "&soft_end=1" : "";
+      const hardEnd = String(reason || "") === "hard_ceiling_end";
+
+      let extra = "";
+      if (softEnd) extra = "&soft_end=1";
+      if (hardEnd) extra = "&hard_end=1";
+
       const endUrl = skipTransition
         ? base + "/end?retry=0&skip_transition=1" + extra
         : base + "/end?retry=0" + extra;
+
 
 
       console.log(nowIso(), "Redirecting call to /end now", callSid, "reason:", reason, "skipTransition:", skipTransition);
