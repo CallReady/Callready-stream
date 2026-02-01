@@ -204,6 +204,70 @@ async function getThresholdsForPhone(phoneE164) {
   }
 }
 
+function startLiveSessionThresholdTimers(opts) {
+  // Soft threshold: set callState.overSoftThresholdLive = true, do not end the call.
+  // Hard ceiling: invoke opts.onHardCeiling(), which we will wire to a graceful closing path next.
+  if (!opts || !opts.callState) return;
+
+  var callState = opts.callState;
+  var softSeconds = Number(opts.softThresholdSeconds || 0);
+  var hardSeconds = Number(opts.hardCeilingSeconds || 0);
+
+  if (typeof callState.overSoftThresholdLive !== "boolean") {
+    callState.overSoftThresholdLive = false;
+  }
+
+  if (callState.softThresholdTimerId) {
+    clearTimeout(callState.softThresholdTimerId);
+    callState.softThresholdTimerId = null;
+  }
+  if (callState.hardCeilingTimerId) {
+    clearTimeout(callState.hardCeilingTimerId);
+    callState.hardCeilingTimerId = null;
+  }
+
+  if (softSeconds > 0) {
+    callState.softThresholdTimerId = setTimeout(function () {
+      callState.overSoftThresholdLive = true;
+
+      try {
+        console.log(nowIso(), "Soft threshold crossed for live call", {
+          callSid: callState.callSid || null,
+          softThresholdSeconds: softSeconds
+        });
+      } catch (e) {}
+    }, softSeconds * 1000);
+  }
+
+  if (hardSeconds > 0) {
+    callState.hardCeilingTimerId = setTimeout(function () {
+      try {
+        console.log(nowIso(), "Hard ceiling reached for live call", {
+          callSid: callState.callSid || null,
+          hardCeilingSeconds: hardSeconds
+        });
+      } catch (e) {}
+
+      if (typeof opts.onHardCeiling === "function") {
+        opts.onHardCeiling();
+      }
+    }, hardSeconds * 1000);
+  }let endFallbackTimer = null;
+}
+
+function clearLiveSessionThresholdTimers(callState) {
+  if (!callState) return;
+
+  if (callState.softThresholdTimerId) {
+    clearTimeout(callState.softThresholdTimerId);
+    callState.softThresholdTimerId = null;
+  }
+  if (callState.hardCeilingTimerId) {
+    clearTimeout(callState.hardCeilingTimerId);
+    callState.hardCeilingTimerId = null;
+  }
+}
+
 
 async function upsertCallerOnCallStart(fromPhoneE164, callSid) {
   if (!pool) return;
@@ -1521,6 +1585,10 @@ wss.on("connection", (twilioWs) => {
   let listenBlockUntilMs = 0;
   let endingRequested = false;
   let endFallbackTimer = null;
+  let liveThresholdState = null;
+  let liveSoftThresholdSeconds = 0;
+  let liveHardCeilingSeconds = 0;
+
 
 
 
@@ -1547,6 +1615,11 @@ wss.on("connection", (twilioWs) => {
     try {
       if (sessionTimer) clearTimeout(sessionTimer);
     } catch {}
+
+    try {
+      if (liveThresholdState) clearLiveSessionThresholdTimers(liveThresholdState);
+    } catch {}
+    liveThresholdState = null;
     
     try {
       if (endFallbackTimer) clearTimeout(endFallbackTimer);
@@ -2390,7 +2463,7 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
       console.log(nowIso(), "Twilio stream start:", streamSid || "(no streamSid)");
       console.log(nowIso(), "Twilio callSid:", callSid || "(no callSid)");
 
-      if (callSid) {
+            if (callSid) {
         priorContext = await fetchPriorCallContextByCallSid(callSid);
         if (priorContext) {
           console.log(nowIso(), "Loaded prior call context", priorContext);
@@ -2413,6 +2486,49 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
             cycle_ends_at: callerRuntime.cycle_ends_at,
             cycle_seconds_used: callerRuntime.cycle_seconds_used,
           });
+        }
+
+        try {
+          if (callerRuntime && callerRuntime.phone_e164) {
+            const th = await getThresholdsForPhone(callerRuntime.phone_e164);
+
+            liveSoftThresholdSeconds = th && Number(th.soft) > 0 ? Number(th.soft) : 240;
+            liveHardCeilingSeconds = th && Number(th.hard) > 0 ? Number(th.hard) : 420;
+
+            liveThresholdState = {
+              callSid: callSid || null,
+              overSoftThresholdLive: false,
+              hitHardCeilingLive: false,
+              softThresholdTimerId: null,
+              hardCeilingTimerId: null,
+            };
+
+            startLiveSessionThresholdTimers({
+              callState: liveThresholdState,
+              softThresholdSeconds: liveSoftThresholdSeconds,
+              hardCeilingSeconds: liveHardCeilingSeconds,
+              onHardCeiling: function () {
+                try {
+                  liveThresholdState.hitHardCeilingLive = true;
+                } catch {}
+
+                try {
+                  console.log(nowIso(), "Hard ceiling callback fired (verification only)", {
+                    callSid: callSid || null,
+                    hardCeilingSeconds: liveHardCeilingSeconds
+                  });
+                } catch {}
+              }
+            });
+
+            console.log(nowIso(), "Live threshold timers armed (verification only)", {
+              callSid: callSid || null,
+              softThresholdSeconds: liveSoftThresholdSeconds,
+              hardCeilingSeconds: liveHardCeilingSeconds
+            });
+          }
+        } catch (e) {
+          console.log(nowIso(), "Failed to start live threshold timers (non-fatal)", e && e.message ? e.message : e);
         }
       }
 
