@@ -107,7 +107,12 @@ const TWILIO_NO_MINUTES_LEFT =
   "To get more sessions, please visit CallReady dot live. " +
   "Thanks for calling, and we hope you will practice again soon!";
 
-  const TWILIO_SERVICE_UNAVAILABLE =
+const TWILIO_NO_SESSIONS_LEFT =
+  "Welcome back to CallReady. It looks like you do not have any practice sessions remaining on your membership for this month. " +
+  "To get more sessions, please visit CallReady dot live. " +
+  "Thanks for calling, and we hope you will practice again soon!";
+
+const TWILIO_SERVICE_UNAVAILABLE =
 "CallReady is temporarily unavailable right now. Please try again in a little bit. Goodbye.";
 
 function safeJsonParse(str) {
@@ -1329,7 +1334,7 @@ app.post("/voice", async (req, res) => {
     const vr = new VoiceResponse();
 
     if (!tierDecision.allowed) {
-      console.log(nowIso(), "Blocking call due to no remaining minutes", {
+      console.log(nowIso(), "Blocking call due to no remaining sessions", {
         from,
         callSid,
         tier: tierDecision.tier,
@@ -1337,10 +1342,10 @@ app.post("/voice", async (req, res) => {
       });
 
       if (callSid) {
-        fireAndForgetCallEndLog(callSid, "no_minutes_remaining");
+        fireAndForgetCallEndLog(callSid, "no_sessions_remaining");
       }
 
-      vr.say(TWILIO_NO_MINUTES_LEFT);
+      vr.say(TWILIO_NO_SESSIONS_LEFT);
       vr.hangup();
       res.type("text/xml").send(vr.toString());
       return;
