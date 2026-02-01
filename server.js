@@ -470,7 +470,7 @@ async function logCallEndToDb(callSid, endedReason) {
       const hitHard = dur >= thresholds.hard;
 
       // Counts only if it was a real attempt
-      const shouldCount = dur >= 30;
+      const shouldCount = dur >= 60;
 
       try {
         await pool.query(
