@@ -2250,7 +2250,7 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
         const audioMs = Math.floor((aiAudioBytesThisResponse / 8000) * 1000);
 
         // Block listening until estimated playback end plus a small safety buffer
-        listenBlockUntilMs = Date.now() + audioMs + 250;
+        listenBlockUntilMs = Date.now() + audioMs + 75;
 
 
         if (!turnDetectionEnabled && openerSent) {
