@@ -676,7 +676,9 @@ async function fetchCallerRuntimeContextByCallSid(callSid) {
     if (!row) return null;
 
     const tier = row.tier ? String(row.tier) : "free";
+    const used = toInt(row.cycle_seconds_used, 0);
     const remaining = 0;
+
 
     const perCallCapSeconds = toInt(row.per_call_seconds_cap, tierPerCallCapSeconds(tier));
 
