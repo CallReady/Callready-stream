@@ -1165,7 +1165,7 @@ app.get("/subscribe", (req, res) => {
     "<img class='logo' src='https://cdn.builder.io/api/v1/image/assets%2F279137d3cf234c9bb6c4cf3f6b1c4939%2Fcab85975882a4da19b5eaa18e422c537' alt='CallReady logo' />" +
     "</div>" +
     "<h2>CallReady Memberships</h2>" +
-    "<p>You already have a free membership just by calling CallReady. Upgrade if you want more practice time.</p>" +
+    "<p>You already have a free membership just by calling CallReady. Upgrade if you want more practice sessions each month.</p>" +
 
     ((req.query && String(req.query.error || "") === "phone")
       ? "<div class='error'>Please enter a valid U.S. phone number, for example: 555 555 5555.</div>"
@@ -1182,8 +1182,8 @@ app.get("/subscribe", (req, res) => {
     "</div>" +
     "<div class='tierNote'>Your free membership is created automatically when you call CallReady from your phone. It's a great way to try CallReady and get a little practice in right away.</div>" +
     "<ul class='tierList'>" +
-    "<li>20 minutes per month</li>" +
-    "<li>Sessions capped at 5 minutes</li>" +
+    "<li>Up to 4 practice sessions per month</li>" +
+    "<li>Sessions end gently, with soft and hard limits</li>" +
     "</ul>" +
     "</div>" +
 
@@ -1195,10 +1195,10 @@ app.get("/subscribe", (req, res) => {
     "</div>" +
     "<div class='tierPrice'>$15<small>per month</small></div>" +
     "</div>" +
-    "<div class='tierNote'>Steady practice time to build comfort and consistency, without rushing.</div>" +
+    "<div class='tierNote'>Steady practice to build comfort and consistency, without rushing.</div>" +
     "<ul class='tierList'>" +
-    "<li>120 minutes per month</li>" +
-    "<li>Great for a simple weekly practice habit</li>" +
+    "<li>Up to 12 practice sessions per month</li>" +
+    "<li>No per-call time limits, just guided practice with soft, humane endings</li>" +
     "</ul>" +
     "</label>" +
 
@@ -1210,10 +1210,10 @@ app.get("/subscribe", (req, res) => {
     "</div>" +
     "<div class='tierPrice'>$30<small>per month</small></div>" +
     "</div>" +
-    "<div class='tierNote'>For frequent practice, longer calls, and tougher situations like job searches and appointments.</div>" +
+    "<div class='tierNote'>For frequent practice or ongoing confidence building.</div>" +
     "<ul class='tierList'>" +
-    "<li>400 minutes per month</li>" +
-    "<li>Best if you want to practice several times per week or a little every day</li>" +
+    "<li>Up to 30 practice sessions per month</li>" +
+    "<li>No per-call limits, just repeatable, low-pressure practice when you need it</li>" +
     "</ul>" +
     "</label>" +
 
@@ -1237,68 +1237,67 @@ app.get("/subscribe", (req, res) => {
   res.status(200).send(html);
 });
 
-
 app.get("/subscribe/success", (req, res) => {
-const html =
-"<!doctype html>" +
-"<html><head><meta charset='utf-8' />" +
-"<meta name='viewport' content='width=device-width, initial-scale=1' />" +
-"<title>Subscription Successful</title>" +
-"<link rel='preconnect' href='https://fonts.googleapis.com' />" +
-"<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin />" +
-"<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap' rel='stylesheet' />" +
-"<style>" +
-":root{--bg:#F6F8F9;--card:#ffffff;--text:#2F3A40;--muted:#5a6a73;--border:#e6eaee;--primary:#3A6F8F;}" +
-"body{font-family:Inter,Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:24px;}" +
-".wrap{max-width:720px;margin:0 auto;}" +
-".card{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.07);padding:22px;}" +
-".brand{display:flex;align-items:center;gap:12px;margin-bottom:10px;}" +
-".logo{max-height:48px;max-width:240px;object-fit:contain;}" +
-"h2{margin:8px 0 8px 0;font-size:22px;}" +
-"p{margin:0 0 14px 0;line-height:1.45;color:var(--muted);}" +
-".actions{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;}" +
-"a.btn{display:inline-block;text-decoration:none;background:var(--primary);color:#fff;border-radius:14px;padding:12px 16px;font-size:16px;font-weight:600;}" +
-"</style></head><body>" +
-"<div class='wrap'><div class='card'>" +
-"<div class='brand'><img class='logo' src='https://cdn.builder.io/api/v1/image/assets%2F279137d3cf234c9bb6c4cf3f6b1c4939%2Fcab85975882a4da19b5eaa18e422c537' alt='CallReady logo' /></div>" +
-"<h2>You're all set</h2>" +
-"<p>Your membership is active for the phone number you entered.</p>" +
-"<p>Next step, call the CallReady number from that phone to start practicing.</p>" +
-"<div class='actions'><a class='btn' href='/subscribe'>Back to memberships</a></div>" +
-"</div></div></body></html>";
+  const html =
+    "<!doctype html>" +
+    "<html><head><meta charset='utf-8' />" +
+    "<meta name='viewport' content='width=device-width, initial-scale=1' />" +
+    "<title>Subscription Successful</title>" +
+    "<link rel='preconnect' href='https://fonts.googleapis.com' />" +
+    "<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin />" +
+    "<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap' rel='stylesheet' />" +
+    "<style>" +
+    ":root{--bg:#F6F8F9;--card:#ffffff;--text:#2F3A40;--muted:#5a6a73;--border:#e6eaee;--primary:#3A6F8F;}" +
+    "body{font-family:Inter,Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:24px;}" +
+    ".wrap{max-width:720px;margin:0 auto;}" +
+    ".card{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.07);padding:22px;}" +
+    ".brand{display:flex;align-items:center;gap:12px;margin-bottom:10px;}" +
+    ".logo{max-height:48px;max-width:240px;object-fit:contain;}" +
+    "h2{margin:8px 0 8px 0;font-size:22px;}" +
+    "p{margin:0 0 14px 0;line-height:1.45;color:var(--muted);}" +
+    ".actions{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;}" +
+    "a.btn{display:inline-block;text-decoration:none;background:var(--primary);color:#fff;border-radius:14px;padding:12px 16px;font-size:16px;font-weight:600;}" +
+    "</style></head><body>" +
+    "<div class='wrap'><div class='card'>" +
+    "<div class='brand'><img class='logo' src='https://cdn.builder.io/api/v1/image/assets%2F279137d3cf234c9bb6c4cf3f6b1c4939%2Fcab85975882a4da19b5eaa18e422c537' alt='CallReady logo' /></div>" +
+    "<h2>You're all set</h2>" +
+    "<p>Your membership is active for the phone number you entered.</p>" +
+    "<p>Next step, call the CallReady number from that phone to start practicing.</p>" +
+    "<div class='actions'><a class='btn' href='/subscribe'>Back to memberships</a></div>" +
+    "</div></div></body></html>";
 
-res.status(200).send(html);
+  res.status(200).send(html);
 });
 
 app.get("/subscribe/cancel", (req, res) => {
-const html =
-"<!doctype html>" +
-"<html><head><meta charset='utf-8' />" +
-"<meta name='viewport' content='width=device-width, initial-scale=1' />" +
-"<title>Checkout Canceled</title>" +
-"<link rel='preconnect' href='https://fonts.googleapis.com' />" +
-"<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin />" +
-"<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap' rel='stylesheet' />" +
-"<style>" +
-":root{--bg:#F6F8F9;--card:#ffffff;--text:#2F3A40;--muted:#5a6a73;--border:#e6eaee;--primary:#3A6F8F;}" +
-"body{font-family:Inter,Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:24px;}" +
-".wrap{max-width:720px;margin:0 auto;}" +
-".card{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.07);padding:22px;}" +
-".brand{display:flex;align-items:center;gap:12px;margin-bottom:10px;}" +
-".logo{max-height:48px;max-width:240px;object-fit:contain;}" +
-"h2{margin:8px 0 8px 0;font-size:22px;}" +
-"p{margin:0 0 14px 0;line-height:1.45;color:var(--muted);}" +
-".actions{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;}" +
-"a.btn{display:inline-block;text-decoration:none;background:var(--primary);color:#fff;border-radius:14px;padding:12px 16px;font-size:16px;font-weight:600;}" +
-"</style></head><body>" +
-"<div class='wrap'><div class='card'>" +
-"<div class='brand'><img class='logo' src='https://cdn.builder.io/api/v1/image/assets%2F279137d3cf234c9bb6c4cf3f6b1c4939%2Fcab85975882a4da19b5eaa18e422c537' alt='CallReady logo' /></div>" +
-"<h2>Checkout canceled</h2>" +
-"<p>No changes were made. You can still use the free membership anytime by calling CallReady.</p>" +
-"<div class='actions'><a class='btn' href='/subscribe'>Back to memberships</a></div>" +
-"</div></div></body></html>";
+  const html =
+    "<!doctype html>" +
+    "<html><head><meta charset='utf-8' />" +
+    "<meta name='viewport' content='width=device-width, initial-scale=1' />" +
+    "<title>Checkout Canceled</title>" +
+    "<link rel='preconnect' href='https://fonts.googleapis.com' />" +
+    "<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin />" +
+    "<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap' rel='stylesheet' />" +
+    "<style>" +
+    ":root{--bg:#F6F8F9;--card:#ffffff;--text:#2F3A40;--muted:#5a6a73;--border:#e6eaee;--primary:#3A6F8F;}" +
+    "body{font-family:Inter,Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:24px;}" +
+    ".wrap{max-width:720px;margin:0 auto;}" +
+    ".card{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.07);padding:22px;}" +
+    ".brand{display:flex;align-items:center;gap:12px;margin-bottom:10px;}" +
+    ".logo{max-height:48px;max-width:240px;object-fit:contain;}" +
+    "h2{margin:8px 0 8px 0;font-size:22px;}" +
+    "p{margin:0 0 14px 0;line-height:1.45;color:var(--muted);}" +
+    ".actions{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;}" +
+    "a.btn{display:inline-block;text-decoration:none;background:var(--primary);color:#fff;border-radius:14px;padding:12px 16px;font-size:16px;font-weight:600;}" +
+    "</style></head><body>" +
+    "<div class='wrap'><div class='card'>" +
+    "<div class='brand'><img class='logo' src='https://cdn.builder.io/api/v1/image/assets%2F279137d3cf234c9bb6c4cf3f6b1c4939%2Fcab85975882a4da19b5eaa18e422c537' alt='CallReady logo' /></div>" +
+    "<h2>Checkout canceled</h2>" +
+    "<p>No changes were made. You can still use the free membership anytime by calling CallReady.</p>" +
+    "<div class='actions'><a class='btn' href='/subscribe'>Back to memberships</a></div>" +
+    "</div></div></body></html>";
 
-res.status(200).send(html);
+  res.status(200).send(html);
 });
 
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
