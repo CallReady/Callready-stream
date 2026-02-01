@@ -1,4 +1,4 @@
-//Session based usage fully implemented and verified
+//This should be a good fallback point
 "use strict";
 
 const express = require("express");
