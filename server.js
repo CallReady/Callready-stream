@@ -1617,16 +1617,14 @@ function buildDynamicOpenerSpeech() {
   }
 
   if (String(tier).toLowerCase() === "free") {
-    return (
-      "Welcome back to CallReady. " +
-      "You have about " +
-      remainingMinutes +
-      " minutes left this month on the free membership. " +
-      "Each practice call is about " +
-      capMinutes +
-      " minutes. " +
-      "If you want more time, you can check memberships at CallReady dot live. "
-    );
+  return (
+    "Welcome back to CallReady. " +
+    "You have " +
+    String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
+    " practice sessions left this month on the free membership. " +
+    "If you want more sessions, you can check memberships at CallReady dot live. "
+  );
+
   }
 
   return (
