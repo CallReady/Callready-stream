@@ -522,26 +522,6 @@ async function logCallEndToDb(callSid, endedReason) {
         } catch (e) {
           console.log(nowIso(), "DB update failed for callers cycle_seconds_used:", e && e.message ? e.message : e);
         }
-
-        try {
-          await pool.query(
-            "update callers set " +
-              "month_bucket = $3::date, " +
-              "monthly_seconds_used = case " +
-              "when month_bucket is distinct from $3::date then $2 " +
-              "else coalesce(monthly_seconds_used, 0) + $2 end " +
-              "where phone_e164 = $1",
-            [row.phone_e164, dur, bucket]
-          );
-
-          console.log(nowIso(), "Updated callers monthly_seconds_used", {
-            phone_e164: row.phone_e164,
-            added_seconds: dur,
-            bucket,
-          });
-        } catch (e) {
-          console.log(nowIso(), "DB update failed for callers monthly_seconds_used:", e && e.message ? e.message : e);
-        }
       }
     }
   } catch (e) {
