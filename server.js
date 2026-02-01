@@ -479,10 +479,10 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
         [fromPhoneE164, perCallCapSeconds, bucket]
       );
     } else {
-      await pool.query(
-        "update callers set month_bucket = $2::date, monthly_seconds_used = case when month_bucket is distinct from $2::date then 0 else monthly_seconds_used end where phone_e164 = $1",
-        [fromPhoneE164, bucket]
-      );
+                await pool.query(
+            "update callers set per_call_seconds_cap = null, month_bucket = $2::date, monthly_seconds_used = case when month_bucket is distinct from $2::date then 0 else monthly_seconds_used end where phone_e164 = $1",
+            [fromPhoneE164, bucket]
+          );
     }
   } catch {}
 }
