@@ -1469,7 +1469,7 @@ app.post("/end", async (req, res) => {
           vr.say(TWILIO_END_TRANSITION);
         }
 
-        vr.say("Thanks for calling CallReady. We hope you found your practice session helpful. If you have feeback for us, please don't hesitate to email us at callready dot live at gmail dot com. We'd love to hear from you! Have a great day!");
+        vr.say("We hope you found your practice session helpful. If you have feeback for us, please don't hesitate to email us at callready dot live at gmail dot com. We'd love to hear from you! Have a great day!");
         vr.hangup();
         res.type("text/xml").send(vr.toString());
         return;
