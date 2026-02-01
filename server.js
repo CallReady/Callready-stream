@@ -405,14 +405,16 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
 
     if (!cycleEndsMs || nowMs >= cycleEndsMs) {
       try {
-        await pool.query(
+                await pool.query(
           "update callers set " +
             "cycle_anchor_at = now(), " +
             "cycle_ends_at = (now() + interval '1 month'), " +
-            "cycle_seconds_used = 0 " +
+            "cycle_seconds_used = 0, " +
+            "cycle_sessions_used = 0 " +
             "where phone_e164 = $1",
           [fromPhoneE164]
         );
+
 
         console.log(nowIso(), "Cycle rolled over and reset", {
           phone_e164: fromPhoneE164,
