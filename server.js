@@ -2053,41 +2053,14 @@ console.log(nowIso(), "Redirected call to /unavailable via Twilio REST", callSid
 
 closeOpenAIOnly("Redirected to /unavailable");
 
-
 } catch (err) {
 console.log(nowIso(), "Twilio REST redirect to /unavailable error:", err && err.message ? err.message : err);
 closeAll("Redirect to /unavailable failed");
 }
 }
-  function maybeStartSessionTimer() {
-if (sessionTimerStarted) return;
-
-// No per-session timer for paid tiers
-if (callerRuntime) {
-const t = String(callerRuntime.tier || "free").toLowerCase();
-if (t === "member" || t === "power" || t === "power_user" || t === "poweruser") {
-return;
-}
-}
-
-sessionTimerStarted = true;
-
-const capMs = Math.max(1, perCallCapSeconds || FREE_PER_CALL_SECONDS) * 1000;
-
-sessionTimer = setTimeout(() => {
-(async () => {
-console.log(nowIso(), "Session timer fired, ending session, redirecting to /end", { perCallCapSeconds });
-cancelOpenAIResponseIfAnyOnce("redirecting to /end");
-
-  await requestScenarioTagTextOnlyOnce("timer_end");
-  await requestEnd("Session timer fired", { skipTransition: false });
-})().catch(() => {});
-
-
-}, capMs);
-
-console.log(nowIso(), "Session timer started after first caller speech_started", { perCallCapSeconds });
-}
+   function maybeStartSessionTimer() {
+    return;
+  }
 
   function extractTextFromResponseDone(msg) {
     let out = "";
