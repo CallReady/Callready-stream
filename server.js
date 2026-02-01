@@ -257,7 +257,6 @@ function startLiveSessionThresholdTimers(opts) {
         opts.onHardCeiling();
       }
     }, hardSeconds * 1000);
-  }let endFallbackTimer = null;
 }
 
 function clearLiveSessionThresholdTimers(callState) {
