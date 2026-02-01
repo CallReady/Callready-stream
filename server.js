@@ -1,4 +1,4 @@
-//This is a backup deploy before I attempt a pretty major rewrite of AI listening code. Return here if it spectacularly fails.
+//Session based usage fully implemented and verified
 "use strict";
 
 const express = require("express");
