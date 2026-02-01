@@ -72,8 +72,8 @@ const TWILIO_SMS_FROM =
 const AI_END_CALL_TRIGGER = "END_CALL_NOW";
 
 const TWILIO_END_TRANSITION =
-  "Pardon my interruption, but we've reached the time limit for trial sessions. " +
-  "If you're interested in membership options to increase your time, please visit CallReady dot live. " +
+  "Thanks for practicing with CallReady. " +
+  "If you want more practice sessions each month, you can explore memberships at CallReady dot live. " +
   "You did something important today by practicing, and that counts, even if it felt awkward or imperfect.";
 
 const TWILIO_HARD_LIMIT_MESSAGE =
