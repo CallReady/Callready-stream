@@ -1637,10 +1637,11 @@ function buildDynamicOpenerSpeech() {
 
   return (
     "Welcome back to CallReady. " +
-    "You have about " +
-    remainingMinutes +
-    " minutes left this month. "
+    "You have " +
+    String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
+    " practice calls left this month. "
   );
+
 }
 
   function sendOpenerOnce(label) {
