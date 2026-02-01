@@ -364,6 +364,13 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
     const totalCalls2 = row2 ? toInt(row2.total_calls, totalCalls) : totalCalls;
 
     const used = row2 ? toInt(row2.cycle_seconds_used, 0) : 0;
+    const sessionsUsed = row2 ? toInt(row2.cycle_sessions_used, 0) : 0;
+    const sessionsCap = row2 ? toInt(row2.cycle_sessions_cap, 0) : 0;
+
+    let sessionsRemaining = sessionsCap - sessionsUsed;
+    if (!Number.isFinite(sessionsRemaining)) sessionsRemaining = 0;
+    if (sessionsRemaining < 0) sessionsRemaining = 0;
+
     const allowance = tierMonthlyAllowanceSeconds(tier2);
 
     let remaining = allowance - used;
