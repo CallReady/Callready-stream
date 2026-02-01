@@ -69,6 +69,8 @@ const TWILIO_SMS_FROM =
   process.env.TWILIO_PHONE_NUMBER ||
   process.env.TWILIO_FROM_NUMBER;
 
+  const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID;
+
 const AI_END_CALL_TRIGGER = "END_CALL_NOW";
 
 const TWILIO_END_TRANSITION =
@@ -100,7 +102,9 @@ const IN_CALL_CONFIRM_NO =
   "Thanks for practicing with us today. We hope to hear from you again soon. Have a great day and call again soon!";
 
 const OPTIN_CONFIRM_SMS =
-  "CallReady: You are opted in to receive texts about your practice sessions. Msg and data rates may apply. Reply STOP to opt out, HELP for help.";
+  "Welcome to CallReady. You are opted in to receive texts. Msg and data rates may apply. " +
+  "Reply STOP any time to opt out. " +
+  "Learn more at https://callready.live";
 
 const TWILIO_NO_MINUTES_LEFT =
   "Welcome back to CallReady. It looks like you do not have any practice sessions remaining on your membership for this month. " +
@@ -131,6 +135,41 @@ function twilioClient() {
   if (!hasTwilioRest()) return null;
   return twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 }
+
+async function sendSms(toPhoneE164, bodyText) {
+  if (!toPhoneE164) return { ok: false, error: "missing_to" };
+  if (!bodyText) return { ok: false, error: "missing_body" };
+  if (!hasTwilioRest()) return { ok: false, error: "missing_twilio_rest_creds" };
+
+  const client = twilioClient();
+  if (!client) return { ok: false, error: "no_twilio_client" };
+
+  const payload = {
+    to: String(toPhoneE164).trim(),
+    body: String(bodyText)
+  };
+
+  if (TWILIO_MESSAGING_SERVICE_SID) {
+    payload.messagingServiceSid = TWILIO_MESSAGING_SERVICE_SID;
+  } else if (TWILIO_SMS_FROM) {
+    payload.from = TWILIO_SMS_FROM;
+  } else {
+    return { ok: false, error: "missing_sms_from_or_messaging_service" };
+  }
+
+  try {
+    const msg = await client.messages.create(payload);
+    console.log(nowIso(), "Sent SMS", { to: payload.to, sid: msg && msg.sid ? msg.sid : null });
+    return { ok: true, sid: msg && msg.sid ? msg.sid : null };
+  } catch (e) {
+    console.log(nowIso(), "Failed to send SMS", {
+      to: payload.to,
+      error: e && e.message ? e.message : e
+    });
+    return { ok: false, error: e && e.message ? e.message : "send_failed" };
+  }
+}
+
 
 function monthBucketFirstDayUtc() {
   const d = new Date();
@@ -1583,12 +1622,25 @@ app.post("/gather-result", async (req, res) => {
     }
 
     if (pressed1) {
-      vr.say(IN_CALL_CONFIRM_YES);
-      vr.hangup();
-    } else {
-      vr.say(IN_CALL_CONFIRM_NO);
-      vr.hangup();
-    }
+  try {
+    const smsResult = await sendSms(from, OPTIN_CONFIRM_SMS);
+    console.log(nowIso(), "Opt-in confirmation SMS result", {
+      from: from,
+      ok: !!(smsResult && smsResult.ok),
+      sid: smsResult && smsResult.sid ? smsResult.sid : null,
+      error: smsResult && smsResult.error ? smsResult.error : null
+    });
+  } catch (e) {
+    console.log(nowIso(), "Opt-in confirmation SMS threw", e && e.message ? e.message : e);
+  }
+
+  vr.say(IN_CALL_CONFIRM_YES);
+  vr.hangup();
+} else {
+  vr.say(IN_CALL_CONFIRM_NO);
+  vr.hangup();
+}
+
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
