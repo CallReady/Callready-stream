@@ -1442,14 +1442,19 @@ app.post("/end", async (req, res) => {
 
     const from = req.body && req.body.From ? String(req.body.From) : "";
     const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
-    const isSoftEnd = req.query && String(req.query.soft_end) === "1";
+    const hardEnd = req.query && String(req.query.hard_end || "") === "1";
+
+    if (!isRetry && hardEnd) {
+      vr.say(TWILIO_HARD_LIMIT_MESSAGE);
+    }
+
+    const isSoftEnd = !hardEnd && (req.query && String(req.query.soft_end || "") === "1");
 
     if (!isRetry && isSoftEnd) {
       vr.say(
-        "Quick note, that last scenario took us just past the usual practice session time, so we’re going to wrap things up here for this session. You can call back any time and keep practicing, though!"
+        "Quick note, that last scenario took us just past the usual practice session time, so we're going to wrap things up here for this session. You can call back any time and keep practicing, though!"
       );
     }
-
 
     if (!isRetry) {
       const alreadyOptedIn = await isAlreadyOptedInByPhone(from);
@@ -1460,14 +1465,9 @@ app.post("/end", async (req, res) => {
           fireAndForgetCallEndLog(callSid, "completed_already_opted_in");
         }
 
-        if (!skipTransition) {
-        if (req.query && String(req.query.hard_end || "") === "1") {
-            vr.say(TWILIO_HARD_LIMIT_MESSAGE);
-          } else {
-            vr.say(TWILIO_END_TRANSITION);
-          }
+                if (!skipTransition && !hardEnd) {
+          vr.say(TWILIO_END_TRANSITION);
         }
-
 
         vr.say("Thanks for calling CallReady. We hope you found your practice session helpful. If you have feeback for us, please don't hesitate to email us at callready dot live at gmail dot com. We'd love to hear from you! Have a great day!");
         vr.hangup();
@@ -1476,7 +1476,7 @@ app.post("/end", async (req, res) => {
       }
     }
 
-    if (!isRetry && !skipTransition) {
+        if (!isRetry && !skipTransition && !hardEnd) {
       vr.say(TWILIO_END_TRANSITION);
     }
 
