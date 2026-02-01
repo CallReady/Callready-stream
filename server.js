@@ -469,13 +469,24 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
 
 
     if (perCallCapSeconds > 0) {
-      try {
-        await pool.query(
-          "update callers set per_call_seconds_cap = $2, month_bucket = $3::date, monthly_seconds_used = case when month_bucket is distinct from $3::date then 0 else monthly_seconds_used end where phone_e164 = $1",
-          [fromPhoneE164, perCallCapSeconds, bucket]
-        );
-      } catch {}
+  try {
+    const tWrite = String(tier2 || "free").toLowerCase();
+    const shouldWriteCap = tWrite === "free";
+
+    if (shouldWriteCap) {
+      await pool.query(
+        "update callers set per_call_seconds_cap = $2, month_bucket = $3::date, monthly_seconds_used = case when month_bucket is distinct from $3::date then 0 else monthly_seconds_used end where phone_e164 = $1",
+        [fromPhoneE164, perCallCapSeconds, bucket]
+      );
+    } else {
+      await pool.query(
+        "update callers set month_bucket = $2::date, monthly_seconds_used = case when month_bucket is distinct from $2::date then 0 else monthly_seconds_used end where phone_e164 = $1",
+        [fromPhoneE164, bucket]
+      );
     }
+  } catch {}
+}
+
 
     try {
       if (callSid) {
