@@ -452,11 +452,7 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
     if (!Number.isFinite(sessionsRemaining)) sessionsRemaining = 0;
     if (sessionsRemaining < 0) sessionsRemaining = 0;
 
-    const allowance = tierMonthlyAllowanceSeconds(tier2);
-
-    let remaining = allowance - used;
-    if (!Number.isFinite(remaining)) remaining = allowance;
-    if (remaining < 0) remaining = 0;
+    const remaining = 0;
 
     const baseCap = tierPerCallCapSeconds(tier2);
 
