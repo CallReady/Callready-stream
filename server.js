@@ -507,13 +507,24 @@ async function logCallEndToDb(callSid, endedReason) {
         const bucket = monthBucketFirstDayUtc();
 
         try {
-          await pool.query(
-            "update callers set " +
-              "cycle_seconds_used = coalesce(cycle_seconds_used, 0) + $2, " +
-              "last_call_sid = $3 " +
-              "where phone_e164 = $1",
-            [row.phone_e164, dur, callSid]
-          );
+        await pool.query(
+          "update callers set " +
+            "cycle_seconds_used = coalesce(cycle_seconds_used, 0) + $2, " +
+            "cycle_sessions_used = coalesce(cycle_sessions_used, 0) + 1, " +
+            "last_call_sid = $3 " +
+            "where phone_e164 = $1",
+          [row.phone_e164, dur, callSid]
+        );
+
+  console.log(nowIso(), "Updated callers usage", {
+    phone_e164: row.phone_e164,
+    added_seconds: dur,
+    added_session: true,
+  });
+} catch (e) {
+  console.log(nowIso(), "DB update failed for callers usage:", e && e.message ? e.message : e);
+}
+
 
           console.log(nowIso(), "Updated callers cycle_seconds_used", {
             phone_e164: row.phone_e164,
