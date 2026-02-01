@@ -502,7 +502,8 @@ async function logCallEndToDb(callSid, endedReason) {
         );
       }
 
-      if (dur > 0) {
+      if (dur > 0 && shouldCount) {
+
         const bucket = monthBucketFirstDayUtc();
 
         try {
