@@ -462,51 +462,49 @@ async function logCallEndToDb(callSid, endedReason) {
       phone_e164: row && row.phone_e164 ? row.phone_e164 : null,
     });
 
-    if (row && row.phone_e164) {
-      const dur = toInt(row.duration_seconds, 0);
-      const thresholds = await getThresholdsForPhone(row.phone_e164);
+    if (!row || !row.phone_e164) return;
 
-      const overSoft = dur > thresholds.soft;
-      const hitHard = dur >= thresholds.hard;
+    const dur = toInt(row.duration_seconds, 0);
+    const thresholds = await getThresholdsForPhone(row.phone_e164);
 
-      // Counts only if it was a real attempt
-      const shouldCount = dur >= 60;
+    const overSoft = dur > thresholds.soft;
+    const hitHard = dur >= thresholds.hard;
 
+    // Counts only if it was a real attempt
+    const shouldCount = dur >= 60;
+
+    try {
+      await pool.query(
+        "update calls set " +
+          "soft_threshold_seconds = $2, " +
+          "hard_ceiling_seconds = $3, " +
+          "over_soft_threshold = $4, " +
+          "hit_hard_ceiling = $5, " +
+          "should_count = $6 " +
+          "where call_sid = $1",
+        [callSid, thresholds.soft, thresholds.hard, overSoft, hitHard, shouldCount]
+      );
+
+      console.log(nowIso(), "Classified call", {
+        callSid,
+        phone_e164: row.phone_e164,
+        duration_seconds: dur,
+        soft_threshold_seconds: thresholds.soft,
+        hard_ceiling_seconds: thresholds.hard,
+        over_soft_threshold: overSoft,
+        hit_hard_ceiling: hitHard,
+        should_count: shouldCount,
+      });
+    } catch (e) {
+      console.log(
+        nowIso(),
+        "DB update failed for calls classification:",
+        e && e.message ? e.message : e
+      );
+    }
+
+    if (dur > 0 && shouldCount) {
       try {
-        await pool.query(
-          "update calls set " +
-            "soft_threshold_seconds = $2, " +
-            "hard_ceiling_seconds = $3, " +
-            "over_soft_threshold = $4, " +
-            "hit_hard_ceiling = $5, " +
-            "should_count = $6 " +
-            "where call_sid = $1",
-          [callSid, thresholds.soft, thresholds.hard, overSoft, hitHard, shouldCount]
-        );
-
-        console.log(nowIso(), "Classified call", {
-          callSid,
-          phone_e164: row.phone_e164,
-          duration_seconds: dur,
-          soft_threshold_seconds: thresholds.soft,
-          hard_ceiling_seconds: thresholds.hard,
-          over_soft_threshold: overSoft,
-          hit_hard_ceiling: hitHard,
-          should_count: shouldCount,
-        });
-      } catch (e) {
-        console.log(
-          nowIso(),
-          "DB update failed for calls classification:",
-          e && e.message ? e.message : e
-        );
-      }
-
-      if (dur > 0 && shouldCount) {
-
-        const bucket = monthBucketFirstDayUtc();
-
-        try {
         await pool.query(
           "update callers set " +
             "cycle_seconds_used = coalesce(cycle_seconds_used, 0) + $2, " +
@@ -516,29 +514,24 @@ async function logCallEndToDb(callSid, endedReason) {
           [row.phone_e164, dur, callSid]
         );
 
-  console.log(nowIso(), "Updated callers usage", {
-    phone_e164: row.phone_e164,
-    added_seconds: dur,
-    added_session: true,
-  });
-} catch (e) {
-  console.log(nowIso(), "DB update failed for callers usage:", e && e.message ? e.message : e);
-}
-
-
-          console.log(nowIso(), "Updated callers cycle_seconds_used", {
-            phone_e164: row.phone_e164,
-            added_seconds: dur,
-          });
-        } catch (e) {
-          console.log(nowIso(), "DB update failed for callers cycle_seconds_used:", e && e.message ? e.message : e);
-        }
+        console.log(nowIso(), "Updated callers usage", {
+          phone_e164: row.phone_e164,
+          added_seconds: dur,
+          added_session: true,
+        });
+      } catch (e) {
+        console.log(
+          nowIso(),
+          "DB update failed for callers usage:",
+          e && e.message ? e.message : e
+        );
       }
     }
   } catch (e) {
     console.log(nowIso(), "DB update failed for calls end:", e && e.message ? e.message : e);
   }
 }
+
 
 function fireAndForgetCallEndLog(callSid, endedReason) {
   try {
