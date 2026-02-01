@@ -806,16 +806,26 @@ const phone = String(md.practice_phone).trim();
 const tier = String(md.tier).toLowerCase();
 
 try {
+const newSessionsCap =
+  tier === "power" || tier === "power_user" || tier === "poweruser"
+    ? 30
+    : tier === "member"
+    ? 12
+    : 4;
+
 await pool.query(
-"insert into callers (phone_e164, tier, cycle_anchor_at, cycle_ends_at, cycle_seconds_used) " +
-"values ($1, $2, now(), (now() + interval '1 month'), 0) " +
+"insert into callers (phone_e164, tier, cycle_anchor_at, cycle_ends_at, cycle_seconds_used, cycle_sessions_used, cycle_sessions_cap) " +
+"values ($1, $2, now(), (now() + interval '1 month'), 0, 0, $3) " +
 "on conflict (phone_e164) do update set " +
 "tier = excluded.tier, " +
 "cycle_anchor_at = now(), " +
 "cycle_ends_at = (now() + interval '1 month'), " +
-"cycle_seconds_used = 0",
-[phone, tier]
+"cycle_seconds_used = 0, " +
+"cycle_sessions_used = 0, " +
+"cycle_sessions_cap = $3",
+[phone, tier, newSessionsCap]
 );
+
 
 console.log(nowIso(), "Upgraded caller tier from checkout", {
 phone_e164: phone,
