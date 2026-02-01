@@ -2386,14 +2386,28 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
             const wrapPhrase = "That wraps up this practice call.";
             const sawWrap = text && String(text).indexOf(wrapPhrase) !== -1;
 
-            if (sawWrap && liveThresholdState && liveThresholdState.overSoftThresholdLive) {
-              softOverageNotePending = true;
-              console.log(nowIso(), "Wrap-up detected after soft threshold (flag only)", {
+                        if (sawWrap && liveThresholdState && liveThresholdState.overSoftThresholdLive) {
+              try {
+                if (!endingRequested && !endRedirectRequested) {
+                  openaiSend({
+                    type: "response.create",
+                    response: {
+                      modalities: ["audio", "text"],
+                      instructions:
+                        "Say this naturally, then stop speaking:\n" +
+                        "Quick note, this practice session went a bit over the time limit for a single session. No problem. Feel free to call again soon to practice more.",
+                    },
+                  });
+                }
+              } catch {}
+
+              console.log(nowIso(), "Wrap-up detected after soft threshold (spoken note)", {
                 callSid: callSid || null,
                 softThresholdSeconds: liveSoftThresholdSeconds,
                 hardCeilingSeconds: liveHardCeilingSeconds
               });
             }
+
 
           } catch {}
 
