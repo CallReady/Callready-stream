@@ -1437,6 +1437,14 @@ app.post("/end", async (req, res) => {
 
     const from = req.body && req.body.From ? String(req.body.From) : "";
     const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
+    const isSoftEnd = req.query && String(req.query.soft_end) === "1";
+
+    if (!isRetry && isSoftEnd) {
+      vr.say(
+        "Quick note. This practice call ran a little longer than your usual session, so we are going to end it here. You can call back anytime to keep practicing."
+      );
+    }
+
 
     if (!isRetry) {
       const alreadyOptedIn = await isAlreadyOptedInByPhone(from);
@@ -1931,7 +1939,12 @@ redirectCallToUnavailable("opener_no_audio");
     try {
       const client = twilioClient();
       const base = PUBLIC_BASE_URL.replace(/\/+$/, "");
-      const endUrl = skipTransition ? `${base}/end?retry=0&skip_transition=1` : `${base}/end?retry=0`;
+      const softEnd = String(reason || "") === "soft_threshold_end";
+      const extra = softEnd ? "&soft_end=1" : "";
+      const endUrl = skipTransition
+        ? base + "/end?retry=0&skip_transition=1" + extra
+        : base + "/end?retry=0" + extra;
+
 
       console.log(nowIso(), "Redirecting call to /end now", callSid, "reason:", reason, "skipTransition:", skipTransition);
 
