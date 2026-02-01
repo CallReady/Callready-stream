@@ -496,6 +496,8 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
     console.log(nowIso(), "Tier check", {
       phone_e164: fromPhoneE164,
       tier: tier2,
+      sessions_used: sessionsUsed,
+      sessions_cap: sessionsCap,
       remainingSeconds: remaining,
       perCallCapSeconds,
       allowed,
