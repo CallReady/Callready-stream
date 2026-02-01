@@ -2381,47 +2381,16 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
         }
 
         if (turnDetectionEnabled) {
-                    // Detect natural scenario wrap-up and whether we crossed the soft threshold
+          // Detect natural scenario wrap-up and whether we crossed the soft threshold
           try {
             const wrapPhrase = "That wraps up this practice call.";
             const sawWrap = text && String(text).indexOf(wrapPhrase) !== -1;
 
-                        if (sawWrap && liveThresholdState && liveThresholdState.overSoftThresholdLive) {
-              try {
-                if (!endingRequested && !endRedirectRequested) {
-                  openaiSend({
-                  type: "response.create",
-                  response: {
-                    modalities: ["audio", "text"],
-                    instructions:
-                      "Say this naturally, then stop speaking:\n" +
-                      "Quick note, this practice session went a bit over the time limit for a single session. No problem. Feel free to call again soon to practice more.\n" +
-                      "\n" +
-                      "Then, in TEXT ONLY, output exactly one line and nothing else:\n" +
-                      "CALLREADY_SOFT_END: 1\n" +
-                      "Never say the token out loud.",
-                  },
-                });
-
-                }
-              } catch {}
-
-              console.log(nowIso(), "Wrap-up detected after soft threshold (spoken note)", {
+            if (sawWrap && liveThresholdState && liveThresholdState.overSoftThresholdLive) {
+              console.log(nowIso(), "Soft threshold reached at natural wrap-up, ending call", {
                 callSid: callSid || null,
                 softThresholdSeconds: liveSoftThresholdSeconds,
                 hardCeilingSeconds: liveHardCeilingSeconds
-              });
-            }
-
-
-          } catch {}
-
-          const aiRequestedEnd = responseTextRequestsEnd(text);
-                    try {
-            const softEndToken = extractTokenLineValue(text, "CALLREADY_SOFT_END");
-            if (softEndToken && String(softEndToken).trim() === "1") {
-              console.log(nowIso(), "Soft threshold note finished, ending call via /end", {
-                callSid: callSid || null
               });
 
               (async () => {
@@ -2433,6 +2402,7 @@ console.log(nowIso(), "Session timer started after first caller speech_started",
             }
           } catch {}
 
+          const aiRequestedEnd = responseTextRequestsEnd(text);
 
           if (!endRedirectRequested && aiRequestedEnd) {
             (async () => {
