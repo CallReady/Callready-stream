@@ -683,8 +683,14 @@ async function fetchCallerRuntimeContextByCallSid(callSid) {
     const used = toInt(row.cycle_seconds_used, 0);
     const remaining = 0;
 
+        let perCallCapSeconds = 0;
+    const tierLower = String(tier || "free").toLowerCase();
 
-    const perCallCapSeconds = toInt(row.per_call_seconds_cap, tierPerCallCapSeconds(tier));
+    if (tierLower === "free") {
+      perCallCapSeconds = toInt(row.per_call_seconds_cap, tierPerCallCapSeconds(tier));
+    } else {
+      perCallCapSeconds = 0;
+    }
 
     return {
       phone_e164: row.phone_e164 || null,
