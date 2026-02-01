@@ -258,6 +258,7 @@ function startLiveSessionThresholdTimers(opts) {
       }
     }, hardSeconds * 1000);
 }
+}
 
 function clearLiveSessionThresholdTimers(callState) {
   if (!callState) return;
