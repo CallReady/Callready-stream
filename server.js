@@ -108,19 +108,19 @@ const OPTIN_CONFIRM_SMS =
   "Learn more at https://callready.live";
 
 const POST_CALL_FOLLOWUP_SMS_1 =
-  "Thanks for practicing with CallReady today. I hope the call feels a little more familiar now.";
+  "Thanks for practicing with CallReady.live today. I hope the call feels a little more familiar now.";
 
 const POST_CALL_FOLLOWUP_SMS_2 =
-  "Nice work practicing today with CallReady. Repetition is what makes phone calls start to feel manageable.";
+  "Nice work practicing today with CallReady.live. Repetition is what makes phone calls start to feel manageable.";
 
 const POST_CALL_FOLLOWUP_SMS_3 =
-  "Good practice today. If calls feel awkward sometimes, that is normal. With CallReady, you can try again anytime.";
+  "Good practice today. If calls feel awkward sometimes, that is normal. With CallReady.live, you can try again anytime.";
 
 const REENGAGE_SMS_1 =
-  "Just checking in. If phone calls feel hard again, you can practice with CallReady anytime. No pressure.";
+  "Just checking in. If phone calls feel hard again, you can practice with CallReady.live anytime. No pressure.";
 
 const REENGAGE_SMS_2 =
-  "A quick note from CallReady. If you want a low-pressure practice call, you can jump back in anytime.";
+  "A quick note from CallReady.live. If you want a low-pressure practice call, you can jump back in anytime.";
 
 const TWILIO_NO_MINUTES_LEFT =
   "Welcome back to CallReady. It looks like you do not have any practice sessions remaining on your membership for this month. " +
@@ -133,7 +133,7 @@ const TWILIO_NO_SESSIONS_LEFT =
   "Thanks for calling, and we hope you will practice again soon!";
 
 const TWILIO_SERVICE_UNAVAILABLE =
-"CallReady is temporarily unavailable right now. Please try again in a little bit. Goodbye.";
+"CallReady dot live is temporarily unavailable right now. Please try again in a little bit. Goodbye.";
 
 function safeJsonParse(str) {
   try {
@@ -2016,7 +2016,7 @@ wss.on("connection", (twilioWs) => {
 
 function buildDynamicOpenerSpeech() {
   const base =
-    "Hi, this is CallReady. " +
+    "Hi, this is CallReady dot live. " +
     "We can practice a phone call together, no pressure. " +
     "If you want a quick prompt, just say help me. " +
     "When you're ready, we can start. ";
@@ -2055,7 +2055,7 @@ function buildDynamicOpenerSpeech() {
   }
 
   return (
-    "Welcome back to CallReady. " +
+    "Welcome back to CallReady dot live. " +
     "You have " +
     String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
     " practice sessions left this month. "
