@@ -2477,11 +2477,9 @@ closeAll("Redirect to /unavailable failed");
         "Kindly ask them to repeat more clearly and answer your last question again.\n" +
         "If caller's speech continues to be unclear, recommend they move to a quieter location.\n" +
         "\n" +
-        "Hesitation and noise rule:\n" +
-        "If the caller's input is very short, consists only of filler words (such as um, uh, yeah), or appears to be background noise, do not treat it as an intentional response.\n" +
-        "Do not advance the conversation or switch modes.\n" +
-        "Instead, briefly wait or gently prompt the caller to continue, such as by saying \"Take your time\" or \"Go ahead when you're ready.\"\n" +
-        "\n" +
+        "Hesitation and noise rule: \n" +
+        "If the caller's input is very short and does not clearly answer the last question, or appears to be background noise, do not treat it as an intentional response. \n" +
+        "However, if you asked a yes/no question, treat clear confirmations as intentional responses, including: yes, yeah, yep, no, nope. \n" +
         "Silence rule:\n" +
         "If the caller is silent or the input is empty, ask one short check-in question like \"Are you still there?\"\n" +
         "If there is still no response, end the call using the Ending rule.\n" +
@@ -2685,9 +2683,9 @@ closeAll("Redirect to /unavailable failed");
             session: {
               turn_detection: {
                 type: "server_vad",
-                silence_duration_ms: 900,
-                prefix_padding_ms: 300,
-                threshold: 0.5,
+                silence_duration_ms: 650,
+                prefix_padding_ms: 400,
+                threshold: 0.35,
               },
             },
           });
@@ -2706,7 +2704,7 @@ closeAll("Redirect to /unavailable failed");
             try {
               openaiSend({ type: "input_audio_buffer.clear" });
             } catch {}
-          }, 600);
+          }, 200);
 
 
           sendScenarioStartOnce("post-opener");
@@ -2757,7 +2755,7 @@ closeAll("Redirect to /unavailable failed");
             try {
               openaiSend({ type: "input_audio_buffer.clear" });
             } catch {}
-          }, 600);
+          }, 200);
   
 
           requireCallerSpeechBeforeNextAI = true;
