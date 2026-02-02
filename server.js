@@ -2409,6 +2409,8 @@ closeAll("Redirect to /unavailable failed");
 
         if (scenarioTagCaptureInFlight && !scenarioTagAlreadyCaptured && callSid) {
           const scenarioTag = extractTokenLineValue(text, "SCENARIO_TAG");
+          console.log(nowIso(), "Scenario tag raw text (first 300 chars)", String(text || "").slice(0, 300));
+
           if (scenarioTag) {
             scenarioTagAlreadyCaptured = true;
             setScenarioTagOnce(callSid, scenarioTag);
