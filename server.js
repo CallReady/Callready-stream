@@ -106,6 +106,9 @@ const OPTIN_CONFIRM_SMS =
   "Reply STOP any time to opt out. " +
   "Learn more at https://callready.live";
 
+const POST_CALL_FOLLOWUP_SMS =
+  "Thanks for practicing with CallReady today. I hope the call feels a little more familiar now. You can practice again anytime.";
+
 const TWILIO_NO_MINUTES_LEFT =
   "Welcome back to CallReady. It looks like you do not have any practice sessions remaining on your membership for this month. " +
   "To get more sessions, please visit CallReady dot live. " +
@@ -136,7 +139,7 @@ function twilioClient() {
   return twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 }
 
-async function sendSms(toPhoneE164, bodyText) {
+async function sendSms(toPhoneE164, bodyText, eventType) {
   if (!toPhoneE164) return { ok: false, error: "missing_to" };
   if (!bodyText) return { ok: false, error: "missing_body" };
   if (!hasTwilioRest()) return { ok: false, error: "missing_twilio_rest_creds" };
@@ -160,6 +163,17 @@ async function sendSms(toPhoneE164, bodyText) {
   try {
     const msg = await client.messages.create(payload);
     console.log(nowIso(), "Sent SMS", { to: payload.to, sid: msg && msg.sid ? msg.sid : null });
+    try {
+  if (pool) {
+    await pool.query(
+      "insert into sms_events (phone_e164, event_type, message_sid, body_text) values ($1, $2, $3, $4)",
+      [payload.to, (eventType ? String(eventType) : "sms_sent"), (msg && msg.sid ? String(msg.sid) : null), payload.body]
+    );
+  }
+} catch (e) {
+  console.log(nowIso(), "DB insert failed for sms_events:", e && e.message ? e.message : e);
+}
+
     return { ok: true, sid: msg && msg.sid ? msg.sid : null };
   } catch (e) {
     console.log(nowIso(), "Failed to send SMS", {
@@ -170,6 +184,28 @@ async function sendSms(toPhoneE164, bodyText) {
   }
 }
 
+async function hasRecentSmsEvent(phoneE164, eventType, withinDays) {
+  if (!pool) return false;
+  if (!phoneE164) return false;
+  if (!eventType) return false;
+
+  const days = parseInt(String(withinDays || "7"), 10);
+  const safeDays = Number.isFinite(days) && days > 0 ? days : 7;
+
+  try {
+    const r = await pool.query(
+      "select 1 from sms_events " +
+        "where phone_e164 = $1 and event_type = $2 and sent_at >= (now() - ($3::int * interval '1 day')) " +
+        "limit 1",
+      [String(phoneE164), String(eventType), safeDays]
+    );
+
+    return !!(r && r.rowCount && r.rowCount > 0);
+  } catch (e) {
+    console.log(nowIso(), "DB lookup failed for sms_events recent check:", e && e.message ? e.message : e);
+    return false;
+  }
+}
 
 function monthBucketFirstDayUtc() {
   const d = new Date();
@@ -626,6 +662,25 @@ async function logCallEndToDb(callSid, endedReason) {
         hit_hard_ceiling: hitHard,
         should_count: shouldCount,
       });
+      if (shouldCount && callerRuntime && callerRuntime.sms_opted_in) {
+      const recentlyMessaged = await hasRecentSmsEvent(
+        row.phone_e164,
+        "post_call_followup",
+        7
+      );
+
+      if (!recentlyMessaged) {
+        try {
+          await sendSms(row.phone_e164, POST_CALL_FOLLOWUP_SMS, "post_call_followup");
+          console.log(nowIso(), "Post-call follow-up SMS sent", { phone_e164: row.phone_e164 });
+        } catch (e) {
+          console.log(nowIso(), "Post-call follow-up SMS failed", e && e.message ? e.message : e);
+        }
+      } else {
+        console.log(nowIso(), "Skipping post-call SMS due to weekly cap", { phone_e164: row.phone_e164 });
+      }
+    }
+
     } catch (e) {
       console.log(
         nowIso(),
@@ -764,6 +819,32 @@ async function setScenarioTagOnce(callSid, tag) {
     console.log(nowIso(), "Set scenario_tag (once)", { callSid, scenario_tag: tag });
   } catch (e) {
     console.log(nowIso(), "DB update failed for scenario_tag:", e && e.message ? e.message : e);
+  }
+}
+
+async function appendScenarioSummaryToCall(callSid, summaryText) {
+  if (!pool) return;
+  if (!callSid) return;
+  if (!summaryText) return;
+
+  const clean = String(summaryText).trim();
+  if (!clean) return;
+
+  try {
+    await pool.query(
+      "update calls set last_focus_skill = " +
+        "case " +
+        "when last_focus_skill is null or last_focus_skill = '' then $2 " +
+        "when position($2 in last_focus_skill) > 0 then last_focus_skill " +
+        "else (last_focus_skill || ' | ' || $2) " +
+        "end " +
+        "where call_sid = $1",
+      [callSid, clean]
+    );
+
+    console.log(nowIso(), "Appended scenario summary to call", { callSid: callSid, summary: clean });
+  } catch (e) {
+    console.log(nowIso(), "DB update failed for scenario summary:", e && e.message ? e.message : e);
   }
 }
 
@@ -1619,7 +1700,7 @@ app.post("/gather-result", async (req, res) => {
 
     if (pressed1) {
   try {
-    const smsResult = await sendSms(from, OPTIN_CONFIRM_SMS);
+    const smsResult = await sendSms(from, OPTIN_CONFIRM_SMS, "optin_confirm");
     console.log(nowIso(), "Opt-in confirmation SMS result", {
       from: from,
       ok: !!(smsResult && smsResult.ok),
