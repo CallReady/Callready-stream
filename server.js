@@ -1,4 +1,4 @@
-//This should be a good fallback point
+//Stable SMS + reengagement cron - good fallback
 "use strict";
 
 const express = require("express");
