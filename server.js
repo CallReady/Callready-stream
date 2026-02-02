@@ -978,7 +978,7 @@ app.get("/", (req, res) => res.status(200).send("CallReady server up"));
 app.get("/health", (req, res) => res.status(200).json({ ok: true, version: CALLREADY_VERSION }));
 app.get("/healthz", (req, res) => res.status(200).json({ ok: true, version: CALLREADY_VERSION }));
 app.get("/route-check", (req, res) => res.status(200).send("route-check-ok"));
-app.post("/cron/reengage", async (req, res) => {
+app.get("/cron/reengage", async (req, res) => {
   try {
     const provided =
       (req.headers && req.headers["x-cron-secret"] ? String(req.headers["x-cron-secret"]) : "") ||
