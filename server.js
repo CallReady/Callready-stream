@@ -1032,7 +1032,6 @@ app.get("/cron/reengage", async (req, res) => {
       // Extra safety: confirm long break using the helper
       const longBreak = await hasLongBreakSinceLastCall(phone, lookbackDays);
       if (!longBreak) {
-      console.log(nowIso(), "Re-engage skip: not a long break", { phone_e164: phone });
       continue;
     }
 
@@ -1040,7 +1039,6 @@ app.get("/cron/reengage", async (req, res) => {
         const msgText = await getNextReengageMessage(phone);
         const result = await sendSms(phone, msgText, "reengage");
         if (result && result.ok) sent += 1;
-        if (sent >= 1) break;
       } catch (e) {
         console.log(nowIso(), "Re-engage send failed", { phone_e164: phone, error: e && e.message ? e.message : e });
       }
