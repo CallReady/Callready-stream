@@ -2546,6 +2546,7 @@ closeAll("Redirect to /unavailable failed");
         "\n" +
         "Support redirection rule:\n" +
         "If the caller asks about CallReady itself, including membership, pricing, canceling, text messages, problems, bugs, or how CallReady works:\n" +
+        "- This rule applies only when the caller is asking about CallReady itself, not about the roleplay scenario.\n" +
         "- Respond with one short sentence only.\n" +
         "- Do not explain, troubleshoot, or answer the question.\n" +
         "- Direct them to callready dot live for full information.\n" +
