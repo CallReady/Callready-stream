@@ -1906,6 +1906,7 @@ redirectCallToUnavailable("opener_no_audio");
     scenarioTagCaptureInFlight = true;
 
     console.log(nowIso(), "Requesting end-only scenario tag", reason);
+    console.log(nowIso(), "Scenario tag capture state set true", { reason: reason, callSid: callSid || null });
 
     const p = new Promise((resolve) => {
       scenarioTagCaptureResolve = resolve;
