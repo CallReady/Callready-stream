@@ -662,7 +662,7 @@ async function logCallEndToDb(callSid, endedReason) {
         hit_hard_ceiling: hitHard,
         should_count: shouldCount,
       });
-      if (shouldCount && callerRuntime && callerRuntime.sms_opted_in) {
+      if (shouldCount && row.phone_e164) {
       const recentlyMessaged = await hasRecentSmsEvent(
         row.phone_e164,
         "post_call_followup",
