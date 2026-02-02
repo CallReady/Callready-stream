@@ -2530,6 +2530,7 @@ closeAll("Redirect to /unavailable failed");
         "Wrap up rule:\n" +
         "You are responsible for deciding when the practice task is complete.\n" +
         "Do not lead the caller to completion; let the conversation proceed naturally. \n" +
+        "Do not assume a nonsensical or confusing response is accurate; ask for clarification. \n" +
         "Do not rush the call and make sure to ask all questions that would be typical for the scenario \n" +
         "A practice task is complete when the caller has successfully done the main purpose of the call and the other person has given a clear resolution.\n" +
         "Examples of resolution include: the appointment is scheduled, the question is answered, the order is placed, the issue is resolved, or the other person clearly says goodbye.\n" +
@@ -2579,7 +2580,7 @@ closeAll("Redirect to /unavailable failed");
         const audioMs = Math.floor((aiAudioBytesThisResponse / 8000) * 1000);
 
         // Block listening until estimated playback end plus a small safety buffer
-        listenBlockUntilMs = Date.now() + audioMs + 75;
+        listenBlockUntilMs = Date.now() + audioMs + 10;
 
 
         if (!turnDetectionEnabled && openerSent) {
@@ -2704,7 +2705,7 @@ closeAll("Redirect to /unavailable failed");
             try {
               openaiSend({ type: "input_audio_buffer.clear" });
             } catch {}
-          }, 200);
+          }, 50);
 
 
           sendScenarioStartOnce("post-opener");
@@ -2755,7 +2756,7 @@ closeAll("Redirect to /unavailable failed");
             try {
               openaiSend({ type: "input_audio_buffer.clear" });
             } catch {}
-          }, 200);
+          }, 50);
   
 
           requireCallerSpeechBeforeNextAI = true;
