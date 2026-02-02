@@ -106,8 +106,14 @@ const OPTIN_CONFIRM_SMS =
   "Reply STOP any time to opt out. " +
   "Learn more at https://callready.live";
 
-const POST_CALL_FOLLOWUP_SMS =
-  "Thanks for practicing with CallReady today. I hope the call feels a little more familiar now. You can practice again anytime.";
+const POST_CALL_FOLLOWUP_SMS_1 =
+  "Thanks for practicing with CallReady today. I hope the call feels a little more familiar now.";
+
+const POST_CALL_FOLLOWUP_SMS_2 =
+  "Nice work practicing today with CallReady. Repetition is what makes phone calls start to feel manageable.";
+
+const POST_CALL_FOLLOWUP_SMS_3 =
+  "Good practice today. If calls feel awkward sometimes, that is normal. With CallReady, you can try again anytime.";
 
 const TWILIO_NO_MINUTES_LEFT =
   "Welcome back to CallReady. It looks like you do not have any practice sessions remaining on your membership for this month. " +
@@ -204,6 +210,29 @@ async function hasRecentSmsEvent(phoneE164, eventType, withinDays) {
   } catch (e) {
     console.log(nowIso(), "DB lookup failed for sms_events recent check:", e && e.message ? e.message : e);
     return false;
+  }
+}
+
+async function getNextPostCallMessage(phoneE164) {
+  if (!pool) return POST_CALL_FOLLOWUP_SMS_1;
+  if (!phoneE164) return POST_CALL_FOLLOWUP_SMS_1;
+
+  try {
+    const r = await pool.query(
+      "select body_text from sms_events " +
+        "where phone_e164 = $1 and event_type = 'post_call_followup' " +
+        "order by sent_at desc limit 1",
+      [String(phoneE164)]
+    );
+
+    const last = r && r.rows && r.rows[0] ? r.rows[0].body_text : null;
+
+    if (last === POST_CALL_FOLLOWUP_SMS_1) return POST_CALL_FOLLOWUP_SMS_2;
+    if (last === POST_CALL_FOLLOWUP_SMS_2) return POST_CALL_FOLLOWUP_SMS_3;
+    return POST_CALL_FOLLOWUP_SMS_1;
+  } catch (e) {
+    console.log(nowIso(), "DB lookup failed for post-call SMS rotation:", e && e.message ? e.message : e);
+    return POST_CALL_FOLLOWUP_SMS_1;
   }
 }
 
@@ -671,7 +700,9 @@ async function logCallEndToDb(callSid, endedReason) {
 
       if (!recentlyMessaged) {
         try {
-          await sendSms(row.phone_e164, POST_CALL_FOLLOWUP_SMS, "post_call_followup");
+          const nextMsg = await getNextPostCallMessage(row.phone_e164);
+        await sendSms(row.phone_e164, nextMsg, "post_call_followup");
+
           console.log(nowIso(), "Post-call follow-up SMS sent", { phone_e164: row.phone_e164 });
         } catch (e) {
           console.log(nowIso(), "Post-call follow-up SMS failed", e && e.message ? e.message : e);
