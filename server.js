@@ -2551,7 +2551,7 @@ closeAll("Redirect to /unavailable failed");
         "- Direct them to callready dot live for full information.\n" +
         "- After that sentence, ask exactly one question: Do you want to go back to practicing? \n" +
         "- Then stop speaking and wait for the caller’s response.\n" +
-        "\n"
+        "\n" +
         "Ending rule:\n" +
         "If the caller asks to end the call, quit, stop, hang up, or says they do not want to do this anymore, you MUST do BOTH in the SAME response:\n" +
         "1) Say exactly: Okay, ending practice now.\n" +
