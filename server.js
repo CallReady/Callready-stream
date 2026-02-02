@@ -995,8 +995,6 @@ app.get("/cron/reengage", async (req, res) => {
     }
 
     const lookbackDays = 30;
-    res.status(200).json({ ok: true, dry_run: true });
-    return;
 
     // Find opted-in callers who have NOT had a counted call in the last 30 days
     // and who have NOT received a re-engagement text in the last 30 days.
@@ -1039,6 +1037,7 @@ app.get("/cron/reengage", async (req, res) => {
         const msgText = await getNextReengageMessage(phone);
         const result = await sendSms(phone, msgText, "reengage");
         if (result && result.ok) sent += 1;
+        if (sent >= 1) break;
       } catch (e) {
         console.log(nowIso(), "Re-engage send failed", { phone_e164: phone, error: e && e.message ? e.message : e });
       }
