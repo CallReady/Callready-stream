@@ -55,7 +55,7 @@ console.log(nowIso(), "FATAL process exit", { code });
 });
 
 const OPENAI_REALTIME_MODEL =
-  process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview";
+  process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-mini";
 
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "marin";
 
