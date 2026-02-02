@@ -2534,7 +2534,7 @@ closeAll("Redirect to /unavailable failed");
         "A practice task is complete when the caller has successfully done the main purpose of the call and the other person has given a clear resolution.\n" +
         "Examples of resolution include: the appointment is scheduled, the question is answered, the order is placed, the issue is resolved, or the other person clearly says goodbye.\n" +
         "When you reach resolution, you must immediately stop roleplay and switch to coaching mode in the same response.\n" +
-        "Do not wait for the caller to say anything after resolution.\n" +
+        "Do not wait for the caller to say \"goodbye\" or \"thank you\" or any other type of closing at the end of a call.\n" +
         "Say exactly: That wraps up this practice call.\n" +
         "Then ask one short, friendly question to find out whether the caller wants feedback.\n" +
         "Wait for caller response.\n" +
