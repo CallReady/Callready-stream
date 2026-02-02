@@ -254,7 +254,7 @@ async function hasLongBreakSinceLastCall(phoneE164, days) {
     const r = await pool.query(
       "select 1 from calls " +
         "where phone_e164 = $1 and should_count = true " +
-        "and created_at >= (now() - ($2::int * interval '1 day')) " +
+        "and ended_at >= (now() - ($2::int * interval '1 day')) " +
         "limit 1",
       [String(phoneE164), safeDays]
     );
