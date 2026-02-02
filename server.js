@@ -24,6 +24,7 @@ console.log(nowIso(), "Stripe configured at boot:", !!STRIPE_SECRET_KEY);
 const STRIPE_PRICE_MEMBER = process.env.STRIPE_PRICE_MEMBER;
 const STRIPE_PRICE_POWER = process.env.STRIPE_PRICE_POWER;
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+const REENGAGE_CRON_SECRET = process.env.REENGAGE_CRON_SECRET;
 
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 
@@ -114,6 +115,12 @@ const POST_CALL_FOLLOWUP_SMS_2 =
 
 const POST_CALL_FOLLOWUP_SMS_3 =
   "Good practice today. If calls feel awkward sometimes, that is normal. With CallReady, you can try again anytime.";
+
+const REENGAGE_SMS_1 =
+  "Just checking in. If phone calls feel hard again, you can practice with CallReady anytime. No pressure.";
+
+const REENGAGE_SMS_2 =
+  "A quick note from CallReady. If you want a low-pressure practice call, you can jump back in anytime.";
 
 const TWILIO_NO_MINUTES_LEFT =
   "Welcome back to CallReady. It looks like you do not have any practice sessions remaining on your membership for this month. " +
@@ -233,6 +240,51 @@ async function getNextPostCallMessage(phoneE164) {
   } catch (e) {
     console.log(nowIso(), "DB lookup failed for post-call SMS rotation:", e && e.message ? e.message : e);
     return POST_CALL_FOLLOWUP_SMS_1;
+  }
+}
+
+async function hasLongBreakSinceLastCall(phoneE164, days) {
+  if (!pool) return false;
+  if (!phoneE164) return false;
+
+  const d = parseInt(String(days || "30"), 10);
+  const safeDays = Number.isFinite(d) && d > 0 ? d : 30;
+
+  try {
+    const r = await pool.query(
+      "select 1 from calls " +
+        "where phone_e164 = $1 and should_count = true " +
+        "and created_at >= (now() - ($2::int * interval '1 day')) " +
+        "limit 1",
+      [String(phoneE164), safeDays]
+    );
+
+    return !(r && r.rowCount && r.rowCount > 0);
+  } catch (e) {
+    console.log(nowIso(), "DB lookup failed for long-break check:", e && e.message ? e.message : e);
+    return false;
+  }
+}
+
+async function getNextReengageMessage(phoneE164) {
+  if (!pool) return REENGAGE_SMS_1;
+  if (!phoneE164) return REENGAGE_SMS_1;
+
+  try {
+    const r = await pool.query(
+      "select body_text from sms_events " +
+        "where phone_e164 = $1 and event_type = 'reengage' " +
+        "order by sent_at desc limit 1",
+      [String(phoneE164)]
+    );
+
+    const last = r && r.rows && r.rows[0] ? r.rows[0].body_text : null;
+
+    if (last === REENGAGE_SMS_1) return REENGAGE_SMS_2;
+    return REENGAGE_SMS_1;
+  } catch (e) {
+    console.log(nowIso(), "DB lookup failed for re-engage SMS rotation:", e && e.message ? e.message : e);
+    return REENGAGE_SMS_1;
   }
 }
 
@@ -926,6 +978,77 @@ app.get("/", (req, res) => res.status(200).send("CallReady server up"));
 app.get("/health", (req, res) => res.status(200).json({ ok: true, version: CALLREADY_VERSION }));
 app.get("/healthz", (req, res) => res.status(200).json({ ok: true, version: CALLREADY_VERSION }));
 app.get("/route-check", (req, res) => res.status(200).send("route-check-ok"));
+app.post("/cron/reengage", async (req, res) => {
+  try {
+    const provided =
+      (req.headers && req.headers["x-cron-secret"] ? String(req.headers["x-cron-secret"]) : "") ||
+      (req.query && req.query.secret ? String(req.query.secret) : "");
+
+    if (!REENGAGE_CRON_SECRET || provided !== String(REENGAGE_CRON_SECRET)) {
+      res.status(401).json({ ok: false, error: "unauthorized" });
+      return;
+    }
+
+    if (!pool) {
+      res.status(500).json({ ok: false, error: "db_not_configured" });
+      return;
+    }
+
+    const lookbackDays = 30;
+
+    // Find opted-in callers who have NOT had a counted call in the last 30 days
+    // and who have NOT received a re-engagement text in the last 30 days.
+    const q =
+      "select c.phone_e164 as phone_e164 " +
+      "from callers c " +
+      "where c.sms_opted_in = true " +
+      "and not exists ( " +
+      "  select 1 from calls ca " +
+      "  where ca.phone_e164 = c.phone_e164 " +
+      "  and ca.should_count = true " +
+      "  and ca.ended_at is not null " +
+      "  and ca.ended_at >= (now() - ($1::int * interval '1 day')) " +
+      ") " +
+      "and not exists ( " +
+      "  select 1 from sms_events se " +
+      "  where se.phone_e164 = c.phone_e164 " +
+      "  and se.event_type = 'reengage' " +
+      "  and se.sent_at >= (now() - ($1::int * interval '1 day')) " +
+      ") " +
+      "limit 50";
+
+    const r = await pool.query(q, [lookbackDays]);
+    const rows = r && r.rows ? r.rows : [];
+
+    let attempted = 0;
+    let sent = 0;
+
+    for (let i = 0; i < rows.length; i += 1) {
+      const phone = rows[i] && rows[i].phone_e164 ? String(rows[i].phone_e164) : "";
+      if (!phone) continue;
+
+      attempted += 1;
+
+      // Extra safety: confirm long break using the helper
+      const longBreak = await hasLongBreakSinceLastCall(phone, lookbackDays);
+      if (!longBreak) continue;
+
+      try {
+        const msgText = await getNextReengageMessage(phone);
+        const result = await sendSms(phone, msgText, "reengage");
+        if (result && result.ok) sent += 1;
+      } catch (e) {
+        console.log(nowIso(), "Re-engage send failed", { phone_e164: phone, error: e && e.message ? e.message : e });
+      }
+    }
+
+    res.status(200).json({ ok: true, candidates: rows.length, attempted: attempted, sent: sent });
+  } catch (e) {
+    console.log(nowIso(), "cron/reengage error:", e && e.message ? e.message : e);
+    res.status(500).json({ ok: false, error: "server_error" });
+  }
+});
+
 app.get("/stripe-webhook", (req, res) => {
   res.status(200).send("stripe-webhook-ok");
 });
