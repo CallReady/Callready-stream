@@ -1031,7 +1031,10 @@ app.get("/cron/reengage", async (req, res) => {
 
       // Extra safety: confirm long break using the helper
       const longBreak = await hasLongBreakSinceLastCall(phone, lookbackDays);
-      if (!longBreak) continue;
+      if (!longBreak) {
+      console.log(nowIso(), "Re-engage skip: not a long break", { phone_e164: phone });
+      continue;
+    }
 
       try {
         const msgText = await getNextReengageMessage(phone);
