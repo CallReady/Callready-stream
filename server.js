@@ -1617,10 +1617,6 @@ app.post("/gather-result", async (req, res) => {
       }
     } catch {}
 
-    if (callSid) {
-      await logCallEndToDb(callSid, pressed1 ? "completed_opted_in" : "completed_declined");
-    }
-
     if (pressed1) {
   try {
     const smsResult = await sendSms(from, OPTIN_CONFIRM_SMS);
