@@ -1923,10 +1923,13 @@ redirectCallToUnavailable("opener_no_audio");
       response: {
         modalities: ["text"],
         instructions:
-          "Output exactly one line and nothing else:\n" +
-          "SCENARIO_TAG: <short_snake_case>\n" +
-          "Example: SCENARIO_TAG: mcdonalds_hours_incoming\n" +
-          "Do not add any extra words.",
+        "Output exactly one line and nothing else.\n" +
+        "The line must start with SCENARIO_TAG: followed by one short snake_case tag.\n" +
+        "Example: SCENARIO_TAG: pharmacy_refill_outgoing\n" +
+        "If you are unsure, output exactly: SCENARIO_TAG: unknown\n" +
+        "Do not output JSON.\n" +
+        "Do not include quotes.\n" +
+        "Do not include any extra words before or after the line.",
       },
     });
 
