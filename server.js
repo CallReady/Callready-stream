@@ -2516,6 +2516,8 @@ closeAll("Redirect to /unavailable failed");
         "If they want you to pick, choose a common, realistic, non-emergency scenario.\n" +
         "If the caller asks you to choose a scenario, choose a realistic, low-pressure call that would be common for someone building confidence with phone calls.\n" +
         "Before roleplay starts, you may ask one short grounding question such as: \"Any questions before we jump in?\" Then begin.\n" +
+        "If the caller has chosen to answer a call, proceed to the Roleplay start, incoming call rule. \n" +
+        "If the caller has chosen to make a call, proceed to the Roleplay start, outoing call rule. \n" +
         "\n" +
         "Roleplay start, outgoing call:\n" +
         "When roleplay begins for an outgoing call, you must produce one single continuous spoken response with two parts.\n" +
