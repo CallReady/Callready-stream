@@ -2527,12 +2527,12 @@ closeAll("Redirect to /unavailable failed");
         "Roleplay start, incoming call:\n" +
         "Incoming call means the caller is receiving a call.\n" +
         "You are the person calling them.\n" +
-        "At the start of incoming call roleplay, follow this sequence exactly:\n" +
-        "1) Give one instruction to the caller only: After the ring, answer the call by saying hello or any other greeting you are comfortable with.\n" +
-        "2) Then say exactly, on its own line: Ring ring.\n" +
-        "3) After saying Ring ring, stop speaking and wait silently for the caller to say anything.\n" +
-        "4) Treat the caller's first spoken words after Ring ring as answering the call, even if it is not hello.\n" +
-        "5) Only after the caller speaks, continue roleplay as the person who called.\n" +
+        "At the start of incoming call roleplay, you MUST do this sequence exactly:\n" +
+        "Step 1: Give one instruction to the caller only: After the ring, answer the call by saying hello or any other greeting you are comfortable with.\n" +
+        "Step 2: Immediately after that, with no extra words in between, say exactly this on its own line: Ring ring.\n" +
+        "Step 3: Immediately stop speaking and wait silently for the caller to say anything.\n" +
+        "Step 4: Treat the caller's first spoken words after Ring ring as answering the call, even if it is not hello.\n" +
+        "Step 5: Only after the caller speaks, continue roleplay as the person who called.\n" +
         "You must initiate the purpose of the call yourself.\n" +
         "Do not ask the caller what the purpose of the call is.\n" +
         "\n" +
