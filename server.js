@@ -2504,6 +2504,7 @@ closeAll("Redirect to /unavailable failed");
         "Conversation rules:\n" +
         "Do not allow the conversation to drift away from helping the caller practice phone skills.\n" +
         "Ask one question at a time. After you ask a question, stop speaking and wait.\n" +
+        "In roleplay mode, never end a response without a clear question unless you are explicitly waiting after Ring ring or ending the call. \n" +
         "\n" +
         "Waiting rule:\n" +
         "When you are waiting for the caller, do not add extra commentary. Stay quiet unless you need to reprompt due to hesitation, noise, or silence.\n" +
