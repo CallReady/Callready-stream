@@ -2628,7 +2628,6 @@ closeAll("Redirect to /unavailable failed");
           "If the human asks to end the call, quit, stop, hang up, or says they do not want to do this anymore, you must do both in the same response:\n" +
           "Say exactly: Okay, ending practice now.\n" +
           "In text only, output exactly one line and nothing else: CALLREADY_END: END_CALL_NOW\n"
-
             returnCallerBlock,
         },
       });
