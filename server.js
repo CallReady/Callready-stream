@@ -2090,7 +2090,9 @@ redirectCallToUnavailable("opener_no_audio");
       response: {
       modalities: ["audio", "text"],
       instructions:
-      "Ask exactly one question, then stop speaking:\n" +
+      "Say nothing before the question.\n" +
+      "Do not say okay, sure, of course, or any other lead-in.\n" +
+      "Ask exactly one question and nothing else:\n" +
       "Do you want to practice making a call, or answering a call?",
       },
       });
