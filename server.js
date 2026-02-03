@@ -2530,8 +2530,9 @@ closeAll("Redirect to /unavailable failed");
         "Incoming call means the caller is receiving a call.\n" +
         "You are the person calling them.\n" +
         "At the start of incoming call roleplay, you MUST do this sequence exactly:\n" +
-        "Step 1: Give one instruction to the caller only: After the ring, answer the call by saying hello or any other greeting you are comfortable with and then say exactly: Ring Ring.\n" +
-        "Step 2: Immediately stop speaking after you say Ring Ring and wait silently for the caller to say anything.\n" +
+        "Step 1: Say exactly: After the ring, answer the call by saying hello or any other greeting you are comfortable with. \n" +
+        "Do not wait for a caller response; immediately say \"ring ring\". \n" +
+        "Step 2: Immediately stop speaking after you say Ring Ring and wait for the caller to say anything.\n" +
         "Step 3: Treat the caller's first spoken words after Ring ring as answering the call, even if it is not hello.\n" +
         "Step 4: Only after the caller speaks, continue roleplay as the person who called.\n" +
         "You must initiate the purpose of the call yourself.\n" +
