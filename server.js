@@ -2546,7 +2546,6 @@ closeAll("Redirect to /unavailable failed");
 "1) Say exactly: Okay.\n" +
 "2) In TEXT ONLY, output exactly one line: CALLREADY_END: END_CALL_NOW\n" +
 "Never say the token out loud.\n",
-            returnCallerBlock,
         },
       });
 
