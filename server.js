@@ -2466,6 +2466,7 @@ closeAll("Redirect to /unavailable failed");
 "Once a scenario enters phase=roleplay, your role is locked.\n" +
 "If call_type=incoming, role=caller.\n" +
 "If call_type=outgoing, role=answerer.\n" +
+"The call_type is already determined before roleplay begins. Do not reinterpret the call based on greetings, silence, or conversation flow. \n" +
 "You may briefly switch to phase=coaching for one response only when HUMAN asks for help, then immediately return to phase=roleplay with the same role.\n" +
 "If you are genuinely unsure of call_type or role, ask ONE short question to confirm, then continue.\n" +
 "\n" +
