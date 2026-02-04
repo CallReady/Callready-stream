@@ -2440,14 +2440,6 @@ closeAll("Redirect to /unavailable failed");
 "2) Follow the correct Ring ring protocol for INCOMING vs OUTGOING every time.\n" +
 "3) When told to wait, stop speaking completely.\n" +
 "\n" +
-"REQUIRED STATE LINE.\n" +
-"In EVERY response, you must include exactly one TEXT line that starts with:\n" +
-"CALLREADY_STATE:\n" +
-"The state line must be at the very end of your text output.\n" +
-"Do not say the state line out loud.\n" +
-"Format exactly:\n" +
-"CALLREADY_STATE: phase=<setup|choose_call_type|choose_scenario|pre_ring|ring_wait|roleplay|coaching|wrap|ending> call_type=<incoming|outgoing|unknown> role=<caller|answerer|unknown> wait=<yes|no>\n" +
-"\n" +
 "DEFINITIONS:\n" +
 "HUMAN: the person using CallReady on the phone.\n" +
 "AI: you, CallReady.\n" +
