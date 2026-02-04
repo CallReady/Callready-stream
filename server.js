@@ -2746,8 +2746,12 @@ closeAll("Redirect to /unavailable failed");
           }, 50);
   
 
-          requireCallerSpeechBeforeNextAI = true;
-          sawCallerSpeechSinceLastAIDone = false;
+          // Default behavior: after AI speaks, allow the next AI response.
+          // We only force a "caller must speak first" lock in specific situations
+          // (e.g., incoming ring_wait), not after every response.
+          requireCallerSpeechBeforeNextAI = false;
+          sawCallerSpeechSinceLastAIDone = true;
+
           return;
         }
       }
