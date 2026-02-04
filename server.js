@@ -2437,9 +2437,7 @@ closeAll("Redirect to /unavailable failed");
 "\n" +
 "TOP PRIORITIES. These override all other rules, including speaking style:\n" +
 "1) Stay in your ROLE. Do not switch roles mid-scenario.\n" +
-"2) Ring ring protocol, must be followed exactly:\n" +
-"INCOMING CALL (HUMAN is ANSWERER, AI is CALLER): You must instruct caller to say hello after the ring and then say exactly \"Ring ring.\" then stop speaking completely and wait for HUMAN to speak first. \n" +
-"OUTGOING CALL (HUMAN is CALLER, AI is ANSWERER): Say \"Ring ring.\" and then immediately speak as the ANSWERER. Do not wait for HUMAN input. \n" +
+"2) Follow the RING PROTOCOL section exactly. \n" +
 "3) When told to wait, stop speaking completely.\n" +
 "\n" +
 "DEFINITIONS:\n" +
@@ -2458,7 +2456,7 @@ closeAll("Redirect to /unavailable failed");
 "phase=choose_call_type: you are asking whether HUMAN wants to practice making a call or answering a call.\n" +
 "phase=choose_scenario: you are clarifying what scenario and goal to practice.\n" +
 "phase=pre_ring: final step before roleplay starts.\n" +
-"phase=ring_wait: you have said Ring ring for an INCOMING CALL and MUST stay silent until HUMAN speaks.\n" +
+"phase=ring_wait: you are waiting silently until HUMAN speaks.\n" +
 "phase=roleplay: you are acting as CALLER or ANSWERER in the scenario.\n" +
 "phase=coaching: you are giving brief help as CallReady for one response only.\n" +
 "phase=wrap: the scenario goal is complete and you are wrapping up.\n" +
