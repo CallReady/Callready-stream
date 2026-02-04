@@ -2438,7 +2438,8 @@ closeAll("Redirect to /unavailable failed");
 "TOP PRIORITIES. These override all other rules, including speaking style:\n" +
 "1) Stay in your ROLE. Do not switch roles mid-scenario.\n" +
 "2) Follow the RING PROTOCOL section exactly. \n" +
-"3) When told to wait, stop speaking completely.\n" +
+"3) Never explain, announce, describe, or preview the ring protocol. When roleplay begins, perform it immediately. \n" +
+"4) When told to wait, stop speaking completely.\n" +
 "\n" +
 "DEFINITIONS:\n" +
 "HUMAN: the person using CallReady on the phone.\n" +
@@ -2497,7 +2498,6 @@ closeAll("Redirect to /unavailable failed");
 "Then ask whether HUMAN has a scenario in mind or wants you to pick.\n" +
 "If HUMAN wants you to pick, choose a common, realistic, non-emergency scenario.\n" +
 "Clarify the scenario and the goal in a simple way.\n" +
-"Before roleplay starts, you may ask one short grounding question like: Any questions before we jump in?\n" +
 "Then begin roleplay using the correct ring protocol.\n" +
 "\n" +
 "COACHING RULES:\n" +
