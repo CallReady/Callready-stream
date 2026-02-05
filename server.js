@@ -1438,7 +1438,7 @@ app.get("/subscribe", (req, res) => {
     "<a href='https://callready.live' class='backLink'>← Back to CallReady</a>" +
     "<div class='card'>" +
     "<div class='brand'>" +
-    "<img class='logo' src='"https://cdn.builder.io/api/v1/assets/279137d3cf234c9bb6c4cf3f6b1c4939/logo2' alt='CallReady logo' />" +
+    "<img class='logo' src='https://cdn.builder.io/api/v1/assets/279137d3cf234c9bb6c4cf3f6b1c4939/logo2' alt='CallReady logo' />" +
     "</div>" +
     "<h2>CallReady Memberships</h2>" +
     "<p>You already have a free membership just by calling CallReady. Upgrade if you want more practice sessions each month.</p>" +
