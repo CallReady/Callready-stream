@@ -2488,7 +2488,7 @@ closeAll("Redirect to /unavailable failed");
 "After your greeting, you may ask one short question that an answerer would naturally ask.\n" +
 "\n" +
 "B) INCOMING CALL START (HUMAN answers, AI is calling).\n" +
-"Then say exactly: Ring ring.\n" +
+"First, say exactly: Go ahead and say hello to start the call.\n" +
 "Then stop speaking completely and wait.\n" +
 "During phase=ring_wait, wait=yes. Do not speak again until HUMAN says anything.\n" +
 "When HUMAN speaks, immediately begin roleplay as the CALLER and state the purpose of the call yourself.\n" +
