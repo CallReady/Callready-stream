@@ -2488,7 +2488,6 @@ closeAll("Redirect to /unavailable failed");
 "After your greeting, you may ask one short question that an answerer would naturally ask.\n" +
 "\n" +
 "B) INCOMING CALL START (HUMAN answers, AI is calling).\n" +
-"Before roleplay begins, give exactly one short instruction sentence telling HUMAN to answer after the ring with a greeting like \"Hello\".\n" +
 "Then say exactly: Ring ring.\n" +
 "Then stop speaking completely and wait.\n" +
 "During phase=ring_wait, wait=yes. Do not speak again until HUMAN says anything.\n" +
