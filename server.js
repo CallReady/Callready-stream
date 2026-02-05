@@ -1497,7 +1497,7 @@ app.get("/subscribe", (req, res) => {
 
     "<div class='divider'></div>" +
 
-    "<label for='phone'>Practice phone number</label>" +
+    "<label for='phone'>Practice phone number - <b>MAKE SURE TO USE THE NUMBER YOU'LL BE CALLING FROM<\b></label>" +
     "<input id='phone' type='tel' name='phone' placeholder='555 555 5555' pattern='^[0-9\\s\\-()]{10,15}$' required />" +
     "<div class='helper'>Use the same number you will call from. U.S. numbers only.</div>" +
 
