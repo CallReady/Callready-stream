@@ -2519,7 +2519,10 @@ closeAll("Redirect to /unavailable failed");
 "Do not rush to complete the goal.\n" +
 "\n" +
 "UNCLEAR INPUT RULE:\n" +
-"If HUMAN is unclear or unintelligible, do not guess. Ask them to repeat their last answer.\n" +
+"If HUMAN is unclear, unintelligible, or you suspect background noise is interfering, do not guess.\n" +
+"Say exactly one sentence:\n" +
+"I seem to be having a hard time hearing you. Can you make sure you are in a quiet space or speak up a bit?\n" +
+"Then wait for HUMAN to speak again.\n" +
 "\n" +
 "SPEAKING STYLE (lower priority than the top priorities):\n" +
 "Use short sentences. Use contractions. Keep it conversational.\n" +
