@@ -2615,9 +2615,25 @@ closeAll("Redirect to /unavailable failed");
         sawCallerSpeechSinceLastAIDone = true;
         return;
       }
-      if (msg.type === "input_audio_buffer.speech_stopped") {
-        return;
-      }
+  if (msg.type === "input_audio_buffer.speech_stopped") {
+  if (!turnDetectionEnabled) return;
+  if (endingRequested || endRedirectRequested) return;
+
+  // Allow AI to respond after the caller finishes speaking
+  requireCallerSpeechBeforeNextAI = false;
+  sawCallerSpeechSinceLastAIDone = true;
+
+  // Ask OpenAI to respond now based on the conversation so far
+  openaiSend({
+    type: "response.create",
+    response: {
+      modalities: ["audio", "text"],
+    },
+  });
+
+  return;
+}
+
 
       if (msg.type === "response.created") {
       responseActive = true;
@@ -2667,16 +2683,12 @@ closeAll("Redirect to /unavailable failed");
           openaiSend({ type: "input_audio_buffer.clear" });
 
           openaiSend({
-            type: "session.update",
-            session: {
-              turn_detection: {
-                type: "server_vad",
-                silence_duration_ms: 650,
-                prefix_padding_ms: 500,
-                threshold: 0.30,
-              },
-            },
-          });
+          type: "session.update",
+          session: {
+            turn_detection: null,
+          },
+        });
+
           waitingForFirstCallerSpeech = false;
           sawSpeechStarted = true;
           requireCallerSpeechBeforeNextAI = false;
