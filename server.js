@@ -2699,24 +2699,23 @@ closeAll("Redirect to /unavailable failed");
           callTypeCaptureInFlight = false;
           awaitingCallTypeChoice = false;
 
-          if (lockedCallType === "incoming") {
-            promptIncomingStartOnce();
-            return;
-          }
+          if (!lockedCallType) lockedCallType = "outgoing";
 
           openaiSend({
             type: "response.create",
             response: {
               modalities: ["audio", "text"],
               instructions:
-                'Say one short sentence confirming the call type.\n' +
-                'Then ask exactly one question:\n' +
-                'Do you already have a call in mind, or would you like me to pick one for you?\n',
+                "Say one short sentence confirming the call type in plain language. \n" +
+                "Then ask exactly one question, using this wording: \n" +
+                "Do you already have a call in mind, or would you like me to pick one for you? \n" +
+                "Do not use the words scenario or goal. \n" +
+                "Do not ask follow-up questions yet. \n",
             },
           });
 
           return;
-
+        }
 
         if (openerSent && !turnDetectionEnabled) {
           turnDetectionEnabled = true;
