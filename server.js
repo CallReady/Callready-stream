@@ -1907,6 +1907,10 @@ wss.on("connection", (twilioWs) => {
   let sawSpeechStarted = false;
 
   let requireCallerSpeechBeforeNextAI = false;
+  let lockedCallType = null; // "outgoing" or "incoming"
+  let awaitingCallTypeChoice = false;
+  let callTypeCaptureInFlight = false;
+
   let sawCallerSpeechSinceLastAIDone = false;
 
   let sessionTimerStarted = false;
@@ -2084,6 +2088,9 @@ redirectCallToUnavailable("opener_no_audio");
   }
     function sendScenarioStartOnce(label) {
       console.log(nowIso(),"Asking scenario start question",label ? "(" + label + ")" : "");
+      awaitingCallTypeChoice = true;
+      lockedCallType = null;
+      callTypeCaptureInFlight = false;
 
       openaiSend({
       type: "response.create",
@@ -2623,6 +2630,24 @@ closeAll("Redirect to /unavailable failed");
   requireCallerSpeechBeforeNextAI = false;
   sawCallerSpeechSinceLastAIDone = true;
 
+          if (turnDetectionEnabled && awaitingCallTypeChoice && !lockedCallType && !callTypeCaptureInFlight) {
+          callTypeCaptureInFlight = true;
+
+          openaiSend({
+            type: "response.create",
+            response: {
+              modalities: ["text"],
+              instructions:
+                "Output exactly one line and nothing else.\n" +
+                "If the HUMAN chose making a call, output: CALL_TYPE: outgoing\n" +
+                "If the HUMAN chose answering a call, output: CALL_TYPE: incoming\n" +
+                "If unclear, output: CALL_TYPE: unknown\n",
+            },
+          });
+
+          return;
+        }
+
   // Ask OpenAI to respond now based on the conversation so far
   openaiSend({
     type: "response.create",
@@ -2663,6 +2688,36 @@ closeAll("Redirect to /unavailable failed");
             scenarioTagCaptureResolve();
             scenarioTagCaptureResolve = null;
           }
+        }
+
+                if (callTypeCaptureInFlight && awaitingCallTypeChoice) {
+          const ct = extractTokenLineValue(text, "CALL_TYPE");
+          if (ct) {
+            const v = String(ct).trim().toLowerCase();
+            if (v === "outgoing" || v === "incoming") lockedCallType = v;
+          }
+
+          callTypeCaptureInFlight = false;
+          awaitingCallTypeChoice = false;
+
+          if (!lockedCallType) lockedCallType = "outgoing";
+
+          openaiSend({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              instructions:
+                "Say one short sentence confirming the call type.\n" +
+                "Then ask exactly one question:\n" +
+                "What scenario do you want to practice, and what is your goal for the call?\n" +
+                "Reminder: CALL_TYPE is locked as " + lockedCallType.toUpperCase() + ".\n" +
+                "If CALL_TYPE is OUTGOING, HUMAN is CALLER and AI is ANSWERER.\n" +
+                "If CALL_TYPE is INCOMING, HUMAN is ANSWERER and AI is CALLER.\n" +
+                "Do not ask the HUMAN to answer with a greeting unless CALL_TYPE is INCOMING.\n",
+            },
+          });
+
+          return;
         }
 
         if (openerSent && !turnDetectionEnabled) {
