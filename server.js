@@ -2683,11 +2683,18 @@ closeAll("Redirect to /unavailable failed");
           openaiSend({ type: "input_audio_buffer.clear" });
 
           openaiSend({
-          type: "session.update",
-          session: {
-            turn_detection: null,
-          },
-        });
+            type: "session.update",
+            session: {
+              turn_detection: {
+                type: "server_vad",
+                silence_duration_ms: 650,
+                prefix_padding_ms: 500,
+                threshold: 0.30,
+                create_response: false,
+                interrupt_response: false,
+              },
+            },
+          });
 
           waitingForFirstCallerSpeech = false;
           sawSpeechStarted = true;
