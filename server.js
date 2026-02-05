@@ -2741,7 +2741,7 @@ closeAll("Redirect to /unavailable failed");
                 type: "server_vad",
                 silence_duration_ms: 650,
                 prefix_padding_ms: 500,
-                threshold: 0.30,
+                threshold: 0.45,
                 create_response: false,
                 interrupt_response: false,
               },
