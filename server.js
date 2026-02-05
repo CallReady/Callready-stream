@@ -2707,13 +2707,11 @@ closeAll("Redirect to /unavailable failed");
             response: {
               modalities: ["audio", "text"],
               instructions:
-                "Say one short sentence confirming the call type.\n" +
-                "Then ask exactly one question:\n" +
-                "What scenario do you want to practice, and what is your goal for the call?\n" +
-                "Reminder: CALL_TYPE is locked as " + lockedCallType.toUpperCase() + ".\n" +
-                "If CALL_TYPE is OUTGOING, HUMAN is CALLER and AI is ANSWERER.\n" +
-                "If CALL_TYPE is INCOMING, HUMAN is ANSWERER and AI is CALLER.\n" +
-                "Do not ask the HUMAN to answer with a greeting unless CALL_TYPE is INCOMING.\n",
+                "Say one short sentence confirming the call type in plain language. \n" +
+                "Then ask exactly one question, using this wording: \n" +
+                "Do you already have a call in mind, or would you like me to pick one for you? \n" +
+                "Do not use the words scenario or goal. \n" +
+                "Do not ask follow-up questions yet. \n",
             },
           });
 
