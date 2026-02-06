@@ -2792,7 +2792,7 @@ closeAll("Redirect to /unavailable failed");
             session: {
               turn_detection: {
                 type: "server_vad",
-                silence_duration_ms: 650,
+                silence_duration_ms: 1000,
                 prefix_padding_ms: 500,
                 threshold: 0.45,
                 create_response: false,
