@@ -10,7 +10,6 @@ const Stripe = require("stripe");
 
 const app = express();
 app.set("strict routing", true);
-app.use(express.urlencoded({ extended: false }));
 
 const PORT = process.env.PORT || 10000;
 
@@ -25,6 +24,52 @@ const STRIPE_PRICE_MEMBER = process.env.STRIPE_PRICE_MEMBER;
 const STRIPE_PRICE_POWER = process.env.STRIPE_PRICE_POWER;
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 const REENGAGE_CRON_SECRET = process.env.REENGAGE_CRON_SECRET;
+app.post(
+  "/webhook/stripe",
+  express.raw({ type: "application/json" }),
+  (req, res) => {
+    if (!stripe) return res.status(500).send("Stripe not configured");
+
+    const sig = req.headers["stripe-signature"];
+    let event;
+
+    try {
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        STRIPE_WEBHOOK_SECRET
+      );
+    } catch (err) {
+      return res.status(400).send("Webhook Error: " + err.message);
+    }
+
+    // Handle events you care about
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const session = event.data.object;
+        // TODO: fulfill membership based on session
+        break;
+      }
+
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
+      case "customer.subscription.deleted": {
+        const sub = event.data.object;
+        // TODO: update your database subscription status
+        break;
+      }
+
+      default:
+        break;
+    }
+
+    return res.status(200).json({ received: true });
+  }
+);
+
+// Put this AFTER the Stripe webhook route so Twilio form posts still work
+app.use(express.urlencoded({ extended: false }));
+
 
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 
@@ -2518,6 +2563,11 @@ closeAll("Redirect to /unavailable failed");
 "Ask one question at a time, then wait.\n" +
 "Do not rush to complete the goal.\n" +
 "\n" +
+"NO HOLD RULE:\n" +
+"Do not put the HUMAN on hold or create silence to \"check\" anything.\n" +
+"If you need to verify, look up, or check something, simulate it instantly in one short sentence, then continue.\n" +
+"After any simulated check, you must ask one short question to keep the turn moving.\n" +
+"Never say \"please hold\" or \"one moment\" unless you immediately return in the same response with the next question.\n" +
 "UNCLEAR INPUT RULE:\n" +
 "If HUMAN is unclear, unintelligible, or you suspect background noise is interfering, do not guess.\n" +
 "Say exactly one sentence:\n" +
