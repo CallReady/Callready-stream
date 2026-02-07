@@ -148,7 +148,7 @@ const IN_CALL_CONFIRM_NO =
   "Thanks for practicing with us today. We hope to hear from you again soon. Have a great day and call again soon!";
 
 const OPTIN_CONFIRM_SMS =
-  "Welcome to CallReady. You are opted in to receive texts. Msg and data rates may apply. " +
+  "Welcome to CallReady.live, a place to practice phone calls until they feel familiar. You are opted in to receive texts. Msg and data rates may apply. " +
   "Reply STOP any time to opt out. " +
   "Learn more at https://callready.live";
 
@@ -168,12 +168,12 @@ const REENGAGE_SMS_2 =
   "A quick note from CallReady.live. If you want a low-pressure practice call, you can jump back in anytime.";
 
 const TWILIO_NO_MINUTES_LEFT =
-  "Welcome back to CallReady. It looks like you do not have any practice sessions remaining on your membership for this month. " +
+  "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar.  It looks like you do not have any practice sessions remaining on your membership for this month. " +
   "To get more sessions, please visit CallReady dot live. " +
   "Thanks for calling, and we hope you will practice again soon!";
 
 const TWILIO_NO_SESSIONS_LEFT =
-  "Welcome back to CallReady. It looks like you do not have any practice sessions remaining on your membership for this month. " +
+  "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. It looks like you do not have any practice sessions remaining on your membership for this month. " +
   "To get more sessions, please visit CallReady dot live. " +
   "Thanks for calling, and we hope you will practice again soon!";
 
@@ -2085,8 +2085,8 @@ function buildDynamicOpenerSpeech() {
     }
 
     return (
-      "Welcome to CallReady. " +
-      "Your membership is active for this number. " +
+      "Welcome to CallReady dot live, a place to practice phone calls until they feel familiar. " +
+      "Your free membership is active for this number. " +
       "When you're ready, we can start."
     );
   }
@@ -2094,7 +2094,7 @@ function buildDynamicOpenerSpeech() {
 
   if (String(tier).toLowerCase() === "free") {
   return (
-    "Welcome back to CallReady. " +
+    "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. " +
     "You have " +
     String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
     " practice sessions left this month on the free membership. " +
@@ -2104,7 +2104,7 @@ function buildDynamicOpenerSpeech() {
   }
 
   return (
-    "Welcome back to CallReady dot live. " +
+    "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. " +
     "You have " +
     String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
     " practice sessions left this month. "
