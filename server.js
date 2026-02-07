@@ -3310,7 +3310,6 @@ closeAll("Redirect to /unavailable failed");
 
       closeAll("Twilio stop");
       return;
-    }
   });
 
   twilioWs.on("close", () => {
