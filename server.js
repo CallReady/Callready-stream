@@ -732,6 +732,11 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
 }
 
 async function logAiUsageToDb(callSid, usageSummary) {
+  console.log(nowIso(), "logAiUsageToDb called", {
+  callSid: callSid,
+  hasUsageSummary: !!usageSummary,
+  model: usageSummary && usageSummary.model ? String(usageSummary.model) : null
+  });
   if (!pool) return;
   if (!callSid) return;
   if (!usageSummary) return;
@@ -759,6 +764,11 @@ async function logAiUsageToDb(callSid, usageSummary) {
 
     const cost = estimateRealtimeCostUSD(usageSummary.model, totalsForCost);
 
+    console.log(nowIso(), "logAiUsageToDb about to insert", {
+    callSid: callSid,
+    phone_e164: phone,
+    tier: tier
+    });
 
     await pool.query(
       "insert into call_ai_usage (" +
@@ -817,7 +827,11 @@ async function logAiUsageToDb(callSid, usageSummary) {
 
     console.log(nowIso(), "Logged AI usage to DB", { callSid: callSid, tier: tier, phone_e164: phone });
   } catch (e) {
-    console.log(nowIso(), "DB insert failed for call_ai_usage:", e && e.message ? e.message : e);
+    console.log(nowIso(), "DB insert failed for call_ai_usage:", {
+message: e && e.message ? e.message : String(e),
+detail: e && e.detail ? e.detail : null,
+code: e && e.code ? e.code : null
+});
   }
 }
 
