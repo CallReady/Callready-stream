@@ -807,7 +807,7 @@ async function logAiUsageToDb(callSid, usageSummary) {
         (usageSummary.totals && usageSummary.totals.input_audio_tokens) || 0,
         (usageSummary.totals && usageSummary.totals.output_text_tokens) || 0,
         (usageSummary.totals && usageSummary.totals.output_audio_tokens) || 0,
-        typeof usageSummary.estimatedCostUSD === "number" ? usageSummary.estimatedCostUSD : null
+        cost.estimated_cost_usd,
         cost.rate_in_audio_per_m,
         cost.rate_out_audio_per_m,
         cost.rate_in_text_per_m,
