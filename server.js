@@ -2135,71 +2135,66 @@ wss.on("connection", (twilioWs) => {
     }
   }
 
-  function estimateRealtimeCostUSD(modelName, totals) {
-    // Uses current public pricing for Realtime models.
-    // gpt-realtime-mini audio: $10 / 1M input audio tokens, $20 / 1M output audio tokens
-    // gpt-realtime audio: $32 / 1M input audio tokens, $64 / 1M output audio tokens
-    // Text token rates exist too, but audio dominates most voice calls.
-    // Source: OpenAI pricing pages. Keep this as an estimate, reconcile with dashboard later.
-    const m = String(modelName || "").toLowerCase();
+function estimateRealtimeCostUSD(modelName, totals) {
+  // Pricing source: https://platform.openai.com/docs/pricing
+  // Keep this as an estimate, reconcile with OpenAI dashboard for billing truth.
+  const m = String(modelName || "").toLowerCase();
 
-    let inAudioPerM = 0;
-    let outAudioPerM = 0;
-    let inTextPerM = 0;
-    let outTextPerM = 0;
+  let inAudioPerM = 0;
+  let outAudioPerM = 0;
+  let inTextPerM = 0;
+  let outTextPerM = 0;
 
-    if (m === "gpt-realtime") {
-      inAudioPerM = 32.0;
-      outAudioPerM = 64.0;
-      inTextPerM = 4.0;
-      outTextPerM = 16.0;
-    } else {
-      // Default to mini pricing if unknown
-      inAudioPerM = 10.0;
-      outAudioPerM = 20.0;
-      inTextPerM = 0.60;
-      outTextPerM = 2.40;
-    }
-
-    const inAudio = (totals.input_audio_tokens || 0) / 1000000.0 * inAudioPerM;
-    const outAudio = (totals.output_audio_tokens || 0) / 1000000.0 * outAudioPerM;
-    const inText = (totals.input_text_tokens || 0) / 1000000.0 * inTextPerM;
-    const outText = (totals.output_text_tokens || 0) / 1000000.0 * outTextPerM;
-
-    return inAudio + outAudio + inText + outText;
+  if (m === "gpt-realtime") {
+    inAudioPerM = 32.0;
+    outAudioPerM = 64.0;
+    inTextPerM = 4.0;
+    outTextPerM = 16.0;
+  } else if (m === "gpt-realtime-mini") {
+    inAudioPerM = 10.0;
+    outAudioPerM = 20.0;
+    inTextPerM = 0.60;
+    outTextPerM = 2.40;
+  } else if (m === "gpt-4o-realtime-preview") {
+    inAudioPerM = 40.0;
+    outAudioPerM = 80.0;
+    inTextPerM = 5.0;
+    outTextPerM = 20.0;
+  } else if (m === "gpt-4o-mini-realtime-preview") {
+    inAudioPerM = 10.0;
+    outAudioPerM = 20.0;
+    inTextPerM = 0.60;
+    outTextPerM = 2.40;
+  } else {
+    // Safe default: assume gpt-realtime-mini
+    inAudioPerM = 10.0;
+    outAudioPerM = 20.0;
+    inTextPerM = 0.60;
+    outTextPerM = 2.40;
   }
 
-    function finalizeRealtimeUsageSummary(reason) {
-    if (usageLog.endedAtMs) return null;
+  const t = totals || {};
+  const inAudio = Number(t.input_audio_tokens || 0);
+  const outAudio = Number(t.output_audio_tokens || 0);
+  const inText = Number(t.input_text_tokens || 0);
+  const outText = Number(t.output_text_tokens || 0);
 
-    usageLog.endedAtMs = Date.now();
-    usageLog.endedReason = reason || "unknown";
+  const audioCost =
+    (inAudio / 1000000) * inAudioPerM +
+    (outAudio / 1000000) * outAudioPerM;
 
-    const durationSec = Math.max(1, Math.round((usageLog.endedAtMs - usageLog.startedAtMs) / 1000));
-    const costEst = estimateRealtimeCostUSD(OPENAI_REALTIME_MODEL, usageLog.totals);
+  const textCost =
+    (inText / 1000000) * inTextPerM +
+    (outText / 1000000) * outTextPerM;
 
-    const summary = {
-      callSid: usageLog.callSid,
-      streamSid: usageLog.streamSid,
-      openaiSessionId: usageLog.openaiSessionId,
-      model: OPENAI_REALTIME_MODEL,
-      startedAtIso: new Date(usageLog.startedAtMs).toISOString(),
-      endedAtIso: new Date(usageLog.endedAtMs).toISOString(),
-      durationSec: durationSec,
-      turns: usageLog.turns,
-      totals: usageLog.totals,
-      estimatedCostUSD: Number.isFinite(costEst) ? Number(costEst.toFixed(6)) : null,
-      endedReason: usageLog.endedReason
-    };
-
-    console.log(JSON.stringify({
-      kind: "cr_realtime_call_summary",
-      atIso: nowIso(),
-      summary: summary
-    }));
-
-    return summary;
-  }
+  return {
+    estimated_cost_usd: audioCost + textCost,
+    rate_in_audio_per_m: inAudioPerM,
+    rate_out_audio_per_m: outAudioPerM,
+    rate_in_text_per_m: inTextPerM,
+    rate_out_text_per_m: outTextPerM
+  };
+}
 
   function closeAll(reason) {
     if (closing) return;
