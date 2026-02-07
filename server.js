@@ -731,6 +731,81 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
   }
 }
 
+async function logAiUsageToDb(callSid, usageSummary) {
+  if (!pool) return;
+  if (!callSid) return;
+  if (!usageSummary) return;
+
+  try {
+    const r = await pool.query("select phone_e164 from calls where call_sid = $1 limit 1", [callSid]);
+    const phone = r && r.rows && r.rows[0] && r.rows[0].phone_e164 ? String(r.rows[0].phone_e164) : null;
+
+    let tier = null;
+    try {
+      if (phone) {
+        const r2 = await pool.query("select tier from callers where phone_e164 = $1 limit 1", [phone]);
+        tier = r2 && r2.rows && r2.rows[0] && r2.rows[0].tier ? String(r2.rows[0].tier) : null;
+      }
+    } catch {}
+
+    const endedAtIso = usageSummary.endedAtIso ? String(usageSummary.endedAtIso) : nowIso();
+    const startedAtIso = usageSummary.startedAtIso ? String(usageSummary.startedAtIso) : null;
+
+    await pool.query(
+      "insert into call_ai_usage (" +
+        "call_sid, phone_e164, tier, model, openai_session_id, started_at, ended_at, duration_seconds, turns, " +
+        "total_tokens, input_tokens, output_tokens, " +
+        "input_text_tokens, input_audio_tokens, output_text_tokens, output_audio_tokens, " +
+        "estimated_cost_usd" +
+      ") values (" +
+        "$1, $2, $3, $4, $5, " +
+        "coalesce($6::timestamptz, now()), $7::timestamptz, $8, $9, " +
+        "$10, $11, $12, " +
+        "$13, $14, $15, $16, " +
+        "$17" +
+      ") on conflict (call_sid) do update set " +
+        "tier = excluded.tier, " +
+        "model = excluded.model, " +
+        "openai_session_id = excluded.openai_session_id, " +
+        "started_at = excluded.started_at, " +
+        "ended_at = excluded.ended_at, " +
+        "duration_seconds = excluded.duration_seconds, " +
+        "turns = excluded.turns, " +
+        "total_tokens = excluded.total_tokens, " +
+        "input_tokens = excluded.input_tokens, " +
+        "output_tokens = excluded.output_tokens, " +
+        "input_text_tokens = excluded.input_text_tokens, " +
+        "input_audio_tokens = excluded.input_audio_tokens, " +
+        "output_text_tokens = excluded.output_text_tokens, " +
+        "output_audio_tokens = excluded.output_audio_tokens, " +
+        "estimated_cost_usd = excluded.estimated_cost_usd",
+      [
+        callSid,
+        phone,
+        tier,
+        usageSummary.model || OPENAI_REALTIME_MODEL,
+        usageSummary.openaiSessionId || null,
+        startedAtIso,
+        endedAtIso,
+        usageSummary.durationSec || null,
+        usageSummary.turns || 0,
+        (usageSummary.totals && usageSummary.totals.total_tokens) || 0,
+        (usageSummary.totals && usageSummary.totals.input_tokens) || 0,
+        (usageSummary.totals && usageSummary.totals.output_tokens) || 0,
+        (usageSummary.totals && usageSummary.totals.input_text_tokens) || 0,
+        (usageSummary.totals && usageSummary.totals.input_audio_tokens) || 0,
+        (usageSummary.totals && usageSummary.totals.output_text_tokens) || 0,
+        (usageSummary.totals && usageSummary.totals.output_audio_tokens) || 0,
+        typeof usageSummary.estimatedCostUSD === "number" ? usageSummary.estimatedCostUSD : null
+      ]
+    );
+
+    console.log(nowIso(), "Logged AI usage to DB", { callSid: callSid, tier: tier, phone_e164: phone });
+  } catch (e) {
+    console.log(nowIso(), "DB insert failed for call_ai_usage:", e && e.message ? e.message : e);
+  }
+}
+
 async function logCallEndToDb(callSid, endedReason) {
   if (!pool) return;
   if (!callSid) return;
@@ -1993,10 +2068,147 @@ wss.on("connection", (twilioWs) => {
 
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
+    // Realtime usage logging for cost measurement
+  const usageLog = {
+    callSid: null,
+    streamSid: null,
+    openaiSessionId: null,
+    startedAtMs: Date.now(),
+    endedAtMs: null,
+    endedReason: null,
+    turns: 0,
+    totals: {
+      total_tokens: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      input_text_tokens: 0,
+      input_audio_tokens: 0,
+      output_text_tokens: 0,
+      output_audio_tokens: 0
+    }
+  };
+
+  function recordRealtimeServerEvent(msg) {
+    if (!msg || typeof msg.type !== "string") return;
+
+    if (msg.type === "session.created") {
+      const sid = msg.session && msg.session.id ? String(msg.session.id) : null;
+      usageLog.openaiSessionId = sid;
+      console.log(JSON.stringify({
+        kind: "cr_realtime_session_created",
+        atIso: nowIso(),
+        callSid: usageLog.callSid,
+        streamSid: usageLog.streamSid,
+        openaiSessionId: usageLog.openaiSessionId
+      }));
+      return;
+    }
+
+    if (msg.type === "response.done") {
+      const usage = msg.response && msg.response.usage ? msg.response.usage : null;
+      if (!usage) return;
+
+      usageLog.turns += 1;
+
+      usageLog.totals.total_tokens += usage.total_tokens || 0;
+      usageLog.totals.input_tokens += usage.input_tokens || 0;
+      usageLog.totals.output_tokens += usage.output_tokens || 0;
+
+      const inDetails = usage.input_token_details || {};
+      const outDetails = usage.output_token_details || {};
+
+      usageLog.totals.input_text_tokens += inDetails.text_tokens || 0;
+      usageLog.totals.input_audio_tokens += inDetails.audio_tokens || 0;
+
+      usageLog.totals.output_text_tokens += outDetails.text_tokens || 0;
+      usageLog.totals.output_audio_tokens += outDetails.audio_tokens || 0;
+
+      console.log(JSON.stringify({
+        kind: "cr_realtime_turn_usage",
+        atIso: nowIso(),
+        callSid: usageLog.callSid,
+        streamSid: usageLog.streamSid,
+        openaiSessionId: usageLog.openaiSessionId,
+        responseId: msg.response && msg.response.id ? String(msg.response.id) : null,
+        usage: usage
+      }));
+    }
+  }
+
+  function estimateRealtimeCostUSD(modelName, totals) {
+    // Uses current public pricing for Realtime models.
+    // gpt-realtime-mini audio: $10 / 1M input audio tokens, $20 / 1M output audio tokens
+    // gpt-realtime audio: $32 / 1M input audio tokens, $64 / 1M output audio tokens
+    // Text token rates exist too, but audio dominates most voice calls.
+    // Source: OpenAI pricing pages. Keep this as an estimate, reconcile with dashboard later.
+    const m = String(modelName || "").toLowerCase();
+
+    let inAudioPerM = 0;
+    let outAudioPerM = 0;
+    let inTextPerM = 0;
+    let outTextPerM = 0;
+
+    if (m === "gpt-realtime") {
+      inAudioPerM = 32.0;
+      outAudioPerM = 64.0;
+      inTextPerM = 4.0;
+      outTextPerM = 16.0;
+    } else {
+      // Default to mini pricing if unknown
+      inAudioPerM = 10.0;
+      outAudioPerM = 20.0;
+      inTextPerM = 0.60;
+      outTextPerM = 2.40;
+    }
+
+    const inAudio = (totals.input_audio_tokens || 0) / 1000000.0 * inAudioPerM;
+    const outAudio = (totals.output_audio_tokens || 0) / 1000000.0 * outAudioPerM;
+    const inText = (totals.input_text_tokens || 0) / 1000000.0 * inTextPerM;
+    const outText = (totals.output_text_tokens || 0) / 1000000.0 * outTextPerM;
+
+    return inAudio + outAudio + inText + outText;
+  }
+
+    function finalizeRealtimeUsageSummary(reason) {
+    if (usageLog.endedAtMs) return null;
+
+    usageLog.endedAtMs = Date.now();
+    usageLog.endedReason = reason || "unknown";
+
+    const durationSec = Math.max(1, Math.round((usageLog.endedAtMs - usageLog.startedAtMs) / 1000));
+    const costEst = estimateRealtimeCostUSD(OPENAI_REALTIME_MODEL, usageLog.totals);
+
+    const summary = {
+      callSid: usageLog.callSid,
+      streamSid: usageLog.streamSid,
+      openaiSessionId: usageLog.openaiSessionId,
+      model: OPENAI_REALTIME_MODEL,
+      startedAtIso: new Date(usageLog.startedAtMs).toISOString(),
+      endedAtIso: new Date(usageLog.endedAtMs).toISOString(),
+      durationSec: durationSec,
+      turns: usageLog.turns,
+      totals: usageLog.totals,
+      estimatedCostUSD: Number.isFinite(costEst) ? Number(costEst.toFixed(6)) : null,
+      endedReason: usageLog.endedReason
+    };
+
+    console.log(JSON.stringify({
+      kind: "cr_realtime_call_summary",
+      atIso: nowIso(),
+      summary: summary
+    }));
+
+    return summary;
+  }
+
   function closeAll(reason) {
     if (closing) return;
     closing = true;
     console.log(nowIso(), "Closing:", reason);
+    try {
+      finalizeRealtimeUsageSummary(String(reason || "closeAll"));
+    } catch {}
+
 
     try {
       if (sessionTimer) clearTimeout(sessionTimer);
@@ -2625,6 +2837,8 @@ closeAll("Redirect to /unavailable failed");
     openaiWs.on("message", (data) => {
       const msg = safeJsonParse(data.toString());
       if (!msg) return;
+      recordRealtimeServerEvent(msg);
+
 
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
         if (openerNoAudioTimer) {
@@ -2942,6 +3156,10 @@ closeAll("Redirect to /unavailable failed");
 
       console.log(nowIso(), "Twilio stream start:", streamSid || "(no streamSid)");
       console.log(nowIso(), "Twilio callSid:", callSid || "(no callSid)");
+      usageLog.callSid = callSid || null;
+      usageLog.streamSid = streamSid || null;
+      usageLog.startedAtMs = Date.now();
+
 
             if (callSid) {
         priorContext = await fetchPriorCallContextByCallSid(callSid);
@@ -3042,6 +3260,15 @@ closeAll("Redirect to /unavailable failed");
 
     if (msg.event === "stop") {
       console.log(nowIso(), "Twilio stream stop");
+      try {
+        const s = finalizeRealtimeUsageSummary("twilio_stop");
+        if (s && callSid) {
+          logAiUsageToDb(callSid, s).catch(() => {});
+        }
+      } catch {}
+
+      finalizeRealtimeUsageSummary("twilio_stop");
+
 
       if (callSid) {
         const endedReason = endRedirectRequested ? "redirected_to_end" : "hangup_or_stream_stop";
