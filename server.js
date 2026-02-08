@@ -1796,6 +1796,27 @@ app.post("/test-medical", (req, res) => {
 
     const safeStep = Number.isFinite(step) && step >= 0 ? step : 0;
 
+    // Capture what Twilio heard (speech transcription) for the previous step.
+// Twilio sends SpeechResult for Gather speech input.
+const speechResultRaw = req.body && req.body.SpeechResult ? String(req.body.SpeechResult) : "";
+const speechResult = speechResultRaw.trim();
+
+if (speechResult) {
+  console.log(nowIso(), "TEST_MEDICAL_SPEECH_RESULT", { step: safeStep, speech: speechResult });
+}
+
+// Store a slot when we are on step 2, which means we just gathered the answer for step 1.
+if (session && safeStep === 2 && speechResult) {
+  const v = speechResult.toLowerCase();
+  if (v.indexOf("new") !== -1) session.slots.patient_status = "new";
+  else if (v.indexOf("existing") !== -1) session.slots.patient_status = "existing";
+
+  console.log(nowIso(), "Option E slot set (patient_status)", {
+    callSid: callSid || null,
+    patient_status: session.slots.patient_status || null
+  });
+}
+
     // If we are past the last line, end the call cleanly
     if (safeStep >= TEST_MEDICAL_LINES.length) {
       vr.say("Thanks for practicing with CallReady. You can hang up, or call back to practice again.");
