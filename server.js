@@ -1879,20 +1879,6 @@ if (session && safeStep === 3 && speechResult) {
       // Choose the line to say, allowing simple personalization
       let lineToSay = TEST_MEDICAL_LINES[safeStep];
 
-            // Step 3 override: do NOT ask "preferred provider" here.
-      // Customize based on patient status.
-      if (safeStep === 3) {
-        const status = session && session.slots ? String(session.slots.patient_status || "") : "";
-
-        if (status === "new") {
-          lineToSay = "Thanks. Since you are a new patient, can I get your full name and date of birth?";
-        } else if (status === "existing") {
-          lineToSay = "Great. And what is the reason for the appointment today?";
-        } else {
-          lineToSay = "Okay. What is the reason for the appointment?";
-        }
-      }
-
       // If we are at step 4 and we have an appointment reason, include it
       if (
         safeStep === 4 &&
