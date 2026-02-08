@@ -23,6 +23,46 @@ const TEST_MEDICAL_LINES = [
   "Perfect. You’re scheduled. Is there anything else I can help you with today?"
 ];
 
+// Option E: in-memory call session state store (server owns state, AI does not).
+// Keyed by CallSid. Safe for single-instance deployments.
+// If you run multiple instances later, we will move this to Postgres or Redis.
+const CALL_SESSIONS = new Map();
+
+function getOrCreateCallSession(callSid) {
+  const sid = String(callSid || "").trim();
+  if (!sid) return null;
+
+  let s = CALL_SESSIONS.get(sid);
+  if (!s) {
+    s = {
+      callSid: sid,
+      createdAtMs: Date.now(),
+      phase: "E_GREETING",
+      slots: {
+        patient_status: null
+      }
+    };
+    CALL_SESSIONS.set(sid, s);
+  }
+  return s;
+}
+
+function clearCallSession(callSid) {
+  const sid = String(callSid || "").trim();
+  if (!sid) return;
+  CALL_SESSIONS.delete(sid);
+}
+
+// Option E phases for deterministic call flow
+const E_PHASES = {
+  GREETING: "E_GREETING",
+  ASK_PATIENT_STATUS: "E_ASK_PATIENT_STATUS",
+  ASK_REASON: "E_ASK_REASON",
+  ASK_PREFERRED_DAY: "E_ASK_PREFERRED_DAY",
+  CONFIRM_APPOINTMENT: "E_CONFIRM_APPOINTMENT",
+  WRAP_UP: "E_WRAP_UP"
+};
+
 const app = express();
 app.set("strict routing", true);
 
@@ -1716,6 +1756,16 @@ app.post("/voice-test-medical", (req, res) => {
   try {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
+    const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
+    const session = getOrCreateCallSession(callSid);
+    if (session) {
+      session.phase = E_PHASES.GREETING;
+      session.slots.patient_status = null;
+      console.log(nowIso(), "Option E session init (test-medical)", {
+        callSid: callSid || null,
+        phase: session.phase
+      });
+    }
 
     // Start at step 0
     vr.redirect({ method: "POST" }, "/test-medical?step=0");
@@ -1733,6 +1783,13 @@ app.post("/test-medical", (req, res) => {
   try {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
+    const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
+    const session = getOrCreateCallSession(callSid);
+
+    // If we cannot get a session, fall back to the old step-based behavior
+    if (!session) {
+      console.log(nowIso(), "No Option E session found, falling back to step mode", { callSid: callSid || null });
+    }
 
     const stepRaw = req.query && typeof req.query.step !== "undefined" ? String(req.query.step) : "0";
     const step = parseInt(stepRaw, 10);
@@ -1757,6 +1814,23 @@ app.post("/test-medical", (req, res) => {
     console.log(nowIso(), "TEST_MEDICAL_SAY_LINE_SENT", { step: safeStep });
 
     // Gather the caller's response (speech)
+    // Update Option E phase based on step number.
+    // This keeps the existing test flow but introduces server-owned state.
+    if (session) {
+      if (safeStep === 0) session.phase = E_PHASES.GREETING;
+      else if (safeStep === 1) session.phase = E_PHASES.ASK_PATIENT_STATUS;
+      else if (safeStep === 2) session.phase = E_PHASES.ASK_REASON;
+      else if (safeStep === 4) session.phase = E_PHASES.ASK_PREFERRED_DAY;
+      else if (safeStep === 6) session.phase = E_PHASES.CONFIRM_APPOINTMENT;
+      else if (safeStep >= (TEST_MEDICAL_LINES.length - 1)) session.phase = E_PHASES.WRAP_UP;
+
+      console.log(nowIso(), "Option E phase set (test-medical)", {
+        callSid: callSid || null,
+        step: safeStep,
+        phase: session.phase
+      });
+    }
+
     vr.gather({
       input: "speech",
       timeout: 6,
@@ -1833,6 +1907,11 @@ app.post("/voice", async (req, res) => {
       }
 
       vr.say(TWILIO_NO_SESSIONS_LEFT);
+      if (callSid) {
+      clearCallSession(callSid);
+      console.log(nowIso(), "Option E session cleared (test-medical)", { callSid });
+    }
+
       vr.hangup();
       res.type("text/xml").send(vr.toString());
       return;
