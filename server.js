@@ -3282,23 +3282,17 @@ closeAll("Redirect to /unavailable failed");
       return;
     }
 
-      if (msg.event === "stop") {
+    if (msg.event === "stop") {
       console.log(nowIso(), "Twilio stream stop");
-
       try {
-      const summary = finalizeRealtimeUsageSummary("twilio_stop");
-      if (summary && callSid) {
-      logAiUsageToDb(callSid, summary);
-      console.log(nowIso(), "FORCED logAiUsageToDb from stop", { callSid });
-      }
-      } catch (e) {
-      console.log(nowIso(), "FORCED logAiUsageToDb failed", {
-      message: e && e.message ? e.message : String(e)
-      });
-      }
+        const s = finalizeRealtimeUsageSummary("twilio_stop");
+        if (s && callSid) {
+          logAiUsageToDb(callSid, s).catch(() => {});
+        }
+      } catch {}
 
-      return;
-      }
+      finalizeRealtimeUsageSummary("twilio_stop");
+
 
       if (callSid) {
         const endedReason = endRedirectRequested ? "redirected_to_end" : "hangup_or_stream_stop";
