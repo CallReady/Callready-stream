@@ -1756,6 +1756,7 @@ app.post("/test-medical", (req, res) => {
 
     // Say the receiver line for this step
     vr.say({ voice: "Polly.Kendra", language: "en-US" }, TEST_MEDICAL_LINES[safeStep]);
+    console.log(nowIso(), "TEST_MEDICAL_SAY_LINE_SENT", { step: safeStep });
 
     // Gather the caller's response (speech)
     vr.gather({
