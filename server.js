@@ -13,7 +13,7 @@ const Stripe = require("stripe");
 const TEST_MEDICAL_LINES = [
   "Thank you for calling Evergreen Family Clinic. How can I help you today?",
   "Okay, are you a new patient or an existing patient?",
-  "What is the reason for the appointment?",
+  "Before we do that, since you are a new patient, can I get your address for the intake form? You can use fake information for this practice call.",
   "Do you have a preferred provider, or is anyone okay?",
   "What days of the week usually work best for you?",
   "Morning or afternoon?",
