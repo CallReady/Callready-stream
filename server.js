@@ -1746,7 +1746,10 @@ app.post("/test-medical", (req, res) => {
     );
 
       vr.hangup();
-      res.type("text/xml").send(vr.toString());
+      const twiml = vr.toString();
+      console.log(nowIso(), "TEST_MEDICAL_TWIML", twiml);
+      res.type("text/xml").send(twiml);
+
       return;
     }
 
