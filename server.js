@@ -1729,6 +1729,7 @@ app.post("/voice-test-medical", (req, res) => {
 
 // Option C test flow steps: say one receiver line, gather speech, then advance
 app.post("/test-medical", (req, res) => {
+  console.log(nowIso(), "HIT /test-medical", { step: (req.query && req.query.step) ? String(req.query.step) : null });
   try {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
