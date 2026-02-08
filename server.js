@@ -1831,7 +1831,19 @@ if (session && safeStep === 2 && speechResult) {
 
 
     // Say the receiver line for this step
-    vr.say(TEST_MEDICAL_LINES[safeStep]);
+    // Say the receiver line for this step (with a simple slot-based branch)
+    if (safeStep === 2) {
+      const status = session && session.slots ? String(session.slots.patient_status || "") : "";
+
+      if (status === "new") {
+        vr.say("Before we do that, since you are a new patient, can I get your address for the intake form?");
+      } else {
+        vr.say("What is the reason for the appointment?");
+      }
+    } else {
+      vr.say(TEST_MEDICAL_LINES[safeStep]);
+    }
+
     console.log(nowIso(), "TEST_MEDICAL_SAY_LINE_SENT", { step: safeStep });
 
     // Gather the caller's response (speech)
