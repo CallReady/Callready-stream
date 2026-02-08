@@ -1742,7 +1742,7 @@ app.post("/test-medical", (req, res) => {
     // If we are past the last line, end the call cleanly
     if (safeStep >= TEST_MEDICAL_LINES.length) {
       vr.say(
-      { voice: "Google.en-US-Neural2-F", language: "en-US" },
+      { voice: "Google.en-US-Neural2-C", language: "en-US" },
       "Thanks for practicing with CallReady. You can hang up, or call back to practice again."
     );
 
@@ -1755,7 +1755,7 @@ app.post("/test-medical", (req, res) => {
     }
 
     // Say the receiver line for this step
-    vr.say({ voice: "Google.en-US-Neural2-F", language: "en-US" }, TEST_MEDICAL_LINES[safeStep]);
+    vr.say({ voice: "Google.en-US-Neural2-C", language: "en-US" }, TEST_MEDICAL_LINES[safeStep]);
     console.log(nowIso(), "TEST_MEDICAL_SAY_LINE_SENT", { step: safeStep });
 
     // Gather the caller's response (speech)
