@@ -8,6 +8,21 @@ const twilio = require("twilio");
 const { Pool } = require("pg");
 const Stripe = require("stripe");
 
+// CallReady Option C test flow: deterministic medical scheduling practice
+// No AI. No branching. Linear steps only.
+const TEST_MEDICAL_LINES = [
+  "Thank you for calling Evergreen Family Clinic. How can I help you today?",
+  "Okay, are you a new patient or an existing patient?",
+  "What is the reason for the appointment?",
+  "Do you have a preferred provider, or is anyone okay?",
+  "What days of the week usually work best for you?",
+  "Morning or afternoon?",
+  "I have an opening on Tuesday at 10:30 a.m. Would that work?",
+  "Great. Can I have your full name, please?",
+  "And your date of birth?",
+  "Perfect. You’re scheduled. Is there anything else I can help you with today?"
+];
+
 const app = express();
 app.set("strict routing", true);
 
@@ -1694,6 +1709,63 @@ app.get("/subscribe/cancel", (req, res) => {
     "</div></div></body></html>";
 
   res.status(200).send(html);
+});
+
+// Option C test flow entrypoint (deterministic medical scheduling)
+app.post("/voice-test-medical", (req, res) => {
+  try {
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    // Start at step 0
+    vr.redirect({ method: "POST" }, "/test-medical?step=0");
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("Error building /voice-test-medical TwiML:", err);
+    res.status(500).send("Error");
+  }
+});
+
+// Option C test flow steps: say one receiver line, gather speech, then advance
+app.post("/test-medical", (req, res) => {
+  try {
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const stepRaw = req.query && typeof req.query.step !== "undefined" ? String(req.query.step) : "0";
+    const step = parseInt(stepRaw, 10);
+
+    const safeStep = Number.isFinite(step) && step >= 0 ? step : 0;
+
+    // If we are past the last line, end the call cleanly
+    if (safeStep >= TEST_MEDICAL_LINES.length) {
+      vr.say("Thanks for practicing with CallReady. You can hang up, or call back to practice again.");
+      vr.hangup();
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Say the receiver line for this step
+    vr.say(TEST_MEDICAL_LINES[safeStep]);
+
+    // Gather the caller's response (speech)
+    vr.gather({
+      input: "speech",
+      timeout: 6,
+      speechTimeout: "auto",
+      action: "/test-medical?step=" + String(safeStep + 1),
+      method: "POST"
+    });
+
+    // If Twilio does not detect speech, move on anyway after gather
+    vr.redirect({ method: "POST" }, "/test-medical?step=" + String(safeStep + 1));
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("Error building /test-medical TwiML:", err);
+    res.status(500).send("Error");
+  }
 });
 
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
