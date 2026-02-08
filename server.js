@@ -1741,7 +1741,7 @@ app.post("/test-medical", (req, res) => {
     // If we are past the last line, end the call cleanly
     if (safeStep >= TEST_MEDICAL_LINES.length) {
       vr.say(
-      { voice: "Polly.Joanna", language: "en-US" },
+      { voice: "Polly.Kendra", language: "en-US" },
       "Thanks for practicing with CallReady. You can hang up, or call back to practice again."
     );
 
@@ -1751,7 +1751,7 @@ app.post("/test-medical", (req, res) => {
     }
 
     // Say the receiver line for this step
-    vr.say({ voice: "Polly.Joanna", language: "en-US" }, TEST_MEDICAL_LINES[safeStep]);
+    vr.say({ voice: "Polly.Kendra", language: "en-US" }, TEST_MEDICAL_LINES[safeStep]);
 
     // Gather the caller's response (speech)
     vr.gather({
