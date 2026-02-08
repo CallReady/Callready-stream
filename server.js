@@ -2087,6 +2087,7 @@ wss.on("connection", (twilioWs) => {
       output_audio_tokens: 0
     }
   };
+  let usageSummaryPersisted = false;
 
   function recordRealtimeServerEvent(msg) {
     if (!msg || typeof msg.type !== "string") return;
@@ -2135,39 +2136,62 @@ wss.on("connection", (twilioWs) => {
     }
   }
 
-  function estimateRealtimeCostUSD(modelName, totals) {
-    // Uses current public pricing for Realtime models.
-    // gpt-realtime-mini audio: $10 / 1M input audio tokens, $20 / 1M output audio tokens
-    // gpt-realtime audio: $32 / 1M input audio tokens, $64 / 1M output audio tokens
-    // Text token rates exist too, but audio dominates most voice calls.
-    // Source: OpenAI pricing pages. Keep this as an estimate, reconcile with dashboard later.
-    const m = String(modelName || "").toLowerCase();
+function estimateRealtimeCostUSD(modelName, totals) {
+  // Pricing reference:
+  // https://openai.com/api/pricing/
+  //
+  // We estimate using non-cached token rates.
+  // Audio tokens:
+  // - gpt-realtime-mini and gpt-4o-mini-realtime-preview: in $10 / 1M, out $20 / 1M
+  // - gpt-realtime: in $32 / 1M, out $64 / 1M
+  // - gpt-4o-realtime-preview: in $40 / 1M, out $80 / 1M
+  //
+  // Text tokens:
+  // - gpt-realtime-mini and gpt-4o-mini-realtime-preview: in $0.60 / 1M, out $2.40 / 1M
+  // - gpt-realtime: in $4 / 1M, out $16 / 1M
+  // - gpt-4o-realtime-preview: in $5 / 1M, out $20 / 1M
 
-    let inAudioPerM = 0;
-    let outAudioPerM = 0;
-    let inTextPerM = 0;
-    let outTextPerM = 0;
+  const m = String(modelName || "").toLowerCase().trim();
 
-    if (m === "gpt-realtime") {
-      inAudioPerM = 32.0;
-      outAudioPerM = 64.0;
-      inTextPerM = 4.0;
-      outTextPerM = 16.0;
-    } else {
-      // Default to mini pricing if unknown
-      inAudioPerM = 10.0;
-      outAudioPerM = 20.0;
-      inTextPerM = 0.60;
-      outTextPerM = 2.40;
-    }
+  let inAudioPerM = 0;
+  let outAudioPerM = 0;
+  let inTextPerM = 0;
+  let outTextPerM = 0;
 
-    const inAudio = (totals.input_audio_tokens || 0) / 1000000.0 * inAudioPerM;
-    const outAudio = (totals.output_audio_tokens || 0) / 1000000.0 * outAudioPerM;
-    const inText = (totals.input_text_tokens || 0) / 1000000.0 * inTextPerM;
-    const outText = (totals.output_text_tokens || 0) / 1000000.0 * outTextPerM;
-
-    return inAudio + outAudio + inText + outText;
+  if (m === "gpt-4o-realtime-preview") {
+    inAudioPerM = 40.0;
+    outAudioPerM = 80.0;
+    inTextPerM = 5.0;
+    outTextPerM = 20.0;
+  } else if (m === "gpt-realtime") {
+    inAudioPerM = 32.0;
+    outAudioPerM = 64.0;
+    inTextPerM = 4.0;
+    outTextPerM = 16.0;
+  } else {
+    // Default bucket covers:
+    // - gpt-realtime-mini
+    // - gpt-4o-mini-realtime-preview
+    inAudioPerM = 10.0;
+    outAudioPerM = 20.0;
+    inTextPerM = 0.60;
+    outTextPerM = 2.40;
   }
+
+  const t = totals || {};
+
+  const inAudioTokens = Number(t.input_audio_tokens || 0);
+  const outAudioTokens = Number(t.output_audio_tokens || 0);
+  const inTextTokens = Number(t.input_text_tokens || 0);
+  const outTextTokens = Number(t.output_text_tokens || 0);
+
+  const inAudio = (inAudioTokens / 1000000.0) * inAudioPerM;
+  const outAudio = (outAudioTokens / 1000000.0) * outAudioPerM;
+  const inText = (inTextTokens / 1000000.0) * inTextPerM;
+  const outText = (outTextTokens / 1000000.0) * outTextPerM;
+
+  return inAudio + outAudio + inText + outText;
+}
 
     function finalizeRealtimeUsageSummary(reason) {
     if (usageLog.endedAtMs) return null;
@@ -2189,6 +2213,7 @@ wss.on("connection", (twilioWs) => {
       turns: usageLog.turns,
       totals: usageLog.totals,
       estimatedCostUSD: Number.isFinite(costEst) ? Number(costEst.toFixed(6)) : null,
+      estimatedCostPerMinuteUSD: (Number.isFinite(costEst) && durationSec > 0) ? Number(((costEst * 60.0) / durationSec).toFixed(6)) : null,
       endedReason: usageLog.endedReason
     };
 
@@ -2199,6 +2224,40 @@ wss.on("connection", (twilioWs) => {
     }));
 
     return summary;
+  }
+  function persistUsageSummaryOnce(reason) {
+    if (usageSummaryPersisted) return null;
+
+    const s = finalizeRealtimeUsageSummary(String(reason || "unknown"));
+    if (!s) return null;
+
+    usageSummaryPersisted = true;
+
+    try {
+      const sid = s.callSid || callSid || null;
+      if (sid) {
+        logAiUsageToDb(sid, s).catch(() => {});
+      }
+    } catch {}
+
+    return s;
+  }
+  function persistUsageSummaryOnce(reason) {
+    if (usageSummaryPersisted) return null;
+
+    const s = finalizeRealtimeUsageSummary(String(reason || "unknown"));
+    if (!s) return null;
+
+    usageSummaryPersisted = true;
+
+    try {
+      const sid = s.callSid || callSid || null;
+      if (sid) {
+        logAiUsageToDb(sid, s).catch(() => {});
+      }
+    } catch {}
+
+    return s;
   }
 
   function closeAll(reason) {
@@ -3261,14 +3320,8 @@ closeAll("Redirect to /unavailable failed");
     if (msg.event === "stop") {
       console.log(nowIso(), "Twilio stream stop");
       try {
-        const s = finalizeRealtimeUsageSummary("twilio_stop");
-        if (s && callSid) {
-          logAiUsageToDb(callSid, s).catch(() => {});
-        }
-      } catch {}
-
-      finalizeRealtimeUsageSummary("twilio_stop");
-
+      persistUsageSummaryOnce("twilio_stop");
+    } catch {}
 
       if (callSid) {
         const endedReason = endRedirectRequested ? "redirected_to_end" : "hangup_or_stream_stop";
