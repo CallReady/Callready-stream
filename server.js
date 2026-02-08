@@ -3276,7 +3276,15 @@ closeAll("Redirect to /unavailable failed");
         }
       }
 
-      startOpenAIRealtime();
+      // TEMP: Disable realtime OpenAI for Option E redesign.
+      // When CALLREADY_DISABLE_REALTIME=1, we will not start the OpenAI realtime WS.
+      // This prevents accidental cost-per-minute spend while we rebuild.
+      if (String(process.env.CALLREADY_DISABLE_REALTIME || "") === "1") {
+        console.log(nowIso(), "Realtime OpenAI disabled by CALLREADY_DISABLE_REALTIME");
+      } else {
+        startOpenAIRealtime();
+      }
+
       return;
     }
 
