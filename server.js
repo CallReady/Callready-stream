@@ -568,7 +568,7 @@ async function logCallStartToDb(callSid, fromPhoneE164) {
   } catch {}
 }
 
-async function applyTierForIncomingCall(fromPhoneE164, callSid) {
+async function applyTierForCall(fromPhoneE164, callSid) {
   if (!pool) {
     return {
       allowed: true,
@@ -1730,7 +1730,8 @@ app.post("/voice", async (req, res) => {
       await logCallStartToDb(callSid, from);
     }
 
-    const tierDecision = await applyTierForIncomingCall(from, callSid);
+    const tierDecision = await applyTierForCall(from, callSid);
+
 
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
@@ -2027,9 +2028,6 @@ wss.on("connection", (twilioWs) => {
   let sawSpeechStarted = false;
 
   let requireCallerSpeechBeforeNextAI = false;
-  let lockedCallType = null; // "outgoing" or "incoming"
-  let awaitingCallTypeChoice = false;
-  let callTypeCaptureInFlight = false;
 
   let sawCallerSpeechSinceLastAIDone = false;
 
@@ -2242,23 +2240,6 @@ function estimateRealtimeCostUSD(modelName, totals) {
 
     return s;
   }
-  function persistUsageSummaryOnce(reason) {
-    if (usageSummaryPersisted) return null;
-
-    const s = finalizeRealtimeUsageSummary(String(reason || "unknown"));
-    if (!s) return null;
-
-    usageSummaryPersisted = true;
-
-    try {
-      const sid = s.callSid || callSid || null;
-      if (sid) {
-        logAiUsageToDb(sid, s).catch(() => {});
-      }
-    } catch {}
-
-    return s;
-  }
 
   function closeAll(reason) {
     if (closing) return;
@@ -2402,24 +2383,22 @@ redirectCallToUnavailable("opener_no_audio");
       },
     });
   }
-    function sendScenarioStartOnce(label) {
-      console.log(nowIso(),"Asking scenario start question",label ? "(" + label + ")" : "");
-      awaitingCallTypeChoice = true;
-      lockedCallType = null;
-      callTypeCaptureInFlight = false;
 
-      openaiSend({
-      type: "response.create",
-      response: {
+function sendScenarioPromptOnce(label) {
+  console.log(nowIso(), "Asking scenario prompt", label ? "(" + label + ")" : "");
+
+  openaiSend({
+    type: "response.create",
+    response: {
       modalities: ["audio", "text"],
       instructions:
-      "Say nothing before the question.\n" +
-      "Do not say okay, sure, of course, or any other lead-in.\n" +
-      "Ask exactly one question and nothing else:\n" +
-      "Do you want to practice making a call, or answering a call?",
-      },
-      });
-      }
+        "Say nothing before the question.\n" +
+        "Do not say okay, sure, of course, or any other lead-in.\n" +
+        "Ask exactly one question and nothing else:\n" +
+        "Do you already have a call in mind, or would you like me to pick one for you?",
+    },
+  });
+}
 
   function armOpenerRetryTimer() {
     if (openerRetryTimer) return;
@@ -2794,7 +2773,7 @@ closeAll("Redirect to /unavailable failed");
 "Ask the typical questions that would come up in that scenario, even if awkward.\n" +
 "Ask one question at a time, then wait.\n" +
 "Do not rush to complete the GOAL.\n" +
-"Your job is to help CALLER experience SCENARIO as if it were real rather than efficiently get the SCENARIO to its GOAL."
+"Your job is to help CALLER experience SCENARIO as if it were real rather than efficiently get the SCENARIO to its GOAL. \n" +
 "\n" +
 "UNCLEAR INPUT RULE:\n" +
 "If HUMAN is unclear, unintelligible, or you suspect background noise is interfering, do not guess.\n" +
@@ -2929,24 +2908,6 @@ closeAll("Redirect to /unavailable failed");
   requireCallerSpeechBeforeNextAI = false;
   sawCallerSpeechSinceLastAIDone = true;
 
-          if (turnDetectionEnabled && awaitingCallTypeChoice && !lockedCallType && !callTypeCaptureInFlight) {
-          callTypeCaptureInFlight = true;
-
-          openaiSend({
-            type: "response.create",
-            response: {
-              modalities: ["text"],
-              instructions:
-                "Output exactly one line and nothing else.\n" +
-                "If the HUMAN chose making a call, output: CALL_TYPE: outgoing\n" +
-                "If the HUMAN chose answering a call, output: CALL_TYPE: incoming\n" +
-                "If unclear, output: CALL_TYPE: unknown\n",
-            },
-          });
-
-          return;
-        }
-
   // Ask OpenAI to respond now based on the conversation so far
   openaiSend({
     type: "response.create",
@@ -2957,7 +2918,6 @@ closeAll("Redirect to /unavailable failed");
 
   return;
 }
-
 
       if (msg.type === "response.created") {
       responseActive = true;
@@ -2987,34 +2947,6 @@ closeAll("Redirect to /unavailable failed");
             scenarioTagCaptureResolve();
             scenarioTagCaptureResolve = null;
           }
-        }
-
-                if (callTypeCaptureInFlight && awaitingCallTypeChoice) {
-          const ct = extractTokenLineValue(text, "CALL_TYPE");
-          if (ct) {
-            const v = String(ct).trim().toLowerCase();
-            if (v === "outgoing" || v === "incoming") lockedCallType = v;
-          }
-
-          callTypeCaptureInFlight = false;
-          awaitingCallTypeChoice = false;
-
-          if (!lockedCallType) lockedCallType = "outgoing";
-
-          openaiSend({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions:
-                "Say one short sentence confirming the call type in plain language. \n" +
-                "Then ask exactly one question, using this wording: \n" +
-                "Do you already have a call in mind, or would you like me to pick one for you? \n" +
-                "Do not use the words scenario or goal. \n" +
-                "Do not ask follow-up questions yet. \n",
-            },
-          });
-
-          return;
         }
 
         if (openerSent && !turnDetectionEnabled) {
@@ -3065,8 +2997,7 @@ closeAll("Redirect to /unavailable failed");
             } catch {}
           }, 50);
 
-
-          sendScenarioStartOnce("post-opener");
+          sendScenarioPromptOnce("post-opener");
           return;
         }
 
