@@ -100,7 +100,7 @@ console.log(nowIso(), "FATAL process exit", { code });
 });
 
 const OPENAI_REALTIME_MODEL =
-  process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-mini";
+  process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview";
 
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "marin";
 
