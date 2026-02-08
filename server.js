@@ -119,9 +119,6 @@ const TWILIO_SMS_FROM =
 
 const AI_END_CALL_TRIGGER = "END_CALL_NOW";
 
-const TWILIO_RING_AUDIO_URL =
-  "https://cdn.builder.io/api/v1/assets/279137d3cf234c9bb6c4cf3f6b1c4939/cellphonering";
-
 const TWILIO_END_TRANSITION =
   "Thanks for practicing with CallReady. " +
   "If you want more practice sessions each month, you can explore memberships at CallReady dot live. " +
@@ -1766,8 +1763,6 @@ app.post("/voice", async (req, res) => {
       return;
     }
 
-    
-    vr.play(TWILIO_RING_AUDIO_URL);
  const connect = vr.connect();
     connect.stream({ url: PUBLIC_WSS_URL });
 
