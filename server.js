@@ -750,30 +750,19 @@ async function logAiUsageToDb(callSid, usageSummary) {
 
     const endedAtIso = usageSummary.endedAtIso ? String(usageSummary.endedAtIso) : nowIso();
     const startedAtIso = usageSummary.startedAtIso ? String(usageSummary.startedAtIso) : null;
-        const totalsForCost = {
-      input_audio_tokens: Number(usageSummary.input_audio_tokens || 0),
-      output_audio_tokens: Number(usageSummary.output_audio_tokens || 0),
-      input_text_tokens: Number(usageSummary.input_text_tokens || 0),
-      output_text_tokens: Number(usageSummary.output_text_tokens || 0)
-    };
-
-    const cost = estimateRealtimeCostUSD(usageSummary.model, totalsForCost);
-
 
     await pool.query(
       "insert into call_ai_usage (" +
         "call_sid, phone_e164, tier, model, openai_session_id, started_at, ended_at, duration_seconds, turns, " +
         "total_tokens, input_tokens, output_tokens, " +
         "input_text_tokens, input_audio_tokens, output_text_tokens, output_audio_tokens, " +
-        "estimated_cost_usd, " +
-        "rate_in_audio_per_m, rate_out_audio_per_m, rate_in_text_per_m, rate_out_text_per_m" +
-
+        "estimated_cost_usd" +
       ") values (" +
         "$1, $2, $3, $4, $5, " +
         "coalesce($6::timestamptz, now()), $7::timestamptz, $8, $9, " +
         "$10, $11, $12, " +
         "$13, $14, $15, $16, " +
-        "$17, $18, $19, $20, $21"+
+        "$17" +
       ") on conflict (call_sid) do update set " +
         "tier = excluded.tier, " +
         "model = excluded.model, " +
@@ -808,10 +797,6 @@ async function logAiUsageToDb(callSid, usageSummary) {
         (usageSummary.totals && usageSummary.totals.output_text_tokens) || 0,
         (usageSummary.totals && usageSummary.totals.output_audio_tokens) || 0,
         typeof usageSummary.estimatedCostUSD === "number" ? usageSummary.estimatedCostUSD : null
-        cost.rate_in_audio_per_m,
-        cost.rate_out_audio_per_m,
-        cost.rate_in_text_per_m,
-        cost.rate_out_text_per_m
       ]
     );
 
