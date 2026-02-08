@@ -2790,7 +2790,7 @@ closeAll("Redirect to /unavailable failed");
 "SPEAKING STYLE (lower priority than the top priorities):\n" +
 "Use short sentences. Use contractions. Keep it conversational.\n" +
 "Avoid sounding scripted. It is okay to sound slightly awkward.\n" +
-"Use filler words (um, let's see, okay...) to create authentic conversational feel."
+"Use filler words (um, let's see, okay...) to create authentic conversational feel. \n" +
 "Do not the same filler words or phrases more than once per SCENARIO.\n" +
 "\n" +
 "PRIVACY:\n" +
@@ -2821,7 +2821,7 @@ closeAll("Redirect to /unavailable failed");
 "2) In TEXT ONLY, output exactly one token line: CALLREADY_END: END_CALL_NOW\n" +
 "Never say the token out loud. Only transmit it in TEXT.\n" +
 "LAST REMINDER: \n" +
-"Your highest priority is staying in your SCENARIO role as ANSWERER until GOAL is met."
+"Your highest priority is staying in your SCENARIO role as ANSWERER until GOAL is met.",
         },
       });
 
