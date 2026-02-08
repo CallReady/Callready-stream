@@ -1817,6 +1817,20 @@ if (session && safeStep === 2 && speechResult) {
   });
 }
 
+// Option E: capture appointment reason at step 3
+if (session && safeStep === 3 && speechResult) {
+  const reason = speechResult.trim();
+
+  if (reason) {
+    session.slots.appointment_reason = reason;
+
+    console.log(nowIso(), "Option E slot set (appointment_reason)", {
+      callSid: callSid || null,
+      appointment_reason: reason
+    });
+  }
+}
+
     // If we are past the last line, end the call cleanly
     if (safeStep >= TEST_MEDICAL_LINES.length) {
       vr.say("Thanks for practicing with CallReady. You can hang up, or call back to practice again.");
