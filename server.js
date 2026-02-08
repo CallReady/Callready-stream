@@ -1742,9 +1742,8 @@ app.post("/test-medical", (req, res) => {
     // If we are past the last line, end the call cleanly
     if (safeStep >= TEST_MEDICAL_LINES.length) {
       vr.say(
-      { voice: "Alice", language: "en-US" },
-      "Thanks for practicing with CallReady. You can hang up, or call back to practice again."
-    );
+      vr.say("Thanks for practicing with CallReady. You can hang up, or call back to practice again.");
+
 
       vr.hangup();
       const twiml = vr.toString();
@@ -1755,7 +1754,7 @@ app.post("/test-medical", (req, res) => {
     }
 
     // Say the receiver line for this step
-    vr.say({ voice: "Alice", language: "en-US" }, TEST_MEDICAL_LINES[safeStep]);
+    vr.say(TEST_MEDICAL_LINES[safeStep]);
     console.log(nowIso(), "TEST_MEDICAL_SAY_LINE_SENT", { step: safeStep });
 
     // Gather the caller's response (speech)
