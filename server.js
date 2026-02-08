@@ -1831,6 +1831,21 @@ if (session && safeStep === 3 && speechResult) {
   }
 }
 
+// Option E: capture preferred provider answer at step 4
+// Step 3 asks "preferred provider", step 4 receives the gathered SpeechResult.
+if (session && safeStep === 4 && speechResult) {
+  const pref = speechResult.trim();
+
+  if (pref) {
+    session.slots.provider_preference = pref;
+
+    console.log(nowIso(), "Option E slot set (provider_preference)", {
+      callSid: callSid || null,
+      provider_preference: pref
+    });
+  }
+}
+
     // If we are past the last line, end the call cleanly
     if (safeStep >= TEST_MEDICAL_LINES.length) {
       vr.say("Thanks for practicing with CallReady. You can hang up, or call back to practice again.");
