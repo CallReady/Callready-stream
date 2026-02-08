@@ -2395,7 +2395,7 @@ function sendScenarioPromptOnce(label) {
         "Say nothing before the question.\n" +
         "Do not say okay, sure, of course, or any other lead-in.\n" +
         "Ask exactly one question and nothing else:\n" +
-        "Do you already have a call in mind, or would you like me to pick one for you?",
+        "Do you already have a call in mind that you'd like to practice, or would you like me to pick one for you?",
     },
   });
 }
