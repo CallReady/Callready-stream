@@ -1770,7 +1770,10 @@ app.post("/test-medical", (req, res) => {
     // If Twilio does not detect speech, move on anyway after gather
     vr.redirect({ method: "POST" }, "/test-medical?step=" + String(safeStep + 1));
 
-    res.type("text/xml").send(vr.toString());
+    const twiml = vr.toString();
+    console.log(nowIso(), "TEST_MEDICAL_TWIML", twiml);
+    res.type("text/xml").send(twiml);
+
   } catch (err) {
     console.error("Error building /test-medical TwiML:", err);
     res.status(500).send("Error");
