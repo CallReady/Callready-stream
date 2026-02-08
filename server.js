@@ -181,7 +181,7 @@ const TWILIO_NO_SESSIONS_LEFT =
   "Thanks for calling, and we hope you will practice again soon!";
 
 const TWILIO_SERVICE_UNAVAILABLE =
-"CallReady dot live is temporarily unavailable right now. Please try again in a little bit. Goodbye.";
+"CallReady dot live is temporarily unavailable right now. We're working on restoring it now. Please try again in a little bit. Thank you!";
 
 function safeJsonParse(str) {
   try {
