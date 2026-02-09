@@ -118,8 +118,9 @@ function handleVoiceOptionE(req, res) {
         );
       }
 
-      session.phase = "wrapup";
-      logPhaseTransition(callSid, "reason", "wrapup", "got_input");
+      session.phase = PHASES.reason.nextOnSuccess;
+      logPhaseTransition(callSid, "reason", session.phase, "got_input");
+
       saveSession(session);
 
       return sendTwiml(
