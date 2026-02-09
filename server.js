@@ -7,6 +7,7 @@ const WebSocket = require("ws");
 const twilio = require("twilio");
 const { Pool } = require("pg");
 const Stripe = require("stripe");
+const { handleVoiceOptionE } = require("./option-e/handleVoice");
 
 function getTestMedicalPrompt(session, safeStep) {
   const step = Number.isFinite(safeStep) ? safeStep : 0;
@@ -2193,6 +2194,11 @@ if (session && safeStep === 4 && speechResult) {
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
 
 app.post("/voice", async (req, res) => {
+    const mode = (process.env.CALL_FLOW_MODE || "legacy").toLowerCase();
+  if (mode === "option_e") {
+    return handleVoiceOptionE(req, res);
+  }
+
     console.log(nowIso(), "VOICE_ENTRY_HIT", {
     from: req.body && req.body.From ? String(req.body.From) : null,
     callSid: req.body && req.body.CallSid ? String(req.body.CallSid) : null,
