@@ -111,7 +111,7 @@ function handleVoiceOptionE(req, res) {
     }
 
     if (session.phase === "reason") {
-      if (!userInput) {
+      if (!userInput || !isValidReasonInput(userInput)) {
         session.retries = session.retries || {};
         session.retries.reason = (session.retries.reason || 0) + 1;
         saveSession(session);
