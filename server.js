@@ -1885,6 +1885,7 @@ app.post("/e/medical", (req, res) => {
             action: "/e/medical",
             method: "POST"
           });
+          vr.redirect({ method: "POST" }, "/e/medical");
           res.type("text/xml").send(vr.toString());
           return;
         }
@@ -1960,6 +1961,7 @@ app.post("/e/medical", (req, res) => {
         action: "/e/medical",
         method: "POST"
       });
+      vr.redirect({ method: "POST" }, "/e/medical");
       res.type("text/xml").send(vr.toString());
       return;
     }
@@ -2020,7 +2022,7 @@ app.post("/e/medical", (req, res) => {
       action: "/e/medical",
       method: "POST"
     });
-
+    vr.redirect({ method: "POST" }, "/e/medical");
     res.type("text/xml").send(vr.toString());
     return;
 
