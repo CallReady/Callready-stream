@@ -1911,7 +1911,10 @@ if (session && safeStep === 4 && speechResult) {
 }
 
     // If we are past the last line, end the call cleanly
-    if (safeStep >= TEST_MEDICAL_LINES.length) {
+        // End the call after the last deterministic step
+    const TEST_MEDICAL_LAST_STEP = 10;
+
+    if (safeStep > TEST_MEDICAL_LAST_STEP) {
       vr.say("Thanks for practicing with CallReady. You can hang up, or call back to practice again.");
 
       vr.hangup();
@@ -1931,6 +1934,7 @@ if (session && safeStep === 4 && speechResult) {
     } else {
       console.log(nowIso(), "TEST_MEDICAL_NO_PROMPT_FOR_STEP", { step: safeStep });
     }
+
 
     // Gather the caller's response (speech)
     // Update Option E phase based on step number.
