@@ -52,12 +52,14 @@ function handleVoiceOptionE(req, res) {
 
     if (step === "start") {
       const actionUrl = baseUrl + basePath + "?cr_step=reason&cr_try=0";
+      const actionUrlXml = actionUrl.replace(/&/g, "&amp;");
+
 
       return sendTwiml(
         res,
         "<Say>Hi. This is CallReady practice mode.</Say>" +
           "<Say>In one sentence, what are you calling about today?</Say>" +
-          "<Gather input=\"speech dtmf\" action=\"" + actionUrl + "\" method=\"POST\" timeout=\"6\" speechTimeout=\"auto\"></Gather>" +
+          "<Gather input=\"speech dtmf\" action=\"" + actionUrlXml + "\" method=\"POST\" timeout=\"6\" speechTimeout=\"auto\"></Gather>" +
           "<Say>I did not catch that.</Say>" +
           "<Redirect method=\"POST\">" + actionUrl + "</Redirect>"
       );
@@ -75,11 +77,13 @@ function handleVoiceOptionE(req, res) {
 
         const nextTry = tries + 1;
         const actionUrl = baseUrl + basePath + "?cr_step=reason&cr_try=" + String(nextTry);
+        const actionUrlXml = actionUrl.replace(/&/g, "&amp;");
+
 
         return sendTwiml(
           res,
           "<Say>I did not hear anything. Try again.</Say>" +
-            "<Gather input=\"speech dtmf\" action=\"" + actionUrl + "\" method=\"POST\" timeout=\"6\" speechTimeout=\"auto\"></Gather>" +
+            "<Gather input=\"speech dtmf\" action=\"" + actionUrlXml + "\" method=\"POST\" timeout=\"6\" speechTimeout=\"auto\"></Gather>" +
             "<Say>I still did not catch that.</Say>" +
             "<Redirect method=\"POST\">" + actionUrl + "</Redirect>"
         );
