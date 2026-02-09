@@ -1863,23 +1863,30 @@ if (session && safeStep === 2 && speechResult) {
   });
 }
 
-// Option E: capture appointment reason at step 3 ONLY for existing patients
-if (
-  session &&
-  safeStep === 3 &&
-  speechResult &&
-  session.slots &&
-  session.slots.patient_status === "existing"
-) {
-  const reason = speechResult.trim();
+// Option E: capture step-3 answer into the correct slot
+// At step 2 we asked either:
+// - new patient: address
+// - existing patient: appointment reason
+if (session && safeStep === 3 && speechResult) {
+  const v = speechResult.trim();
+  const status = session.slots && session.slots.patient_status ? String(session.slots.patient_status) : "";
 
-  if (reason) {
-    session.slots.appointment_reason = reason;
+  if (v) {
+    if (status === "new") {
+      session.slots.patient_address = v;
 
-    console.log(nowIso(), "Option E slot set (appointment_reason)", {
-      callSid: callSid || null,
-      appointment_reason: reason
-    });
+      console.log(nowIso(), "Option E slot set (patient_address)", {
+        callSid: callSid || null,
+        patient_address: v
+      });
+    } else {
+      session.slots.appointment_reason = v;
+
+      console.log(nowIso(), "Option E slot set (appointment_reason)", {
+        callSid: callSid || null,
+        appointment_reason: v
+      });
+    }
   }
 }
 
