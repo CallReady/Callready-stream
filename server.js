@@ -1882,28 +1882,6 @@ if (session && safeStep === 4 && speechResult) {
       return;
     }
 
-    // Option E: skip the "new patient intake address" line for existing patients
-    // Step 2 in TEST_MEDICAL_LINES is the new-patient intake prompt.
-    if (safeStep === 2) {
-      const status = session && session.slots ? String(session.slots.patient_status || "") : "";
-
-      if (status === "existing") {
-        console.log(nowIso(), "Option E skipping step 2 for existing patient", {
-          callSid: callSid || null,
-          step: safeStep,
-          patient_status: status
-        });
-
-        // Jump directly to step 3 (preferred provider question)
-        vr.redirect({ method: "POST" }, "/test-medical?step=3");
-
-        const twiml = vr.toString();
-        console.log(nowIso(), "TEST_MEDICAL_TWIML", twiml);
-        res.type("text/xml").send(twiml);
-        return;
-      }
-    }
-
     // Say the receiver line for this step
     // Say the receiver line for this step (with a simple slot-based branch)
     if (safeStep === 2) {
