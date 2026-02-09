@@ -2007,7 +2007,9 @@ app.post("/e/medical", (req, res) => {
     }
 
     // Advance phase now that we have said the next prompt
-    session.phase = nextPhase;
+    if (!speechResult || session.phase !== nextPhase) {
+  session.phase = nextPhase;
+}
 
         console.log(nowIso(), "Option E phase advanced (e/medical)", {
       callSid: callSid || null,
