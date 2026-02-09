@@ -1942,9 +1942,6 @@ if (session && safeStep === 4 && speechResult) {
       method: "POST"
     });
 
-    // If Twilio does not detect speech, move on anyway after gather
-    vr.redirect({ method: "POST" }, "/test-medical?step=" + String(safeStep + 1));
-
     const twiml = vr.toString();
     console.log(nowIso(), "TEST_MEDICAL_TWIML", twiml);
     res.type("text/xml").send(twiml);
