@@ -1802,11 +1802,154 @@ app.post("/voice-test-medical", (req, res) => {
     }
 
     // Start at step 0
-    vr.redirect({ method: "POST" }, "/test-medical?step=0");
+      vr.redirect({ method: "POST" }, "/e/medical");
+
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
     console.error("Error building /voice-test-medical TwiML:", err);
+    res.status(500).send("Error");
+  }
+});
+
+// Option E medical flow (phase-driven, no step query param)
+app.post("/e/medical", (req, res) => {
+  console.log(nowIso(), "HIT /e/medical", {
+    callSid: req.body && req.body.CallSid ? String(req.body.CallSid) : null
+  });
+
+  try {
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
+    const session = getOrCreateCallSession(callSid);
+
+    if (!session) {
+      console.log(nowIso(), "No session for /e/medical, redirecting to /voice-test-medical to re-init", {
+        callSid: callSid || null
+      });
+      vr.redirect({ method: "POST" }, "/voice-test-medical");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    const speechResultRaw = req.body && req.body.SpeechResult ? String(req.body.SpeechResult) : "";
+    const speechResult = speechResultRaw.trim();
+
+    if (speechResult) {
+      console.log(nowIso(), "E_MEDICAL_SPEECH_RESULT", {
+        phase: session.phase,
+        speech: speechResult
+      });
+    }
+
+    // Save the previous answer into slots based on the CURRENT phase
+    // The phase represents what we were expecting the caller to answer.
+    if (speechResult) {
+      const vLower = speechResult.toLowerCase();
+
+      if (session.phase === E_PHASES.ASK_PATIENT_STATUS) {
+        if (vLower.indexOf("new") !== -1) session.slots.patient_status = "new";
+        else if (vLower.indexOf("existing") !== -1) session.slots.patient_status = "existing";
+
+        console.log(nowIso(), "Option E slot set (patient_status)", {
+          callSid: callSid || null,
+          patient_status: session.slots.patient_status || null
+        });
+      } else if (session.phase === E_PHASES.ASK_REASON) {
+        const status = session.slots && session.slots.patient_status ? String(session.slots.patient_status) : "";
+
+        if (status === "new") {
+          session.slots.patient_address = speechResult;
+
+          console.log(nowIso(), "Option E slot set (patient_address)", {
+            callSid: callSid || null
+          });
+        } else {
+          session.slots.appointment_reason = speechResult;
+
+          console.log(nowIso(), "Option E slot set (appointment_reason)", {
+            callSid: callSid || null,
+            appointment_reason: session.slots.appointment_reason || null
+          });
+        }
+      } else if (session.phase === E_PHASES.ASK_PREFERRED_DAY) {
+        session.slots.preferred_day = speechResult;
+
+        console.log(nowIso(), "Option E slot set (preferred_day)", {
+          callSid: callSid || null,
+          preferred_day: session.slots.preferred_day || null
+        });
+      }
+    }
+
+    // Decide what to say NEXT and what phase comes NEXT
+    // We reuse your existing getTestMedicalPrompt(session, safeStep) function.
+    // We map phase -> step number, so prompts stay identical to your tested script.
+    let stepToSay = 0;
+    let nextPhase = E_PHASES.ASK_PATIENT_STATUS;
+
+    if (session.phase === E_PHASES.GREETING) {
+      stepToSay = 0;
+      nextPhase = E_PHASES.ASK_PATIENT_STATUS;
+    } else if (session.phase === E_PHASES.ASK_PATIENT_STATUS) {
+      stepToSay = 1;
+      nextPhase = E_PHASES.ASK_REASON;
+    } else if (session.phase === E_PHASES.ASK_REASON) {
+      stepToSay = 2;
+      nextPhase = E_PHASES.ASK_PREFERRED_DAY;
+    } else if (session.phase === E_PHASES.ASK_PREFERRED_DAY) {
+      stepToSay = 4;
+      nextPhase = E_PHASES.CONFIRM_APPOINTMENT;
+    } else if (session.phase === E_PHASES.CONFIRM_APPOINTMENT) {
+      stepToSay = 6;
+      nextPhase = E_PHASES.WRAP_UP;
+    } else if (session.phase === E_PHASES.WRAP_UP) {
+      stepToSay = 9;
+      nextPhase = E_PHASES.WRAP_UP;
+    } else {
+      stepToSay = 0;
+      nextPhase = E_PHASES.ASK_PATIENT_STATUS;
+    }
+
+    const prompt = getTestMedicalPrompt(session, stepToSay);
+
+    if (prompt) {
+      vr.say(prompt);
+      console.log(nowIso(), "E_MEDICAL_SAY_LINE_SENT", {
+        phase: session.phase,
+        step: stepToSay,
+        prompt: prompt
+      });
+    }
+
+    // Advance phase now that we have said the next prompt
+    session.phase = nextPhase;
+
+    console.log(nowIso(), "Option E phase advanced (e/medical)", {
+      callSid: callSid || null,
+      newPhase: session.phase
+    });
+
+    // If we just spoke the wrap-up line, end the call
+    if (stepToSay === 9) {
+      vr.hangup();
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    vr.gather({
+      input: "speech",
+      timeout: 6,
+      speechTimeout: "auto",
+      action: "/e/medical",
+      method: "POST"
+    });
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("Error building /e/medical TwiML:", err);
     res.status(500).send("Error");
   }
 });
