@@ -6,14 +6,33 @@ function getCallSid(req) {
   return "";
 }
 
+function newSession(callSid) {
+  const now = Date.now();
+  return {
+    callSid: String(callSid || ""),
+    phase: "start",
+    slots: {},
+    retries: {},
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function touchSession(session) {
+  if (!session) return session;
+  session.updatedAt = Date.now();
+  return session;
+}
+
 function getOrCreateSession(req) {
   const callSid = getCallSid(req);
+
   if (!callSid) {
-    return { callSid: "", step: "start", tries: 0, createdAt: Date.now() };
+    return newSession("");
   }
 
   if (!sessions.has(callSid)) {
-    sessions.set(callSid, { callSid, step: "start", tries: 0, createdAt: Date.now() });
+    sessions.set(callSid, newSession(callSid));
   }
 
   return sessions.get(callSid);
@@ -21,6 +40,7 @@ function getOrCreateSession(req) {
 
 function saveSession(session) {
   if (!session || !session.callSid) return;
+  touchSession(session);
   sessions.set(session.callSid, session);
 }
 
