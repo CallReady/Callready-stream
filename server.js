@@ -1924,16 +1924,34 @@ app.post("/e/medical", (req, res) => {
     // If the caller answers the "anything else" question, close the call.
     if (session.phase === E_PHASES.WRAP_UP) {
       const said = (speechResult || "").trim();
+      const retries = session.retries || {};
+      const tries = Number.isFinite(retries.wrap_up) ? retries.wrap_up : 0;
 
-      // If we got any speech at all, treat it as the caller responding.
+      // If we got any speech at all, treat it as the caller responding and end the call.
       if (said) {
+        retries.wrap_up = 0;
+        session.retries = retries;
+
         vr.say("Okay. Thanks for calling. Have a great day.");
         vr.hangup();
         res.type("text/xml").send(vr.toString());
         return;
       }
 
-      // No speech captured, give one more chance, then loop back once.
+      // No speech captured. Give ONE retry, then end on the next miss.
+      if (tries >= 1) {
+        retries.wrap_up = 0;
+        session.retries = retries;
+
+        vr.say("Okay. Thanks for calling. Have a great day.");
+        vr.hangup();
+        res.type("text/xml").send(vr.toString());
+        return;
+      }
+
+      retries.wrap_up = tries + 1;
+      session.retries = retries;
+
       vr.say("Sorry, I did not catch that. Is there anything else I can help you with today?");
       vr.gather({
         input: "speech",
@@ -1942,6 +1960,7 @@ app.post("/e/medical", (req, res) => {
         action: "/e/medical",
         method: "POST"
       });
+      vr.redirect({ method: "POST" }, "/e/medical");
       res.type("text/xml").send(vr.toString());
       return;
     }
