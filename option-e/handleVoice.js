@@ -52,6 +52,31 @@ function isValidReasonInput(text) {
   return true;
 }
 
+function handleReasonRetry(res, callSid, session, actionUrl, limitNote) {
+  session.retries = session.retries || {};
+  session.retries.reason = (session.retries.reason || 0) + 1;
+  saveSession(session);
+
+  if ((session.retries && session.retries.reason ? session.retries.reason : 0) >= PHASES.reason.retryLimit) {
+    session.phase = PHASES.reason.nextOnSuccess;
+    logPhaseTransition(callSid, "reason", session.phase, limitNote);
+    saveSession(session);
+
+    return sendTwiml(
+      res,
+      "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
+        "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+    );
+  }
+
+  return sendTwiml(
+    res,
+    "<Say>I did not catch a clear reason. Try again.</Say>" +
+      "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>" +
+      "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+  );
+}
+
 function sendTwiml(res, inner) {
   res.status(200);
   res.type("text/xml");
@@ -110,8 +135,10 @@ function handleVoiceOptionE(req, res) {
       );
     }
 
-    if (session.phase === "reason") {
-      if (!userInput || !isValidReasonInput(userInput)) {
+        if (session.phase === "reason") {
+      if (!userInput) {
+        logPhaseTransition(callSid, "reason", "reason", "silence_input");
+
         session.retries = session.retries || {};
         session.retries.reason = (session.retries.reason || 0) + 1;
         saveSession(session);
@@ -130,7 +157,34 @@ function handleVoiceOptionE(req, res) {
 
         return sendTwiml(
           res,
-          "<Say>I did not hear anything. Try again.</Say>" +
+          "<Say>I did not catch a clear reason. Try again.</Say>" +
+            "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>" +
+            "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+        );
+      }
+
+      if (!isValidReasonInput(userInput)) {
+        logPhaseTransition(callSid, "reason", "reason", "invalid_reason_input");
+
+        session.retries = session.retries || {};
+        session.retries.reason = (session.retries.reason || 0) + 1;
+        saveSession(session);
+
+        if ((session.retries && session.retries.reason ? session.retries.reason : 0) >= PHASES.reason.retryLimit) {
+          session.phase = PHASES.reason.nextOnSuccess;
+          logPhaseTransition(callSid, "reason", session.phase, "invalid_reason_limit");
+          saveSession(session);
+
+          return sendTwiml(
+            res,
+            "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
+              "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+          );
+        }
+
+        return sendTwiml(
+          res,
+          "<Say>I did not catch a clear reason. Try again.</Say>" +
             "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>" +
             "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
         );
@@ -138,7 +192,6 @@ function handleVoiceOptionE(req, res) {
 
       session.phase = PHASES.reason.nextOnSuccess;
       logPhaseTransition(callSid, "reason", session.phase, "got_input");
-
       saveSession(session);
 
       return sendTwiml(
