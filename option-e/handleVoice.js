@@ -99,8 +99,8 @@ function handleVoiceOptionE(req, res) {
         saveSession(session);
 
         if ((session.retries && session.retries.reason ? session.retries.reason : 0) >= PHASES.reason.retryLimit) {
-          session.phase = "wrapup";
-          logPhaseTransition(callSid, "reason", "wrapup", "silence_limit");
+          session.phase = PHASES.reason.nextOnSuccess;
+          logPhaseTransition(callSid, "reason", session.phase, "silence_limit");
           saveSession(session);
 
           return sendTwiml(
