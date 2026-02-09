@@ -88,7 +88,6 @@ function handleVoiceOptionE(req, res) {
           res,
           "<Say>I did not hear anything. Try again.</Say>" +
             "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"6\" speechTimeout=\"auto\"></Gather>" +
-            "<Say>I still did not catch that.</Say>" +
             "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
         );
       }
