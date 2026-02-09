@@ -8,21 +8,6 @@ const twilio = require("twilio");
 const { Pool } = require("pg");
 const Stripe = require("stripe");
 
-// CallReady Option C test flow: deterministic medical scheduling practice
-// No AI. No branching. Linear steps only.
-const TEST_MEDICAL_LINES = [
-  "Thank you for calling Evergreen Family Clinic. How can I help you today?",
-  "Okay, are you a new patient or an existing patient?",
-  "Before we do that, since you are a new patient, can I get your address for the intake form? You can use fake information for this practice call.",
-  "Do you have a preferred provider, or is anyone okay?",
-  "What days of the week usually work best for you?",
-  "Morning or afternoon?",
-  "I have an opening on Tuesday at 10:30 a.m. Would that work?",
-  "Great. Can I have your full name, please?",
-  "And your date of birth?",
-  "Perfect. You’re scheduled. Is there anything else I can help you with today?"
-];
-
 function getTestMedicalPrompt(session, safeStep) {
   const step = Number.isFinite(safeStep) ? safeStep : 0;
 
