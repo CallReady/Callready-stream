@@ -101,7 +101,7 @@ function handleVoiceOptionE(req, res) {
         return sendTwiml(
           res,
           "<Say>I did not hear anything. Try again.</Say>" +
-            "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"3\" speechTimeout=\"1\"></Gather>" +
+          "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>" +
             "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
         );
       }
