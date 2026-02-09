@@ -1886,7 +1886,7 @@ if (session && safeStep === 4 && speechResult) {
       const status = session && session.slots ? String(session.slots.patient_status || "") : "";
 
       if (status === "new") {
-        vr.say("Before we do that, since you are a new patient, can I get your address for the intake form?");
+        vr.say("Before we do that, since you are a new patient, can I get your address for the intake form? You can use fake information for this practice session.");
       } else {
         vr.say("What is the reason for the appointment?");
       }
