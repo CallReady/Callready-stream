@@ -18,13 +18,25 @@ function sendTwiml(res, inner) {
   );
 }
 
+function getBaseUrl(req) {
+  // Prefer your configured public URL if present.
+  const envUrl = process.env.PUBLIC_BASE_URL;
+  if (envUrl && String(envUrl).trim()) return String(envUrl).replace(/\/+$/, "");
+
+  // Fallback to the request host.
+  const host = req && req.headers ? req.headers.host : "";
+  if (host) return "https://" + host;
+
+  // Last resort fallback.
+  return "https://callready-stream.onrender.com";
+}
+
 function handleVoiceOptionE(req, res) {
   try {
     console.log("OptionE hit:", {
       path: req && req.path,
       query: req && req.query,
       hasBody: !!(req && req.body),
-      keysBody: req && req.body ? Object.keys(req.body) : [],
     });
 
     const step = (req && req.query && req.query.cr_step ? req.query.cr_step : "start").toString();
@@ -36,14 +48,16 @@ function handleVoiceOptionE(req, res) {
     const userInput = (speech || digits).trim();
 
     const basePath = req && req.path ? req.path : "/voice-test-medical";
+    const baseUrl = getBaseUrl(req);
 
     if (step === "start") {
-      const actionUrl = basePath + "?cr_step=reason&cr_try=0";
+      const actionUrl = baseUrl + basePath + "?cr_step=reason&cr_try=0";
+
       return sendTwiml(
         res,
         "<Say>Hi. This is CallReady practice mode.</Say>" +
           "<Say>In one sentence, what are you calling about today?</Say>" +
-          "<Gather input=\"speech dtmf\" action=\"" + actionUrl + "\" method=\"POST\" timeout=\"6\" speechTimeout=\"auto\" />" +
+          "<Gather input=\"speech dtmf\" action=\"" + actionUrl + "\" method=\"POST\" timeout=\"6\" speechTimeout=\"auto\"></Gather>" +
           "<Say>I did not catch that.</Say>" +
           "<Redirect method=\"POST\">" + actionUrl + "</Redirect>"
       );
@@ -60,12 +74,12 @@ function handleVoiceOptionE(req, res) {
         }
 
         const nextTry = tries + 1;
-        const actionUrl = basePath + "?cr_step=reason&cr_try=" + String(nextTry);
+        const actionUrl = baseUrl + basePath + "?cr_step=reason&cr_try=" + String(nextTry);
 
         return sendTwiml(
           res,
           "<Say>I did not hear anything. Try again.</Say>" +
-            "<Gather input=\"speech dtmf\" action=\"" + actionUrl + "\" method=\"POST\" timeout=\"6\" speechTimeout=\"auto\" />" +
+            "<Gather input=\"speech dtmf\" action=\"" + actionUrl + "\" method=\"POST\" timeout=\"6\" speechTimeout=\"auto\"></Gather>" +
             "<Say>I still did not catch that.</Say>" +
             "<Redirect method=\"POST\">" + actionUrl + "</Redirect>"
         );
