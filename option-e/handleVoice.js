@@ -24,6 +24,16 @@ function escapeXml(s) {
     .replace(/'/g, "&apos;");
 }
 
+function logPhaseTransition(callSid, fromPhase, toPhase, note) {
+  console.log("OptionE transition:", {
+    callSid: callSid || "(none)",
+    from: fromPhase || "(none)",
+    to: toPhase || "(none)",
+    note: note || "",
+    at: new Date().toISOString(),
+  });
+}
+
 function sendTwiml(res, inner) {
   res.status(200);
   res.type("text/xml");
@@ -67,7 +77,8 @@ function handleVoiceOptionE(req, res) {
   });
 
     if (session.phase === "start") {
-      session.phase = "reason";
+      session.phase = PHASES.start.nextOnEnter;
+      logPhaseTransition(callSid, "start", session.phase, "enter_reason");
       session.retries = {};
       session.retries.reason = 0;
       saveSession(session);
@@ -87,8 +98,9 @@ function handleVoiceOptionE(req, res) {
         session.retries.reason = (session.retries.reason || 0) + 1;
         saveSession(session);
 
-      if ((session.retries && session.retries.reason ? session.retries.reason : 0) >= PHASES.reason.retryLimit) {
+        if ((session.retries && session.retries.reason ? session.retries.reason : 0) >= PHASES.reason.retryLimit) {
           session.phase = "wrapup";
+          logPhaseTransition(callSid, "reason", "wrapup", "silence_limit");
           saveSession(session);
 
           return sendTwiml(
@@ -101,12 +113,13 @@ function handleVoiceOptionE(req, res) {
         return sendTwiml(
           res,
           "<Say>I did not hear anything. Try again.</Say>" +
-          "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>" +
+            "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>" +
             "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
         );
       }
 
       session.phase = "wrapup";
+      logPhaseTransition(callSid, "reason", "wrapup", "got_input");
       saveSession(session);
 
       return sendTwiml(
@@ -116,6 +129,7 @@ function handleVoiceOptionE(req, res) {
           "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
     }
+
 
 
     if (session.phase === "wrapup") {
