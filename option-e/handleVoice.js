@@ -62,7 +62,6 @@ function handleVoiceOptionE(req, res) {
         "<Say>Hi. This is CallReady practice mode.</Say>" +
           "<Say>In one sentence, what are you calling about today?</Say>" +
           "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"3\" speechTimeout=\"1\"></Gather>" +
-          "<Say>I did not catch that.</Say>" +
           "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
     }
