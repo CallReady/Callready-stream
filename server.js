@@ -174,9 +174,6 @@ process.on("exit", (code) => {
 console.log(nowIso(), "FATAL process exit", { code });
 });
 
-const CALLREADY_VERSION =
-  "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1-tier-enforcement-1-cycle-bucket-1-fixed-opener-1";
-
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 
