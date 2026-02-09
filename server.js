@@ -1830,6 +1830,18 @@ app.post("/test-medical", (req, res) => {
 
     const safeStep = Number.isFinite(step) && step >= 0 ? step : 0;
 
+    // TEST_MEDICAL step map (Option E)
+// 0 = greeting
+// 1 = ask patient status
+// 2 = intake address (new) OR appointment reason (existing)
+// 3 = preferred provider
+// 4 = preferred day
+// 5 = morning or afternoon
+// 6 = propose appointment
+// 7 = ask full name
+// 8 = ask date of birth
+// 9 = wrap-up
+
     // Capture what Twilio heard (speech transcription) for the previous step.
 // Twilio sends SpeechResult for Gather speech input.
 const speechResultRaw = req.body && req.body.SpeechResult ? String(req.body.SpeechResult) : "";
