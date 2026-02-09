@@ -1,4 +1,5 @@
 const { getOrCreateSession, saveSession, clearSession, getCallSid } = require("./sessionStore");
+const WRAPUP_PHASE = "wrapup";
 const PHASES = {
   start: {
     nextOnEnter: "reason",
@@ -131,9 +132,7 @@ function handleVoiceOptionE(req, res) {
       );
     }
 
-
-
-    if (session.phase === "wrapup") {
+    if (session.phase === WRAPUP_PHASE) {
       if (callSid) clearSession(callSid);
 
       return sendTwiml(
