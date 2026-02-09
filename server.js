@@ -41,25 +41,57 @@ function getTestMedicalPrompt(session, safeStep) {
     return "What is the reason for the appointment?";
   }
 
-  // Step 3 is only used for existing patients (new patients use step 3 to capture address first).
-  if (step === 3) return "Do you have a preferred provider, or is anyone okay?";
-
-  // Step 4 is slot-driven if we have a reason.
-  if (step === 4) {
+  // Step 3 asks provider exactly once. If we have a reason (existing patient), include a short confirmation.
+  if (step === 3) {
     if (reason) {
       return "Thanks. Just to confirm, this is for " + reason + ". Do you have a preferred provider, or is anyone okay?";
     }
     return "Do you have a preferred provider, or is anyone okay?";
   }
 
-  if (step === 5) return "What days of the week usually work best for you?";
-  if (step === 6) return "Morning or afternoon?";
-  if (step === 7) return "I have an opening on Tuesday at 10:30 a.m. Would that work?";
-  if (step === 8) return "Great. Can I have your full name, please?";
-  if (step === 9) return "And your date of birth?";
-  if (step === 10) return "Perfect. You’re scheduled. Is there anything else I can help you with today?";
+  if (step === 4) return "What days of the week usually work best for you?";
+  if (step === 5) return "Morning or afternoon?";
+  if (step === 6) return "I have an opening on Tuesday at 10:30 a.m. Would that work?";
+  if (step === 7) return "Great. Can I have your full name, please?";
+  if (step === 8) return "And your date of birth?";
+  if (step === 9) return "Perfect. You’re scheduled. Is there anything else I can help you with today?";
 
-  // If step is out of range, return empty to avoid accidental speech.
+  return "";
+}
+
+function getTestMedicalPrompt(session, safeStep) {
+  const step = Number.isFinite(safeStep) ? safeStep : 0;
+
+  const slots = session && session.slots ? session.slots : {};
+  const status = slots && slots.patient_status ? String(slots.patient_status) : "";
+  const reason = slots && slots.appointment_reason ? String(slots.appointment_reason) : "";
+
+  if (step === 0) return "Thank you for calling Evergreen Family Clinic. How can I help you today?";
+  if (step === 1) return "Okay, are you a new patient or an existing patient?";
+
+  // Step 2 is slot-driven.
+  if (step === 2) {
+    if (status === "new") {
+      return "Before we do that, since you are a new patient, can I get your address for the intake form? You can use fake information for this practice session.";
+    }
+    return "What is the reason for the appointment?";
+  }
+
+  // Step 3 asks provider exactly once. If we have a reason (existing patient), include a short confirmation.
+  if (step === 3) {
+    if (reason) {
+      return "Thanks. Just to confirm, this is for " + reason + ". Do you have a preferred provider, or is anyone okay?";
+    }
+    return "Do you have a preferred provider, or is anyone okay?";
+  }
+
+  if (step === 4) return "What days of the week usually work best for you?";
+  if (step === 5) return "Morning or afternoon?";
+  if (step === 6) return "I have an opening on Tuesday at 10:30 a.m. Would that work?";
+  if (step === 7) return "Great. Can I have your full name, please?";
+  if (step === 8) return "And your date of birth?";
+  if (step === 9) return "Perfect. You’re scheduled. Is there anything else I can help you with today?";
+
   return "";
 }
 
@@ -1912,7 +1944,7 @@ if (session && safeStep === 4 && speechResult) {
 
     // If we are past the last line, end the call cleanly
         // End the call after the last deterministic step
-    const TEST_MEDICAL_LAST_STEP = 10;
+    const TEST_MEDICAL_LAST_STEP = 9;
 
     if (safeStep > TEST_MEDICAL_LAST_STEP) {
       vr.say("Thanks for practicing with CallReady. You can hang up, or call back to practice again.");
