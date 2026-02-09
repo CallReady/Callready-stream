@@ -59,6 +59,7 @@ function getOrCreateCallSession(callSid) {
       callSid: sid,
       createdAtMs: Date.now(),
       phase: "E_GREETING",
+      retries: {},
       slots: {
         patient_status: null
       }
