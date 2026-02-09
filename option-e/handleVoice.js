@@ -87,6 +87,7 @@ function handleVoiceOptionE(req, res) {
         return sendTwiml(
           res,
           "<Say>I did not hear anything. Try again.</Say>" +
+          "<Pause length="3"/>" +
             "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"6\" speechTimeout=\"auto\"></Gather>" +
             "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
         );
