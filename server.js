@@ -11,7 +11,7 @@ const Stripe = require("stripe");
 // CallReady Option C test flow: deterministic medical scheduling practice
 // No AI. No branching. Linear steps only.
 const TEST_MEDICAL_LINES = [
-  "Thanks for calling CallReady. We are still in development, so please call back later. Here's what we're working on: Thank you for calling Evergreen Family Clinic. How can I help you today?",
+  "Thank you for calling Evergreen Family Clinic. How can I help you today?",
   "Okay, are you a new patient or an existing patient?",
   "Before we do that, since you are a new patient, can I get your address for the intake form? You can use fake information for this practice call.",
   "Do you have a preferred provider, or is anyone okay?",
