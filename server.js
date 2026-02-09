@@ -1863,8 +1863,14 @@ if (session && safeStep === 2 && speechResult) {
   });
 }
 
-// Option E: capture appointment reason at step 3
-if (session && safeStep === 3 && speechResult) {
+// Option E: capture appointment reason at step 3 ONLY for existing patients
+if (
+  session &&
+  safeStep === 3 &&
+  speechResult &&
+  session.slots &&
+  session.slots.patient_status === "existing"
+) {
   const reason = speechResult.trim();
 
   if (reason) {
