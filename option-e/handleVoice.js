@@ -61,8 +61,7 @@ function handleVoiceOptionE(req, res) {
         res,
         "<Say>Hi. This is CallReady practice mode.</Say>" +
           "<Say>In one sentence, what are you calling about today?</Say>" +
-          "<Pause length=\"3\"/>" +
-          "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"6\" speechTimeout=\"auto\"></Gather>" +
+          "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"3\" speechTimeout=\"1\"></Gather>" +
           "<Say>I did not catch that.</Say>" +
           "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
@@ -88,8 +87,7 @@ function handleVoiceOptionE(req, res) {
         return sendTwiml(
           res,
           "<Say>I did not hear anything. Try again.</Say>" +
-          "<Pause length=\"3\"/>" +
-            "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"6\" speechTimeout=\"auto\"></Gather>" +
+            "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"3\" speechTimeout=\"1\"></Gather>" +
             "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
         );
       }
