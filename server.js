@@ -88,6 +88,10 @@ const app = express();
 app.set("strict routing", true);
 
 const PORT = process.env.PORT || 10000;
+const CALLREADY_VERSION =
+  process.env.CALLREADY_VERSION ||
+  process.env.RENDER_GIT_COMMIT ||
+  "dev";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const PUBLIC_WSS_URL = process.env.PUBLIC_WSS_URL;
