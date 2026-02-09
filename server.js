@@ -184,8 +184,6 @@ const TWILIO_SMS_FROM =
 
   const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID;
 
-const AI_END_CALL_TRIGGER = "END_CALL_NOW";
-
 const TWILIO_END_TRANSITION =
   "Thanks for practicing with CallReady. " +
   "If you want more practice sessions each month, you can explore memberships at CallReady dot live. " +
