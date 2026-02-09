@@ -1,4 +1,19 @@
 const { getOrCreateSession, saveSession, clearSession, getCallSid } = require("./sessionStore");
+const PHASES = {
+  start: {
+    nextOnEnter: "reason",
+    gather: { timeoutSec: 3, speechTimeoutSec: 1 },
+    retryLimit: 0,
+  },
+  reason: {
+    nextOnSuccess: "wrapup",
+    gather: { timeoutSec: 3, speechTimeoutSec: 1 },
+    retryLimit: 3,
+  },
+  wrapup: {
+    retryLimit: 0,
+  },
+};
 
 function escapeXml(s) {
   return String(s || "")
@@ -61,7 +76,7 @@ function handleVoiceOptionE(req, res) {
         res,
         "<Say>Hi. This is CallReady practice mode.</Say>" +
           "<Say>In one sentence, what are you calling about today?</Say>" +
-          "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"3\" speechTimeout=\"1\"></Gather>" +
+          "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.start.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.start.gather.speechTimeoutSec) + "\"></Gather>" +
           "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
     }
