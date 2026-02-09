@@ -1926,7 +1926,7 @@ if (session && safeStep === 4 && speechResult) {
       else if (safeStep === 2) session.phase = E_PHASES.ASK_REASON;
       else if (safeStep === 4) session.phase = E_PHASES.ASK_PREFERRED_DAY;
       else if (safeStep === 6) session.phase = E_PHASES.CONFIRM_APPOINTMENT;
-      else if (safeStep >= (TEST_MEDICAL_LINES.length - 1)) session.phase = E_PHASES.WRAP_UP;
+      else if (safeStep >= 9) session.phase = E_PHASES.WRAP_UP;
 
       console.log(nowIso(), "Option E phase set (test-medical)", {
         callSid: callSid || null,
