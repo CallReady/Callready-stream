@@ -61,7 +61,7 @@ function handleVoiceOptionE(req, res) {
           "<Say>In one sentence, what are you calling about today?</Say>" +
           "<Gather input=\"speech dtmf\" action=\"" + actionUrlXml + "\" method=\"POST\" timeout=\"6\" speechTimeout=\"auto\"></Gather>" +
           "<Say>I did not catch that.</Say>" +
-          "<Redirect method=\"POST\">" + actionUrl + "</Redirect>"
+          "<Redirect method=\"POST\">" + actionUrlXml + "</Redirect>"
       );
     }
 
@@ -85,7 +85,7 @@ function handleVoiceOptionE(req, res) {
           "<Say>I did not hear anything. Try again.</Say>" +
             "<Gather input=\"speech dtmf\" action=\"" + actionUrlXml + "\" method=\"POST\" timeout=\"6\" speechTimeout=\"auto\"></Gather>" +
             "<Say>I still did not catch that.</Say>" +
-            "<Redirect method=\"POST\">" + actionUrl + "</Redirect>"
+            "<Redirect method=\"POST\">" + actionUrlXml + "</Redirect>"
         );
       }
 
