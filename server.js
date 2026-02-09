@@ -1892,27 +1892,6 @@ if (session && safeStep === 4 && speechResult) {
       } else {
         vr.say("What is the reason for the appointment?");
       }
-    } else {
-      // Choose the line to say, allowing simple personalization
-      let lineToSay = TEST_MEDICAL_LINES[safeStep];
-
-      // If we are at step 4 and we have an appointment reason, include it
-      if (
-        safeStep === 4 &&
-        session &&
-        session.slots &&
-        session.slots.appointment_reason
-      ) {
-        lineToSay =
-          "Thanks. Just to confirm, this is for " +
-          session.slots.appointment_reason +
-          ". Do you have a preferred provider, or is anyone okay?";
-      }
-
-      vr.say(lineToSay);
-      console.log(nowIso(), "TEST_MEDICAL_SAY_LINE_SENT", { step: safeStep });
-
-    }
 
     console.log(nowIso(), "TEST_MEDICAL_SAY_LINE_SENT", { step: safeStep });
 
