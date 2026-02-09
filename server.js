@@ -1854,7 +1854,8 @@ app.post("/e/medical", (req, res) => {
     // The phase represents what we were expecting the caller to answer.
     if (speechResult) {
       const vLower = speechResult.toLowerCase();
-        if (session.phase === E_PHASES.ASK_PATIENT_STATUS) {
+
+      if (session.phase === E_PHASES.ASK_PATIENT_STATUS) {
         const retries = session.retries || {};
         const tries = Number.isFinite(retries.patient_status) ? retries.patient_status : 0;
 
@@ -1892,8 +1893,33 @@ app.post("/e/medical", (req, res) => {
           callSid: callSid || null,
           patient_status: session.slots.patient_status || null
         });
+      } else if (session.phase === E_PHASES.ASK_REASON) {
+        const status = session.slots && session.slots.patient_status ? String(session.slots.patient_status) : "";
+
+        if (status === "new") {
+          session.slots.patient_address = speechResult;
+
+          console.log(nowIso(), "Option E slot set (patient_address)", {
+            callSid: callSid || null
+          });
+        } else {
+          session.slots.appointment_reason = speechResult;
+
+          console.log(nowIso(), "Option E slot set (appointment_reason)", {
+            callSid: callSid || null,
+            appointment_reason: session.slots.appointment_reason || null
+          });
+        }
+      } else if (session.phase === E_PHASES.ASK_PREFERRED_DAY) {
+        session.slots.preferred_day = speechResult;
+
+        console.log(nowIso(), "Option E slot set (preferred_day)", {
+          callSid: callSid || null,
+          preferred_day: session.slots.preferred_day || null
+        });
       }
     }
+
     // Special handling for WRAP_UP so we do not repeat step 9 forever.
     // If the caller answers the "anything else" question, close the call.
     if (session.phase === E_PHASES.WRAP_UP) {
