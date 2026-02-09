@@ -2952,11 +2952,6 @@ closeAll("Redirect to /unavailable failed");
     return out;
   }
 
-  function responseTextRequestsEnd(text) {
-    // Option E does not allow AI-triggered call termination
-    return false;
-  }
-
   function buildReturnCallerInstructions(ctx) {
     if (!ctx || !ctx.scenario_tag) return "";
     const scenario = String(ctx.scenario_tag);
