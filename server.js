@@ -25,9 +25,9 @@ function getTestMedicalPrompt(session, safeStep) {
     return "What is the reason for the appointment?";
   }
 
-  // Step 3 asks provider exactly once. If we have a reason (existing patient), include a short confirmation.
+    // Step 3 asks provider exactly once. Only confirm the reason for existing patients.
   if (step === 3) {
-    if (reason) {
+    if (status === "existing" && reason) {
       return "Thanks. Just to confirm, this is for " + reason + ". Do you have a preferred provider, or is anyone okay?";
     }
     return "Do you have a preferred provider, or is anyone okay?";
