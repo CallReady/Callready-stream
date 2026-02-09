@@ -87,7 +87,7 @@ function handleVoiceOptionE(req, res) {
         session.retries.reason = (session.retries.reason || 0) + 1;
         saveSession(session);
 
-        if ((session.retries && session.retries.reason ? session.retries.reason : 0) >= 3) {
+      if ((session.retries && session.retries.reason ? session.retries.reason : 0) >= PHASES.reason.retryLimit) {
           session.phase = "wrapup";
           saveSession(session);
 
