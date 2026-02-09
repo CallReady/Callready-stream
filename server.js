@@ -1888,6 +1888,33 @@ app.post("/e/medical", (req, res) => {
         });
       }
     }
+    // Special handling for WRAP_UP so we do not repeat step 9 forever.
+    // If the caller answers the "anything else" question, close the call.
+    if (session.phase === E_PHASES.WRAP_UP) {
+      const said = (speechResult || "").trim();
+
+      // If we got any speech at all, treat it as the caller responding.
+      if (said) {
+        vr.say("Okay. Thanks for calling. Have a great day.");
+        vr.hangup();
+        res.type("text/xml").send(vr.toString());
+        return;
+      }
+
+      // No speech captured, give one more chance, then loop back once.
+      vr.say("Sorry, I did not catch that. Is there anything else I can help you with today?");
+      vr.gather({
+        input: "speech",
+        timeout: 6,
+        speechTimeout: "auto",
+        action: "/e/medical",
+        method: "POST"
+      });
+      vr.redirect({ method: "POST" }, "/e/medical");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
 
     // Decide what to say NEXT and what phase comes NEXT
     // We reuse your existing getTestMedicalPrompt(session, safeStep) function.
@@ -1932,18 +1959,12 @@ app.post("/e/medical", (req, res) => {
     // Advance phase now that we have said the next prompt
     session.phase = nextPhase;
 
-    console.log(nowIso(), "Option E phase advanced (e/medical)", {
+        console.log(nowIso(), "Option E phase advanced (e/medical)", {
       callSid: callSid || null,
       newPhase: session.phase
     });
 
-    // If we just spoke the wrap-up line, end the call
-    if (stepToSay === 9) {
-      vr.hangup();
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
+    // Normal path for steps 0 through 8
     vr.gather({
       input: "speech",
       timeout: 6,
@@ -1953,6 +1974,8 @@ app.post("/e/medical", (req, res) => {
     });
 
     res.type("text/xml").send(vr.toString());
+    return;
+
   } catch (err) {
     console.error("Error building /e/medical TwiML:", err);
     res.status(500).send("Error");
