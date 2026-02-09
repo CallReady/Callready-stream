@@ -74,11 +74,13 @@ function handleVoiceOptionE(req, res) {
         saveSession(session);
 
         if ((session.retries && session.retries.reason ? session.retries.reason : 0) >= 3) {
-          if (callSid) clearSession(callSid);
+          session.phase = "wrapup";
+          saveSession(session);
+
           return sendTwiml(
             res,
             "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
-              "<Hangup/>"
+              "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
           );
         }
 
@@ -91,15 +93,28 @@ function handleVoiceOptionE(req, res) {
         );
       }
 
-      if (callSid) clearSession(callSid);
+      session.phase = "wrapup";
+      saveSession(session);
 
       return sendTwiml(
         res,
         "<Say>You said: " + escapeXml(userInput) + ".</Say>" +
-          "<Say>Great. That confirms the Option E session store is working.</Say>" +
+          "<Say>Okay. We will wrap up the practice call now.</Say>" +
+          "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+      );
+    }
+
+
+    if (session.phase === "wrapup") {
+      if (callSid) clearSession(callSid);
+
+      return sendTwiml(
+        res,
+        "<Say>Nice work. You can practice again anytime.</Say>" +
           "<Hangup/>"
       );
     }
+
 
     if (callSid) clearSession(callSid);
     return sendTwiml(res, "<Say>Option E reached an unknown step and will end now.</Say><Hangup/>");
