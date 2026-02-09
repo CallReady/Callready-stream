@@ -1854,38 +1854,43 @@ app.post("/e/medical", (req, res) => {
     // The phase represents what we were expecting the caller to answer.
     if (speechResult) {
       const vLower = speechResult.toLowerCase();
+        if (session.phase === E_PHASES.ASK_PATIENT_STATUS) {
+        const retries = session.retries || {};
+        const tries = Number.isFinite(retries.patient_status) ? retries.patient_status : 0;
 
-      if (session.phase === E_PHASES.ASK_PATIENT_STATUS) {
-        if (vLower.indexOf("new") !== -1) session.slots.patient_status = "new";
-        else if (vLower.indexOf("existing") !== -1) session.slots.patient_status = "existing";
+        if (vLower.indexOf("new") !== -1) {
+          session.slots.patient_status = "new";
+          retries.patient_status = 0;
+          session.retries = retries;
+        } else if (vLower.indexOf("existing") !== -1) {
+          session.slots.patient_status = "existing";
+          retries.patient_status = 0;
+          session.retries = retries;
+        } else {
+          retries.patient_status = tries + 1;
+          session.retries = retries;
+
+          console.log(nowIso(), "Option E patient_status unclear, retrying", {
+            callSid: callSid || null,
+            attempt: retries.patient_status,
+            speech: speechResult
+          });
+
+          vr.say("Sorry, I did not catch that. Are you a new patient or an existing patient?");
+          vr.gather({
+            input: "speech",
+            timeout: 6,
+            speechTimeout: "auto",
+            action: "/e/medical",
+            method: "POST"
+          });
+          res.type("text/xml").send(vr.toString());
+          return;
+        }
 
         console.log(nowIso(), "Option E slot set (patient_status)", {
           callSid: callSid || null,
           patient_status: session.slots.patient_status || null
-        });
-      } else if (session.phase === E_PHASES.ASK_REASON) {
-        const status = session.slots && session.slots.patient_status ? String(session.slots.patient_status) : "";
-
-        if (status === "new") {
-          session.slots.patient_address = speechResult;
-
-          console.log(nowIso(), "Option E slot set (patient_address)", {
-            callSid: callSid || null
-          });
-        } else {
-          session.slots.appointment_reason = speechResult;
-
-          console.log(nowIso(), "Option E slot set (appointment_reason)", {
-            callSid: callSid || null,
-            appointment_reason: session.slots.appointment_reason || null
-          });
-        }
-      } else if (session.phase === E_PHASES.ASK_PREFERRED_DAY) {
-        session.slots.preferred_day = speechResult;
-
-        console.log(nowIso(), "Option E slot set (preferred_day)", {
-          callSid: callSid || null,
-          preferred_day: session.slots.preferred_day || null
         });
       }
     }
@@ -1911,11 +1916,9 @@ app.post("/e/medical", (req, res) => {
         action: "/e/medical",
         method: "POST"
       });
-      vr.redirect({ method: "POST" }, "/e/medical");
       res.type("text/xml").send(vr.toString());
       return;
     }
-
 
     // Decide what to say NEXT and what phase comes NEXT
     // We reuse your existing getTestMedicalPrompt(session, safeStep) function.
