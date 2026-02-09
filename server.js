@@ -59,42 +59,6 @@ function getTestMedicalPrompt(session, safeStep) {
   return "";
 }
 
-function getTestMedicalPrompt(session, safeStep) {
-  const step = Number.isFinite(safeStep) ? safeStep : 0;
-
-  const slots = session && session.slots ? session.slots : {};
-  const status = slots && slots.patient_status ? String(slots.patient_status) : "";
-  const reason = slots && slots.appointment_reason ? String(slots.appointment_reason) : "";
-
-  if (step === 0) return "Thank you for calling Evergreen Family Clinic. How can I help you today?";
-  if (step === 1) return "Okay, are you a new patient or an existing patient?";
-
-  // Step 2 is slot-driven.
-  if (step === 2) {
-    if (status === "new") {
-      return "Before we do that, since you are a new patient, can I get your address for the intake form? You can use fake information for this practice session.";
-    }
-    return "What is the reason for the appointment?";
-  }
-
-  // Step 3 asks provider exactly once. If we have a reason (existing patient), include a short confirmation.
-  if (step === 3) {
-    if (reason) {
-      return "Thanks. Just to confirm, this is for " + reason + ". Do you have a preferred provider, or is anyone okay?";
-    }
-    return "Do you have a preferred provider, or is anyone okay?";
-  }
-
-  if (step === 4) return "What days of the week usually work best for you?";
-  if (step === 5) return "Morning or afternoon?";
-  if (step === 6) return "I have an opening on Tuesday at 10:30 a.m. Would that work?";
-  if (step === 7) return "Great. Can I have your full name, please?";
-  if (step === 8) return "And your date of birth?";
-  if (step === 9) return "Perfect. You’re scheduled. Is there anything else I can help you with today?";
-
-  return "";
-}
-
 // Option E: in-memory call session state store (server owns state, AI does not).
 // Keyed by CallSid. Safe for single-instance deployments.
 // If you run multiple instances later, we will move this to Postgres or Redis.
