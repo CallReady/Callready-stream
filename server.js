@@ -3,7 +3,6 @@
 
 const express = require("express");
 const http = require("http");
-const WebSocket = require("ws");
 const twilio = require("twilio");
 const { Pool } = require("pg");
 const Stripe = require("stripe");
