@@ -11,7 +11,7 @@ const Stripe = require("stripe");
 // CallReady Option C test flow: deterministic medical scheduling practice
 // No AI. No branching. Linear steps only.
 const TEST_MEDICAL_LINES = [
-  "Thank you for calling Evergreen Family Clinic. How can I help you today?",
+  "Thanks for calling CallReady. We are still in development, so please call back later. Here's what we're working on: Thank you for calling Evergreen Family Clinic. How can I help you today?",
   "Okay, are you a new patient or an existing patient?",
   "Before we do that, since you are a new patient, can I get your address for the intake form? You can use fake information for this practice call.",
   "Do you have a preferred provider, or is anyone okay?",
@@ -1956,6 +1956,24 @@ if (session && safeStep === 4 && speechResult) {
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
 
 app.post("/voice", async (req, res) => {
+  // TEMP: Restrict CallReady access to a single allowed caller number
+  const ALLOWED_CALLER = "+15419794582";
+  const fromNumber = req.body && req.body.From ? String(req.body.From) : "";
+
+  if (fromNumber !== ALLOWED_CALLER) {
+    console.log(nowIso(), "Blocked call from unauthorized number", {
+      from: fromNumber || null
+    });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    vr.redirect({ method: "POST" }, "/unavailable");
+
+    res.type("text/xml").send(vr.toString());
+    return;
+  }
+
     if (String(process.env.CALLREADY_UNAVAILABLE || "") === "1") {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
