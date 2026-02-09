@@ -1770,6 +1770,11 @@ app.get("/subscribe/cancel", (req, res) => {
 
 // Option C test flow entrypoint (deterministic medical scheduling)
 app.post("/voice-test-medical", (req, res) => {
+    const mode = (process.env.CALL_FLOW_MODE || "legacy").toLowerCase();
+  if (mode === "option_e") {
+    return handleVoiceOptionE(req, res);
+  }
+
     // Allowlist gate (development lock)
   const allowedFrom = "+15419794582"; // your cell: 541-979-4582 in E.164
   const fromNumber = req.body && req.body.From ? String(req.body.From).trim() : "";
