@@ -1753,6 +1753,24 @@ app.get("/subscribe/cancel", (req, res) => {
 
 // Option C test flow entrypoint (deterministic medical scheduling)
 app.post("/voice-test-medical", (req, res) => {
+    // Allowlist gate (development lock)
+  const allowedFrom = "+15419794582"; // your cell: 541-979-4582 in E.164
+  const fromNumber = req.body && req.body.From ? String(req.body.From).trim() : "";
+
+  console.log(nowIso(), "ALLOWLIST_CHECK", {
+    path: "/voice-test-medical",
+    from: fromNumber || null,
+    allowed: allowedFrom
+  });
+
+  if (fromNumber !== allowedFrom) {
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+    vr.redirect({ method: "POST" }, "/unavailable");
+    res.type("text/xml").send(vr.toString());
+    return;
+  }
+
     console.log(nowIso(), "VOICE_ENTRY_HIT", {
     from: req.body && req.body.From ? String(req.body.From) : null,
     callSid: req.body && req.body.CallSid ? String(req.body.CallSid) : null,
