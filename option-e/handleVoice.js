@@ -44,16 +44,17 @@ function handleVoiceOptionE(req, res) {
     const userInput = (speech || digits).trim();
 
     console.log("OptionE hit:", {
-      callSid: callSid || "(none)",
-      path: basePath,
-      step: session.step,
-      tries: session.tries,
-      hasInput: !!userInput,
-    });
+    callSid: callSid || "(none)",
+    path: basePath,
+    phase: session.phase,
+    retries: session.retries || {},
+    hasInput: !!userInput,
+  });
 
-    if (session.step === "start") {
-      session.step = "reason";
-      session.tries = 0;
+    if (session.phase === "start") {
+      session.phase = "reason";
+      session.retries = {};
+      session.retries.reason = 0;
       saveSession(session);
 
       return sendTwiml(
@@ -66,12 +67,13 @@ function handleVoiceOptionE(req, res) {
       );
     }
 
-    if (session.step === "reason") {
+    if (session.phase === "reason") {
       if (!userInput) {
-        session.tries = (session.tries || 0) + 1;
+        session.retries = session.retries || {};
+        session.retries.reason = (session.retries.reason || 0) + 1;
         saveSession(session);
 
-        if (session.tries >= 3) {
+        if ((session.retries && session.retries.reason ? session.retries.reason : 0) >= 3) {
           if (callSid) clearSession(callSid);
           return sendTwiml(
             res,
