@@ -2955,16 +2955,9 @@ closeAll("Redirect to /unavailable failed");
   }
 
   function responseTextRequestsEnd(text) {
-    if (!text) return false;
-
-    const v = extractTokenLineValue(text, "CALLREADY_END");
-    if (v) console.log(nowIso(), "CALLREADY_END detected", { value: v });
-    if (v && String(v).toUpperCase().includes("END_CALL_NOW")) return true;
-
-    if (String(text).toUpperCase().includes(AI_END_CALL_TRIGGER)) return true;
-
+    // Option E does not allow AI-triggered call termination
     return false;
-    }
+  }
 
   function buildReturnCallerInstructions(ctx) {
     if (!ctx || !ctx.scenario_tag) return "";
