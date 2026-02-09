@@ -35,6 +35,23 @@ function logPhaseTransition(callSid, fromPhase, toPhase, note) {
   });
 }
 
+function isValidReasonInput(text) {
+  const t = String(text || "").trim().toLowerCase();
+
+  if (!t) return false;
+
+  // Very short responses are usually non-answers.
+  if (t.length < 3) return false;
+
+  // Common filler / non-answers.
+  const bad = ["uh", "um", "hmm", "mm", "no", "nope", "nah", "nothing", "idk", "i dont know", "i don't know"];
+  for (const b of bad) {
+    if (t === b) return false;
+  }
+
+  return true;
+}
+
 function sendTwiml(res, inner) {
   res.status(200);
   res.type("text/xml");
