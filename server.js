@@ -23,6 +23,46 @@ const TEST_MEDICAL_LINES = [
   "Perfect. You’re scheduled. Is there anything else I can help you with today?"
 ];
 
+function getTestMedicalPrompt(session, safeStep) {
+  const step = Number.isFinite(safeStep) ? safeStep : 0;
+
+  const slots = session && session.slots ? session.slots : {};
+  const status = slots && slots.patient_status ? String(slots.patient_status) : "";
+  const reason = slots && slots.appointment_reason ? String(slots.appointment_reason) : "";
+
+  if (step === 0) return "Thank you for calling Evergreen Family Clinic. How can I help you today?";
+  if (step === 1) return "Okay, are you a new patient or an existing patient?";
+
+  // Step 2 is slot-driven.
+  if (step === 2) {
+    if (status === "new") {
+      return "Before we do that, since you are a new patient, can I get your address for the intake form? You can use fake information for this practice session.";
+    }
+    return "What is the reason for the appointment?";
+  }
+
+  // Step 3 is only used for existing patients (new patients use step 3 to capture address first).
+  if (step === 3) return "Do you have a preferred provider, or is anyone okay?";
+
+  // Step 4 is slot-driven if we have a reason.
+  if (step === 4) {
+    if (reason) {
+      return "Thanks. Just to confirm, this is for " + reason + ". Do you have a preferred provider, or is anyone okay?";
+    }
+    return "Do you have a preferred provider, or is anyone okay?";
+  }
+
+  if (step === 5) return "What days of the week usually work best for you?";
+  if (step === 6) return "Morning or afternoon?";
+  if (step === 7) return "I have an opening on Tuesday at 10:30 a.m. Would that work?";
+  if (step === 8) return "Great. Can I have your full name, please?";
+  if (step === 9) return "And your date of birth?";
+  if (step === 10) return "Perfect. You’re scheduled. Is there anything else I can help you with today?";
+
+  // If step is out of range, return empty to avoid accidental speech.
+  return "";
+}
+
 // Option E: in-memory call session state store (server owns state, AI does not).
 // Keyed by CallSid. Safe for single-instance deployments.
 // If you run multiple instances later, we will move this to Postgres or Redis.
@@ -1882,18 +1922,15 @@ if (session && safeStep === 4 && speechResult) {
       return;
     }
 
-    // Say the receiver line for this step
-    // Say the receiver line for this step (with a simple slot-based branch)
-    if (safeStep === 2) {
-      const status = session && session.slots ? String(session.slots.patient_status || "") : "";
+        // Say exactly one deterministic receiver line for this step
+    const prompt = getTestMedicalPrompt(session, safeStep);
 
-      if (status === "new") {
-        vr.say("Before we do that, since you are a new patient, can I get your address for the intake form? You can use fake information for this practice session.");
-      } else {
-        vr.say("What is the reason for the appointment?");
-      }
-
-    console.log(nowIso(), "TEST_MEDICAL_SAY_LINE_SENT", { step: safeStep });
+    if (prompt) {
+      vr.say(prompt);
+      console.log(nowIso(), "TEST_MEDICAL_SAY_LINE_SENT", { step: safeStep, prompt: prompt });
+    } else {
+      console.log(nowIso(), "TEST_MEDICAL_NO_PROMPT_FOR_STEP", { step: safeStep });
+    }
 
     // Gather the caller's response (speech)
     // Update Option E phase based on step number.
