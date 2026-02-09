@@ -1753,6 +1753,12 @@ app.get("/subscribe/cancel", (req, res) => {
 
 // Option C test flow entrypoint (deterministic medical scheduling)
 app.post("/voice-test-medical", (req, res) => {
+    console.log(nowIso(), "VOICE_ENTRY_HIT", {
+    from: req.body && req.body.From ? String(req.body.From) : null,
+    callSid: req.body && req.body.CallSid ? String(req.body.CallSid) : null,
+    path: "/voice-test-medical"
+  });
+
   try {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
@@ -1956,6 +1962,12 @@ if (session && safeStep === 4 && speechResult) {
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
 
 app.post("/voice", async (req, res) => {
+    console.log(nowIso(), "VOICE_ENTRY_HIT", {
+    from: req.body && req.body.From ? String(req.body.From) : null,
+    callSid: req.body && req.body.CallSid ? String(req.body.CallSid) : null,
+    path: "/voice"
+  });
+
   // TEMP: Restrict CallReady access to a single allowed caller number
   const ALLOWED_CALLER = "+15419794582";
   const fromNumber = req.body && req.body.From ? String(req.body.From) : "";
