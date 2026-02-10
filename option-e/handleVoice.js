@@ -325,7 +325,7 @@ function handleVoiceOptionE(req, res) {
           logPhaseTransition(callSid, "start", "start", "start_got_invalid_input");
           return sendTwiml(
             res,
-            "<Say>I did not catch a clear reason. Try again.</Say>" +
+            "<Say>" + escapeXml(OPTION_E_QUESTIONS[0].invalidPrompt) + "</Say>" +
               "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>"
           );
         }
