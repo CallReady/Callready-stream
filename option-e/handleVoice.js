@@ -242,9 +242,6 @@ function handleGenericQuestionPhase(opts) {
   const transitionNoteOnAskNext = opts.transitionNoteOnAskNext; // string
   const transitionNoteOnSuccess = opts.transitionNoteOnSuccess; // string
 
-  if (typeof session.questionIndex !== "number") session.questionIndex = questionIndex;
-  if (session.questionIndex !== questionIndex) session.questionIndex = questionIndex;
-
   if (isDuplicateNoInputHit(session, phaseKey, !!userInput)) {
     console.log("OptionE duplicate no-input hit suppressed:", { callSid: callSid || "(none)", phase: phaseKey });
     saveSession(session);
@@ -282,7 +279,6 @@ function handleGenericQuestionPhase(opts) {
   }
 
   if (typeof nextQuestionIndex === "number") {
-    session.questionIndex = nextQuestionIndex;
     session.retries = session.retries || {};
     session.retries[nextPhase] = 0;
   }
@@ -369,7 +365,6 @@ function handleVoiceOptionE(req, res) {
 
     if (session.phase === "start") {
       session.phase = "reason";
-      session.questionIndex = 0;
       session.retries = {};
       session.retries.reason = 0;
       session.slots = session.slots || {};
