@@ -501,48 +501,27 @@ function handleVoiceOptionE(req, res) {
     }
 
     if (session.phase === "detail") {
-            if (typeof session.questionIndex !== "number") session.questionIndex = 1;
-      if (session.questionIndex !== 1) session.questionIndex = 1;
-            if (isDuplicateNoInputHit(session, "detail", !!userInput)) {
-        console.log("OptionE duplicate no-input hit suppressed:", { callSid: callSid || "(none)", phase: "detail" });
-        return sendTwiml(
-          res,
-          "<Say>" + escapeXml(OPTION_E_QUESTIONS[1].prompt) + "</Say>" +
-            "<Gather input=\"speech dtmf\" action=\"" +
-            escapeXml(actionUrl) +
-            "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
-            String(PHASES.detail.gather.timeoutSec) +
-            "\" speechTimeout=\"" +
-            String(PHASES.detail.gather.speechTimeoutSec) +
-            "\"></Gather>"
-        );
-      }
-
-      if (!userInput) {
-        logPhaseTransition(callSid, "detail", "detail", "silence_input");
-        return handleQuestionRetry(res, callSid, session, actionUrl, OPTION_E_QUESTIONS[1], "detail", PHASES.detail.gather, PHASES.detail.retryLimit);
-      }
-
-      if (!isValidAnswerForQuestion(currentQ, userInput)) {
-        logPhaseTransition(callSid, "detail", "detail", "invalid_detail_input");
-        return handleQuestionRetry(res, callSid, session, actionUrl, OPTION_E_QUESTIONS[1], "detail", PHASES.detail.gather, PHASES.detail.retryLimit);
-      }
-
-      session.slots = session.slots || {};
-      session.slots = session.slots || {};
-      if (currentQ && currentQ.key) {
-        session.slots[currentQ.key] = userInput;
-      }
-
-      session.phase = WRAPUP_PHASE;
-      logPhaseTransition(callSid, "detail", session.phase, "got_detail");
-      saveSession(session);
-
-      return sendTwiml(
+      return handleGenericQuestionPhase({
         res,
-        "<Say>Okay.</Say>" +
-          "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
-      );
+        callSid,
+        session,
+        actionUrl,
+
+        phaseKey: "detail",
+        questionIndex: 1,
+        q: OPTION_E_QUESTIONS[1],
+        gatherCfg: PHASES.detail.gather,
+        retryLimit: PHASES.detail.retryLimit,
+
+        userInput,
+
+        nextPhase: WRAPUP_PHASE,
+        nextQuestionIndex: null,
+        nextQuestion: null,
+
+        transitionNoteOnSuccess: "got_detail",
+        transitionNoteOnAskNext: null,
+      });
     }
 
     if (session.phase === WRAPUP_PHASE) {
