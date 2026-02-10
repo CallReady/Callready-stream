@@ -213,59 +213,6 @@ function isValidAnswerForQuestion(q, text) {
   return String(text || "").trim().length > 0;
 }
 
-function handleReasonRetry(res, callSid, session, actionUrl, limitNote) {
-  session.retries = session.retries || {};
-  session.retries.reason = (session.retries.reason || 0) + 1;
-  saveSession(session);
-
-    if ((session.retries && session.retries.reason ? session.retries.reason : 0) >= PHASES.reason.retryLimit) {
-    logCallEnd(callSid, session, "reason_retry_limit_reached");
-    if (callSid) clearSession(callSid);
-
-    return sendTwiml(
-      res,
-      "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
-        "<Hangup/>"
-    );
-
-  }
-
-
-  return sendTwiml(
-    res,
-    "<Say>" + escapeXml(OPTION_E_QUESTIONS[0].invalidPrompt) + "</Say>" +
-      "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>" +
-      "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
-  );
-
-}
-
-function handleDetailRetry(res, callSid, session, actionUrl, limitNote) {
-  session.retries = session.retries || {};
-  session.retries.detail = (session.retries.detail || 0) + 1;
-  saveSession(session);
-
-  if ((session.retries && session.retries.detail ? session.retries.detail : 0) >= PHASES.detail.retryLimit) {
-    logCallEnd(callSid, session, "detail_retry_limit_reached");
-    if (callSid) clearSession(callSid);
-
-    return sendTwiml(
-      res,
-      "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
-        "<Hangup/>"
-    );
-
-  }
-
-  return sendTwiml(
-    res,
-    "<Say>" + escapeXml(OPTION_E_QUESTIONS[1].invalidPrompt) + "</Say>" +
-      "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>" +
-      "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
-  );
-
-}
-
 function handleQuestionRetry(res, callSid, session, actionUrl, q, phaseKeyForRetry, gatherCfg, retryLimit) {
   session.retries = session.retries || {};
   session.retries[phaseKeyForRetry] = (session.retries[phaseKeyForRetry] || 0) + 1;
