@@ -389,50 +389,38 @@ function handleVoiceOptionE(req, res) {
       );
     }
 
-    if (session.phase === "reason") {
+    if (session.phase === "reason" || session.phase === "detail") {
+      const idx = session.phase === "detail" ? 1 : 0;
+      const q = OPTION_E_QUESTIONS[idx];
+
+      const phaseKey = q && q.key ? q.key : "reason";
+      const gatherCfg = PHASES[phaseKey] && PHASES[phaseKey].gather ? PHASES[phaseKey].gather : { timeoutSec: 3, speechTimeoutSec: 1 };
+      const retryLimit = PHASES[phaseKey] && typeof PHASES[phaseKey].retryLimit === "number" ? PHASES[phaseKey].retryLimit : 1;
+
+      const hasNext = idx + 1 < OPTION_E_QUESTIONS.length;
+      const nextPhase = hasNext ? "detail" : WRAPUP_PHASE;
+      const nextQuestionIndex = hasNext ? idx + 1 : null;
+      const nextQuestion = hasNext ? OPTION_E_QUESTIONS[idx + 1] : null;
+
       return handleGenericQuestionPhase({
         res,
         callSid,
         session,
         actionUrl,
 
-        phaseKey: "reason",
-        questionIndex: 0,
-        q: OPTION_E_QUESTIONS[0],
-        gatherCfg: PHASES.reason.gather,
-        retryLimit: PHASES.reason.retryLimit,
+        phaseKey,
+        questionIndex: idx,
+        q,
+        gatherCfg,
+        retryLimit,
 
         userInput,
 
-        nextPhase: "detail",
-        nextQuestionIndex: 1,
-        nextQuestion: OPTION_E_QUESTIONS[1],
+        nextPhase,
+        nextQuestionIndex,
+        nextQuestion,
 
-        transitionNoteOnSuccess: "answered_reason",
-        transitionNoteOnAskNext: null,
-      });
-    }
-
-    if (session.phase === "detail") {
-      return handleGenericQuestionPhase({
-        res,
-        callSid,
-        session,
-        actionUrl,
-
-        phaseKey: "detail",
-        questionIndex: 1,
-        q: OPTION_E_QUESTIONS[1],
-        gatherCfg: PHASES.detail.gather,
-        retryLimit: PHASES.detail.retryLimit,
-
-        userInput,
-
-        nextPhase: WRAPUP_PHASE,
-        nextQuestionIndex: null,
-        nextQuestion: null,
-
-        transitionNoteOnSuccess: "answered_detail",
+        transitionNoteOnSuccess: "answered_" + phaseKey,
         transitionNoteOnAskNext: null,
       });
     }
