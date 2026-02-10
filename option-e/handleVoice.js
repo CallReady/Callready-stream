@@ -38,14 +38,28 @@ function logPhaseTransition(callSid, fromPhase, toPhase, note) {
 function isValidReasonInput(text) {
   const t = String(text || "").trim().toLowerCase();
 
+  // Truly empty input
   if (!t) return false;
 
-  // Very short responses are usually non-answers.
-  if (t.length < 3) return false;
+  // Single character inputs are almost never intentional reasons
+  if (t.length < 2) return false;
 
-  // Common filler / non-answers.
-  const bad = ["uh", "um", "hmm", "mm", "no", "nope", "nah", "nothing", "idk", "i dont know", "i don't know"];
-  for (const b of bad) {
+  // Repeated filler sounds like "ummm", "uhhh", "mmmm"
+  if (/^(.)\1{2,}$/.test(t)) return false;
+
+  // Clear non-answers
+  const badExact = [
+    "uh",
+    "um",
+    "hmm",
+    "mm",
+    "idk",
+    "i dont know",
+    "i don't know",
+    "nothing",
+  ];
+
+  for (const b of badExact) {
     if (t === b) return false;
   }
 
