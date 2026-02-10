@@ -40,6 +40,23 @@ function logPhaseTransition(callSid, fromPhase, toPhase, note) {
   });
 }
 
+function isDuplicateNoInputHit(session, phase, hasInput) {
+  if (!session) return false;
+  if (hasInput) return false;
+
+  const now = Date.now();
+  session.lastHit = session.lastHit || {};
+  const last = session.lastHit[phase];
+
+  // Consider duplicate if we see the same phase again within 2 seconds with no input.
+  if (last && now - last < 2000) {
+    return true;
+  }
+
+  session.lastHit[phase] = now;
+  return false;
+}
+
 function isValidReasonInput(text) {
     const t = String(text || "")
     .toLowerCase()
@@ -51,7 +68,13 @@ function isValidReasonInput(text) {
   if (!t) return false;
 
   // Single character inputs are almost never intentional reasons
-  if (t.length < 2) return false;
+  // Very short inputs are usually not intentional,
+  // but allow a single digit (DTMF) as a valid short answer.
+  if (t.length < 2) {
+    if (/^[0-9]$/.test(t)) return true;
+    return false;
+  }
+
 
   // Repeated filler sounds like "ummm", "uhhh", "mmmm"
   if (/^(.)\1{2,}$/.test(t)) return false;
@@ -84,7 +107,13 @@ function isValidDetailInput(text) {
     .trim();
 
   if (!t) return false;
-  if (t.length < 2) return false;
+  // Very short inputs are usually not intentional,
+  // but allow a single digit (DTMF) as a valid short answer.
+  if (t.length < 2) {
+    if (/^[0-9]$/.test(t)) return true;
+    return false;
+  }
+
   if (/^(.)\1{2,}$/.test(t)) return false;
 
   const badExact = [
@@ -216,6 +245,7 @@ function handleVoiceOptionE(req, res) {
 
         session.phase = "detail";
         logPhaseTransition(callSid, "start", "detail", "start_got_reason");
+        session.retries.detail = 0;
         saveSession(session);
 
         return sendTwiml(
@@ -237,6 +267,21 @@ function handleVoiceOptionE(req, res) {
     }
 
     if (session.phase === "reason") {
+            if (isDuplicateNoInputHit(session, "reason", !!userInput)) {
+        console.log("OptionE duplicate no-input hit suppressed:", { callSid: callSid || "(none)", phase: "reason" });
+        return sendTwiml(
+          res,
+          "<Say>In one sentence, what are you calling about today?</Say>" +
+            "<Gather input=\"speech dtmf\" action=\"" +
+            escapeXml(actionUrl) +
+            "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
+            String(PHASES.reason.gather.timeoutSec) +
+            "\" speechTimeout=\"" +
+            String(PHASES.reason.gather.speechTimeoutSec) +
+            "\"></Gather>"
+        );
+      }
+
       if (!userInput) {
         logPhaseTransition(callSid, "reason", "reason", "silence_input");
         return handleReasonRetry(res, callSid, session, actionUrl, "silence_limit");
@@ -252,6 +297,7 @@ function handleVoiceOptionE(req, res) {
 
       session.phase = "detail";
       logPhaseTransition(callSid, "reason", "detail", "ask_detail");
+      session.retries.detail = 0;
       saveSession(session);
 
       return sendTwiml(
@@ -265,6 +311,21 @@ function handleVoiceOptionE(req, res) {
     }
 
     if (session.phase === "detail") {
+            if (isDuplicateNoInputHit(session, "detail", !!userInput)) {
+        console.log("OptionE duplicate no-input hit suppressed:", { callSid: callSid || "(none)", phase: "detail" });
+        return sendTwiml(
+          res,
+          "<Say>What is one important detail they might ask you for?</Say>" +
+            "<Gather input=\"speech dtmf\" action=\"" +
+            escapeXml(actionUrl) +
+            "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
+            String(PHASES.detail.gather.timeoutSec) +
+            "\" speechTimeout=\"" +
+            String(PHASES.detail.gather.speechTimeoutSec) +
+            "\"></Gather>"
+        );
+      }
+
       if (!userInput) {
         logPhaseTransition(callSid, "detail", "detail", "silence_input");
         return handleDetailRetry(res, callSid, session, actionUrl, "silence_limit");
