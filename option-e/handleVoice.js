@@ -1,3 +1,4 @@
+//OptionE normalize transition logging
 const { getOrCreateSession, saveSession, clearSession, getCallSid } = require("./sessionStore");
 const WRAPUP_PHASE = "wrapup";
 const OPTION_E_QUESTIONS = [
@@ -407,7 +408,7 @@ function handleVoiceOptionE(req, res) {
         nextQuestionIndex: 1,
         nextQuestion: OPTION_E_QUESTIONS[1],
 
-        transitionNoteOnSuccess: "ask_detail",
+        transitionNoteOnSuccess: "answered_reason",
         transitionNoteOnAskNext: null,
       });
     }
@@ -431,7 +432,7 @@ function handleVoiceOptionE(req, res) {
         nextQuestionIndex: null,
         nextQuestion: null,
 
-        transitionNoteOnSuccess: "got_detail",
+        transitionNoteOnSuccess: "answered_detail",
         transitionNoteOnAskNext: null,
       });
     }
