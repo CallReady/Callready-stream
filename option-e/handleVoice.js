@@ -77,9 +77,6 @@ function handleReasonRetry(res, callSid, session, actionUrl, limitNote) {
   saveSession(session);
 
   if ((session.retries && session.retries.reason ? session.retries.reason : 0) >= PHASES.reason.retryLimit) {
-    session.phase = PHASES.reason.nextOnSuccess;
-    logPhaseTransition(callSid, "reason", session.phase, limitNote);
-    saveSession(session);
 
     return sendTwiml(
       res,
