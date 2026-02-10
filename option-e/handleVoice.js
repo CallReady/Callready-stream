@@ -36,7 +36,11 @@ function logPhaseTransition(callSid, fromPhase, toPhase, note) {
 }
 
 function isValidReasonInput(text) {
-  const t = String(text || "").trim().toLowerCase();
+    const t = String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 
   // Truly empty input
   if (!t) return false;
@@ -57,6 +61,7 @@ function isValidReasonInput(text) {
     "i dont know",
     "i don't know",
     "nothing",
+    "umm",
   ];
 
   for (const b of badExact) {
