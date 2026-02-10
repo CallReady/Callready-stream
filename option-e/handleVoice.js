@@ -266,6 +266,29 @@ function handleDetailRetry(res, callSid, session, actionUrl, limitNote) {
 
 }
 
+function handleQuestionRetry(res, callSid, session, actionUrl, q, phaseKeyForRetry, gatherCfg, retryLimit) {
+  session.retries = session.retries || {};
+  session.retries[phaseKeyForRetry] = (session.retries[phaseKeyForRetry] || 0) + 1;
+  saveSession(session);
+
+  if ((session.retries && session.retries[phaseKeyForRetry] ? session.retries[phaseKeyForRetry] : 0) >= retryLimit) {
+    logCallEnd(callSid, session, phaseKeyForRetry + "_retry_limit_reached");
+    if (callSid) clearSession(callSid);
+
+    return sendTwiml(
+      res,
+      "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
+        "<Hangup/>"
+    );
+  }
+
+  return sendTwiml(
+    res,
+    "<Say>" + escapeXml(q && q.invalidPrompt ? q.invalidPrompt : "I did not catch that. Try again.") + "</Say>" +
+      "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(gatherCfg.timeoutSec) + "\" speechTimeout=\"" + String(gatherCfg.speechTimeoutSec) + "\"></Gather>" +
+      "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+  );
+}
 
 function sendTwiml(res, inner) {
   res.status(200);
@@ -384,12 +407,12 @@ function handleVoiceOptionE(req, res) {
 
       if (!userInput) {
         logPhaseTransition(callSid, "reason", "reason", "silence_input");
-        return handleReasonRetry(res, callSid, session, actionUrl, "silence_limit");
+        return handleQuestionRetry(res, callSid, session, actionUrl, OPTION_E_QUESTIONS[0], "reason", PHASES.reason.gather, PHASES.reason.retryLimit);
       }
 
       if (!isValidAnswerForQuestion(currentQ, userInput)) {
         logPhaseTransition(callSid, "reason", "reason", "invalid_reason_input");
-        return handleReasonRetry(res, callSid, session, actionUrl, "invalid_reason_limit");
+        return handleQuestionRetry(res, callSid, session, actionUrl, OPTION_E_QUESTIONS[0], "reason", PHASES.reason.gather, PHASES.reason.retryLimit);
       }
 
       session.slots = session.slots || {};
