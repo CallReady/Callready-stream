@@ -76,6 +76,37 @@ function isValidReasonInput(text) {
   return true;
 }
 
+function isValidDetailInput(text) {
+  const t = String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!t) return false;
+  if (t.length < 2) return false;
+  if (/^(.)\1{2,}$/.test(t)) return false;
+
+  const badExact = [
+    "uh",
+    "um",
+    "hmm",
+    "mm",
+    "idk",
+    "i dont know",
+    "i don't know",
+    "nothing",
+    "umm",
+  ];
+
+  for (const b of badExact) {
+    if (t === b) return false;
+  }
+
+  return true;
+}
+
+
 function handleReasonRetry(res, callSid, session, actionUrl, limitNote) {
   session.retries = session.retries || {};
   session.retries.reason = (session.retries.reason || 0) + 1;
@@ -239,6 +270,11 @@ function handleVoiceOptionE(req, res) {
         return handleDetailRetry(res, callSid, session, actionUrl, "silence_limit");
       }
 
+      if (!isValidDetailInput(userInput)) {
+        logPhaseTransition(callSid, "detail", "detail", "invalid_detail_input");
+        return handleDetailRetry(res, callSid, session, actionUrl, "invalid_detail_limit");
+      }
+
       session.slots = session.slots || {};
       session.slots.detail = userInput;
 
@@ -251,7 +287,6 @@ function handleVoiceOptionE(req, res) {
         "<Say>Okay.</Say>" +
           "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
-
     }
 
     if (session.phase === WRAPUP_PHASE) {
