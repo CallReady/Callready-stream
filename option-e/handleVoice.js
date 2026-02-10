@@ -337,7 +337,6 @@ function handleVoiceOptionE(req, res) {
   try {
     const callSid = getCallSid(req);
     const session = getOrCreateSession(req);
-    const currentQ = getCurrentQuestion(session);
 
     const basePath = req && req.path ? req.path : "/voice-test-medical";
     const baseUrl = getBaseUrl(req);
@@ -353,7 +352,7 @@ function handleVoiceOptionE(req, res) {
     phase: session.phase,
     retries: session.retries || {},
     hasInput: !!userInput,
-    question: currentQ ? currentQ.key : "(none)",
+    question: "(config-driven)",
   });
 
     if (session.phase === "start") {
