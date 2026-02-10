@@ -40,10 +40,27 @@ function logPhaseTransition(callSid, fromPhase, toPhase, note) {
   });
 }
 
+function isDuplicateNoInputHit(session, phase, hasInput) {
+  if (!session) return false;
+  if (hasInput) return false;
+
+  const now = Date.now();
+  session.lastHit = session.lastHit || {};
+  const last = session.lastHit[phase];
+
+  // Consider duplicate if we see the same phase again within 2 seconds with no input.
+  if (last && now - last < 2000) {
+    return true;
+  }
+
+  session.lastHit[phase] = now;
+  return false;
+}
+
 function isValidReasonInput(text) {
     const t = String(text || "")
     .toLowerCase()
-    .replace(/[^a-z\s]/g, "")
+    .replace(/[^a-z0-9\s]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -51,7 +68,13 @@ function isValidReasonInput(text) {
   if (!t) return false;
 
   // Single character inputs are almost never intentional reasons
-  if (t.length < 2) return false;
+  // Very short inputs are usually not intentional,
+  // but allow a single digit (DTMF) as a valid short answer.
+  if (t.length < 2) {
+    if (/^[0-9]$/.test(t)) return true;
+    return false;
+  }
+
 
   // Repeated filler sounds like "ummm", "uhhh", "mmmm"
   if (/^(.)\1{2,}$/.test(t)) return false;
@@ -79,12 +102,18 @@ function isValidReasonInput(text) {
 function isValidDetailInput(text) {
   const t = String(text || "")
     .toLowerCase()
-    .replace(/[^a-z\s]/g, "")
+    .replace(/[^a-z0-9\s]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 
   if (!t) return false;
-  if (t.length < 2) return false;
+  // Very short inputs are usually not intentional,
+  // but allow a single digit (DTMF) as a valid short answer.
+  if (t.length < 2) {
+    if (/^[0-9]$/.test(t)) return true;
+    return false;
+  }
+
   if (/^(.)\1{2,}$/.test(t)) return false;
 
   const badExact = [
@@ -116,6 +145,7 @@ function handleReasonRetry(res, callSid, session, actionUrl, limitNote) {
     logCallEnd(callSid, session, "reason_retry_limit_reached");
     if (callSid) clearSession(callSid);
 
+    logCallEnd(callSid, session, "reason_retry_limit_reached");
     return sendTwiml(
       res,
       "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
@@ -128,8 +158,10 @@ function handleReasonRetry(res, callSid, session, actionUrl, limitNote) {
   return sendTwiml(
     res,
     "<Say>I did not catch a clear reason. Try again.</Say>" +
-      "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>"
+      "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>" +
+      "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
   );
+
 }
 
 function handleDetailRetry(res, callSid, session, actionUrl, limitNote) {
@@ -141,6 +173,7 @@ function handleDetailRetry(res, callSid, session, actionUrl, limitNote) {
     logCallEnd(callSid, session, "detail_retry_limit_reached");
     if (callSid) clearSession(callSid);
 
+    logCallEnd(callSid, session, "detail_retry_limit_reached");
     return sendTwiml(
       res,
       "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
@@ -152,8 +185,10 @@ function handleDetailRetry(res, callSid, session, actionUrl, limitNote) {
   return sendTwiml(
     res,
     "<Say>I did not catch that. Please say the detail again.</Say>" +
-      "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>"
+      "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>" +
+      "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
   );
+
 }
 
 
@@ -166,6 +201,17 @@ function sendTwiml(res, inner) {
       inner +
       "</Response>"
   );
+}
+
+function logCallEnd(callSid, session, reason) {
+  console.log("OptionE call end:", {
+    callSid: callSid || "(none)",
+    phase: session && session.phase ? session.phase : "(none)",
+    retries: session && session.retries ? session.retries : {},
+    slots: session && session.slots ? session.slots : {},
+    reason: reason || "(unknown)",
+    at: new Date().toISOString(),
+  });
 }
 
 function getBaseUrl(req) {
@@ -220,6 +266,7 @@ function handleVoiceOptionE(req, res) {
 
         session.phase = "detail";
         logPhaseTransition(callSid, "start", "detail", "start_got_reason");
+        session.retries.detail = 0;
         saveSession(session);
 
         return sendTwiml(
@@ -241,6 +288,21 @@ function handleVoiceOptionE(req, res) {
     }
 
     if (session.phase === "reason") {
+            if (isDuplicateNoInputHit(session, "reason", !!userInput)) {
+        console.log("OptionE duplicate no-input hit suppressed:", { callSid: callSid || "(none)", phase: "reason" });
+        return sendTwiml(
+          res,
+          "<Say>In one sentence, what are you calling about today?</Say>" +
+            "<Gather input=\"speech dtmf\" action=\"" +
+            escapeXml(actionUrl) +
+            "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
+            String(PHASES.reason.gather.timeoutSec) +
+            "\" speechTimeout=\"" +
+            String(PHASES.reason.gather.speechTimeoutSec) +
+            "\"></Gather>"
+        );
+      }
+
       if (!userInput) {
         logPhaseTransition(callSid, "reason", "reason", "silence_input");
         return handleReasonRetry(res, callSid, session, actionUrl, "silence_limit");
@@ -256,6 +318,7 @@ function handleVoiceOptionE(req, res) {
 
       session.phase = "detail";
       logPhaseTransition(callSid, "reason", "detail", "ask_detail");
+      session.retries.detail = 0;
       saveSession(session);
 
       return sendTwiml(
@@ -269,6 +332,21 @@ function handleVoiceOptionE(req, res) {
     }
 
     if (session.phase === "detail") {
+            if (isDuplicateNoInputHit(session, "detail", !!userInput)) {
+        console.log("OptionE duplicate no-input hit suppressed:", { callSid: callSid || "(none)", phase: "detail" });
+        return sendTwiml(
+          res,
+          "<Say>What is one important detail they might ask you for?</Say>" +
+            "<Gather input=\"speech dtmf\" action=\"" +
+            escapeXml(actionUrl) +
+            "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
+            String(PHASES.detail.gather.timeoutSec) +
+            "\" speechTimeout=\"" +
+            String(PHASES.detail.gather.speechTimeoutSec) +
+            "\"></Gather>"
+        );
+      }
+
       if (!userInput) {
         logPhaseTransition(callSid, "detail", "detail", "silence_input");
         return handleDetailRetry(res, callSid, session, actionUrl, "silence_limit");
@@ -294,6 +372,7 @@ function handleVoiceOptionE(req, res) {
     }
 
     if (session.phase === WRAPUP_PHASE) {
+      logCallEnd(callSid, session, "normal_wrapup");
       if (callSid) clearSession(callSid);
 
       return sendTwiml(
@@ -303,14 +382,17 @@ function handleVoiceOptionE(req, res) {
       );
     }
 
-
+    logCallEnd(callSid, session, "unknown_phase_fallback");
     if (callSid) clearSession(callSid);
     return sendTwiml(res, "<Say>Option E reached an unknown step and will end now.</Say><Hangup/>");
+
   } catch (e) {
     const msg = e && e.message ? e.message : String(e);
     console.log("OptionE error:", msg);
+    logCallEnd("(unknown)", { phase: "error", retries: {}, slots: {} }, "exception_" + msg);
     return sendTwiml(res, "<Say>Sorry, an internal error occurred. Please try again.</Say><Hangup/>");
   }
+
 }
 
 module.exports = { handleVoiceOptionE };
