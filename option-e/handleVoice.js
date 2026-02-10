@@ -15,6 +15,25 @@ const OPTION_E_QUESTIONS = [
   },
 ];
 
+function buildAskQuestionTwiml(q, actionUrl, timeoutSec, speechTimeoutSec) {
+  if (!q) {
+    return "<Say>Sorry, something went wrong.</Say><Hangup/>";
+  }
+
+  return (
+    "<Say>" +
+    escapeXml(q.prompt) +
+    "</Say>" +
+    "<Gather input=\"speech dtmf\" action=\"" +
+    escapeXml(actionUrl) +
+    "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
+    String(timeoutSec) +
+    "\" speechTimeout=\"" +
+    String(speechTimeoutSec) +
+    "\"></Gather>"
+  );
+}
+
 const PHASES = {
   start: {
     nextOnEnter: "reason",
