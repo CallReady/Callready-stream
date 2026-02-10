@@ -457,12 +457,12 @@ function handleVoiceOptionE(req, res) {
 
       if (!userInput) {
         logPhaseTransition(callSid, "detail", "detail", "silence_input");
-        return handleDetailRetry(res, callSid, session, actionUrl, "silence_limit");
+        return handleQuestionRetry(res, callSid, session, actionUrl, OPTION_E_QUESTIONS[1], "detail", PHASES.detail.gather, PHASES.detail.retryLimit);
       }
 
       if (!isValidAnswerForQuestion(currentQ, userInput)) {
         logPhaseTransition(callSid, "detail", "detail", "invalid_detail_input");
-        return handleDetailRetry(res, callSid, session, actionUrl, "invalid_detail_limit");
+        return handleQuestionRetry(res, callSid, session, actionUrl, OPTION_E_QUESTIONS[1], "detail", PHASES.detail.gather, PHASES.detail.retryLimit);
       }
 
       session.slots = session.slots || {};
