@@ -345,11 +345,9 @@ function handleVoiceOptionE(req, res) {
           res,
           "<Say>Got it.</Say>" +
             "<Say>One more question.</Say>" +
-            "<Say>What is one important detail they might ask you for?</Say>" +
-            "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>"
+            buildAskQuestionTwiml(OPTION_E_QUESTIONS[1], actionUrl, PHASES.detail.gather.timeoutSec, PHASES.detail.gather.speechTimeoutSec)
         );
       }
-
 
       return sendTwiml(
         res,
@@ -400,8 +398,7 @@ function handleVoiceOptionE(req, res) {
         res,
         "<Say>Got it.</Say>" +
           "<Say>One more question.</Say>" +
-          "<Say>" + escapeXml(OPTION_E_QUESTIONS[1].prompt) + "</Say>" +
-          "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>"
+          buildAskQuestionTwiml(OPTION_E_QUESTIONS[1], actionUrl, PHASES.detail.gather.timeoutSec, PHASES.detail.gather.speechTimeoutSec)
       );
 
     }
