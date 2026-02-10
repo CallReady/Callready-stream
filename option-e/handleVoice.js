@@ -99,6 +99,29 @@ function handleReasonRetry(res, callSid, session, actionUrl, limitNote) {
   );
 }
 
+function handleDetailRetry(res, callSid, session, actionUrl, limitNote) {
+  session.retries = session.retries || {};
+  session.retries.detail = (session.retries.detail || 0) + 1;
+  saveSession(session);
+
+  if ((session.retries && session.retries.detail ? session.retries.detail : 0) >= PHASES.detail.retryLimit) {
+    if (callSid) clearSession(callSid);
+
+    return sendTwiml(
+      res,
+      "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
+        "<Hangup/>"
+    );
+  }
+
+  return sendTwiml(
+    res,
+    "<Say>I did not catch that. Please say the detail again.</Say>" +
+      "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>"
+  );
+}
+
+
 function sendTwiml(res, inner) {
   res.status(200);
   res.type("text/xml");
@@ -210,23 +233,17 @@ function handleVoiceOptionE(req, res) {
 
     }
 
-        if (session.phase === "detail") {
-                if (!userInput) {
+    if (session.phase === "detail") {
+      if (!userInput) {
         logPhaseTransition(callSid, "detail", "detail", "silence_input");
-        return sendTwiml(
-        res,
-        "<Say>I did not catch that. Please say the detail again.</Say>" +
-          "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>"
-      );
+        return handleDetailRetry(res, callSid, session, actionUrl, "silence_limit");
       }
 
-      if (userInput) {
-        session.slots = session.slots || {};
-        session.slots.detail = userInput;
-      }
+      session.slots = session.slots || {};
+      session.slots.detail = userInput;
 
       session.phase = WRAPUP_PHASE;
-      logPhaseTransition(callSid, "detail", session.phase, userInput ? "got_detail" : "no_detail");
+      logPhaseTransition(callSid, "detail", session.phase, "got_detail");
       saveSession(session);
 
       return sendTwiml(
@@ -234,6 +251,7 @@ function handleVoiceOptionE(req, res) {
         "<Say>Okay.</Say>" +
           "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
+
     }
 
     if (session.phase === WRAPUP_PHASE) {
