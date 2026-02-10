@@ -113,6 +113,7 @@ function handleReasonRetry(res, callSid, session, actionUrl, limitNote) {
   saveSession(session);
 
     if ((session.retries && session.retries.reason ? session.retries.reason : 0) >= PHASES.reason.retryLimit) {
+    logCallEnd(callSid, session, "reason_retry_limit_reached");
     if (callSid) clearSession(callSid);
 
     return sendTwiml(
@@ -120,6 +121,7 @@ function handleReasonRetry(res, callSid, session, actionUrl, limitNote) {
       "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
         "<Hangup/>"
     );
+
   }
 
 
@@ -136,6 +138,7 @@ function handleDetailRetry(res, callSid, session, actionUrl, limitNote) {
   saveSession(session);
 
   if ((session.retries && session.retries.detail ? session.retries.detail : 0) >= PHASES.detail.retryLimit) {
+    logCallEnd(callSid, session, "detail_retry_limit_reached");
     if (callSid) clearSession(callSid);
 
     return sendTwiml(
@@ -143,6 +146,7 @@ function handleDetailRetry(res, callSid, session, actionUrl, limitNote) {
       "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
         "<Hangup/>"
     );
+
   }
 
   return sendTwiml(
