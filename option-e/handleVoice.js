@@ -96,7 +96,6 @@ function handleReasonRetry(res, callSid, session, actionUrl, limitNote) {
     res,
     "<Say>I did not catch a clear reason. Try again.</Say>" +
       "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>" +
-      "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
   );
 }
 
