@@ -154,7 +154,6 @@ function handleVoiceOptionE(req, res) {
             res,
             "<Say>I did not catch a clear reason. Try again.</Say>" +
               "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>" +
-              "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
           );
         }
 
@@ -171,7 +170,6 @@ function handleVoiceOptionE(req, res) {
             "<Say>One more question.</Say>" +
             "<Say>What is one important detail they might ask you for?</Say>" +
             "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>" +
-            "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
         );
       }
 
@@ -181,7 +179,6 @@ function handleVoiceOptionE(req, res) {
         "<Say>Hi. This is CallReady practice mode.</Say>" +
           "<Say>In one sentence, what are you calling about today?</Say>" +
           "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.start.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.start.gather.speechTimeoutSec) + "\"></Gather>" +
-          "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
     }
 
@@ -209,7 +206,6 @@ function handleVoiceOptionE(req, res) {
           "<Say>One more question.</Say>" +
           "<Say>What is one important detail they might ask you for?</Say>" +
           "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>" +
-          "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
 
     }
