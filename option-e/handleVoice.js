@@ -169,10 +169,37 @@ function handleVoiceOptionE(req, res) {
       logPhaseTransition(callSid, "reason", session.phase, "got_input");
       saveSession(session);
 
+      session.slots = session.slots || {};
+      session.slots.reason = userInput;
+
+      session.phase = "detail";
+      logPhaseTransition(callSid, "reason", session.phase, "ask_detail");
+      saveSession(session);
+
       return sendTwiml(
         res,
-        "<Say>You said: " + escapeXml(userInput) + ".</Say>" +
-          "<Say>Okay. We will wrap up the practice call now.</Say>" +
+        "<Say>Got it.</Say>" +
+          "<Say>One more question.</Say>" +
+          "<Say>What is one important detail they might ask you for?</Say>" +
+          "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>" +
+          "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+      );
+
+    }
+
+        if (session.phase === "detail") {
+      if (userInput) {
+        session.slots = session.slots || {};
+        session.slots.detail = userInput;
+      }
+
+      session.phase = WRAPUP_PHASE;
+      logPhaseTransition(callSid, "detail", session.phase, userInput ? "got_detail" : "no_detail");
+      saveSession(session);
+
+      return sendTwiml(
+        res,
+        "<Say>Okay.</Say>" +
           "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
     }
