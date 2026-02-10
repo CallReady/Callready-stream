@@ -21,6 +21,25 @@ function getCurrentQuestion(session) {
   return q || null;
 }
 
+function buildAskQuestionTwiml(q, actionUrl, timeoutSec, speechTimeoutSec) {
+  if (!q) {
+    return "<Say>Sorry, something went wrong.</Say><Hangup/>";
+  }
+
+  return (
+    "<Say>" +
+    escapeXml(q.prompt) +
+    "</Say>" +
+    "<Gather input=\"speech dtmf\" action=\"" +
+    escapeXml(actionUrl) +
+    "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
+    String(timeoutSec) +
+    "\" speechTimeout=\"" +
+    String(speechTimeoutSec) +
+    "\"></Gather>"
+  );
+}
+
 const PHASES = {
   start: {
     nextOnEnter: "reason",
@@ -277,6 +296,7 @@ function handleVoiceOptionE(req, res) {
   try {
     const callSid = getCallSid(req);
     const session = getOrCreateSession(req);
+    const currentQ = getCurrentQuestion(session);
 
     const basePath = req && req.path ? req.path : "/voice-test-medical";
     const baseUrl = getBaseUrl(req);
@@ -292,8 +312,7 @@ function handleVoiceOptionE(req, res) {
     phase: session.phase,
     retries: session.retries || {},
     hasInput: !!userInput,
-    question: getCurrentQuestion(session) ? getCurrentQuestion(session).key : "(none)",
-
+    question: currentQ ? currentQ.key : "(none)",
   });
 
     if (session.phase === "start") {
@@ -335,9 +354,9 @@ function handleVoiceOptionE(req, res) {
       return sendTwiml(
         res,
         "<Say>Hi. This is CallReady practice mode.</Say>" +
-          "<Say>" + escapeXml(OPTION_E_QUESTIONS[0].prompt) + "</Say>" +
-          "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.start.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.start.gather.speechTimeoutSec) + "\"></Gather>"
+          buildAskQuestionTwiml(OPTION_E_QUESTIONS[0], actionUrl, PHASES.start.gather.timeoutSec, PHASES.start.gather.speechTimeoutSec)
       );
+
     }
 
     if (session.phase === "reason") {
