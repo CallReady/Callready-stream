@@ -73,6 +73,28 @@ function isDuplicateNoInputHit(session, phase, hasInput) {
   return false;
 }
 
+function stripFillers(text) {
+  let t = String(text || "").toLowerCase();
+
+  const fillers = [
+    "um",
+    "uh",
+    "umm",
+    "hmm",
+    "mm",
+    "i dont know",
+    "i don't know",
+    "idk",
+    "nothing",
+  ];
+
+  for (const f of fillers) {
+    t = t.replace(new RegExp("\\b" + f + "\\b", "g"), "");
+  }
+
+  return t.replace(/\s+/g, " ").trim();
+}
+
 function isValidReasonInput(text) {
     const t = String(text || "")
     .toLowerCase()
@@ -112,6 +134,9 @@ function isValidReasonInput(text) {
     if (t === b) return false;
   }
 
+    const stripped = stripFillers(t);
+  if (!stripped || stripped.length < 2) return false;
+
   return true;
 }
 
@@ -147,6 +172,8 @@ function isValidDetailInput(text) {
   for (const b of badExact) {
     if (t === b) return false;
   }
+  const stripped = stripFillers(t);
+  if (!stripped || stripped.length < 2) return false;
 
   return true;
 }
