@@ -205,14 +205,29 @@ function handleVoiceOptionE(req, res) {
       saveSession(session);
 
 
-      return sendTwiml(
-        res,
-        "<Say>Got it.</Say>" +
-          "<Say>One more question.</Say>" +
-          "<Say>What is one important detail they might ask you for?</Say>" +
-          "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>" +
-          "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
-      );
+        session.retries = session.retries || {};
+        session.retries.detail = (session.retries.detail || 0) + 1;
+        saveSession(session);
+
+        if (session.retries.detail >= PHASES.detail.retryLimit) {
+          session.phase = WRAPUP_PHASE;
+          logPhaseTransition(callSid, "detail", WRAPUP_PHASE, "detail_retry_limit");
+          saveSession(session);
+
+          return sendTwiml(
+            res,
+            "<Say>No worries. Let us wrap up for now.</Say>" +
+              "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+          );
+        }
+
+        return sendTwiml(
+          res,
+          "<Say>I did not catch that. Please say the detail again.</Say>" +
+            "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>" +
+            "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+        );
+
 
 
     }
