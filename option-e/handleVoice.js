@@ -1,5 +1,20 @@
 const { getOrCreateSession, saveSession, clearSession, getCallSid } = require("./sessionStore");
 const WRAPUP_PHASE = "wrapup";
+const OPTION_E_QUESTIONS = [
+  {
+    key: "reason",
+    prompt: "In one sentence, what are you calling about today?",
+    invalidPrompt: "I did not catch a clear reason. Try again.",
+    retryLimit: 3,
+  },
+  {
+    key: "detail",
+    prompt: "What is one important detail they might ask you for?",
+    invalidPrompt: "I did not catch that. Please say the detail again.",
+    retryLimit: 2,
+  },
+];
+
 const PHASES = {
   start: {
     nextOnEnter: "reason",
@@ -282,7 +297,7 @@ function handleVoiceOptionE(req, res) {
       return sendTwiml(
         res,
         "<Say>Hi. This is CallReady practice mode.</Say>" +
-          "<Say>In one sentence, what are you calling about today?</Say>" +
+          "<Say>" + escapeXml(OPTION_E_QUESTIONS[0].prompt) + "</Say>" +
           "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.start.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.start.gather.speechTimeoutSec) + "\"></Gather>"
       );
     }
@@ -325,7 +340,7 @@ function handleVoiceOptionE(req, res) {
         res,
         "<Say>Got it.</Say>" +
           "<Say>One more question.</Say>" +
-          "<Say>What is one important detail they might ask you for?</Say>" +
+          "<Say>" + escapeXml(OPTION_E_QUESTIONS[1].prompt) + "</Say>" +
           "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>"
       );
 
