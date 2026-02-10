@@ -266,6 +266,7 @@ function handleVoiceOptionE(req, res) {
       logPhaseTransition(callSid, "start", session.phase, "enter_reason");
       session.retries = {};
       session.retries.reason = 0;
+      session.questionIndex = 0;
       saveSession(session);
             if (userInput) {
         if (!isValidReasonInput(userInput)) {
@@ -282,6 +283,7 @@ function handleVoiceOptionE(req, res) {
 
         session.phase = "detail";
         logPhaseTransition(callSid, "start", "detail", "start_got_reason");
+        session.questionIndex = 1;
         session.retries.detail = 0;
         saveSession(session);
 
@@ -334,6 +336,7 @@ function handleVoiceOptionE(req, res) {
 
       session.phase = "detail";
       logPhaseTransition(callSid, "reason", "detail", "ask_detail");
+      session.questionIndex = 1;
       session.retries.detail = 0;
       saveSession(session);
 
