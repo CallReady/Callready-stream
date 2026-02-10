@@ -164,16 +164,13 @@ function handleVoiceOptionE(req, res) {
         return handleReasonRetry(res, callSid, session, actionUrl, "invalid_reason_limit");
       }
 
-      session.phase = PHASES.reason.nextOnSuccess;
-      logPhaseTransition(callSid, "reason", session.phase, "got_input");
-      saveSession(session);
-
       session.slots = session.slots || {};
       session.slots.reason = userInput;
 
       session.phase = "detail";
-      logPhaseTransition(callSid, "reason", session.phase, "ask_detail");
+      logPhaseTransition(callSid, "reason", "detail", "ask_detail");
       saveSession(session);
+
 
       return sendTwiml(
         res,
