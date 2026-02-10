@@ -477,53 +477,27 @@ function handleVoiceOptionE(req, res) {
     }
 
     if (session.phase === "reason") {
-            if (typeof session.questionIndex !== "number") session.questionIndex = 0;
-      if (session.questionIndex !== 0) session.questionIndex = 0;
-            if (isDuplicateNoInputHit(session, "reason", !!userInput)) {
-        console.log("OptionE duplicate no-input hit suppressed:", { callSid: callSid || "(none)", phase: "reason" });
-        return sendTwiml(
-          res,
-          "<Say>" + escapeXml(OPTION_E_QUESTIONS[0].prompt) + "</Say>" +
-            "<Gather input=\"speech dtmf\" action=\"" +
-            escapeXml(actionUrl) +
-            "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
-            String(PHASES.reason.gather.timeoutSec) +
-            "\" speechTimeout=\"" +
-            String(PHASES.reason.gather.speechTimeoutSec) +
-            "\"></Gather>"
-        );
-      }
-
-      if (!userInput) {
-        logPhaseTransition(callSid, "reason", "reason", "silence_input");
-        return handleQuestionRetry(res, callSid, session, actionUrl, OPTION_E_QUESTIONS[0], "reason", PHASES.reason.gather, PHASES.reason.retryLimit);
-      }
-
-      if (!isValidAnswerForQuestion(currentQ, userInput)) {
-        logPhaseTransition(callSid, "reason", "reason", "invalid_reason_input");
-        return handleQuestionRetry(res, callSid, session, actionUrl, OPTION_E_QUESTIONS[0], "reason", PHASES.reason.gather, PHASES.reason.retryLimit);
-      }
-
-      session.slots = session.slots || {};
-      session.slots = session.slots || {};
-      if (currentQ && currentQ.key) {
-        session.slots[currentQ.key] = userInput;
-      }
-
-
-      session.phase = "detail";
-      logPhaseTransition(callSid, "reason", "detail", "ask_detail");
-      session.questionIndex = 1;
-      session.retries.detail = 0;
-      saveSession(session);
-
-      return sendTwiml(
+      return handleGenericQuestionPhase({
         res,
-        "<Say>Got it.</Say>" +
-          "<Say>One more question.</Say>" +
-          buildAskQuestionTwiml(OPTION_E_QUESTIONS[1], actionUrl, PHASES.detail.gather.timeoutSec, PHASES.detail.gather.speechTimeoutSec)
-      );
+        callSid,
+        session,
+        actionUrl,
 
+        phaseKey: "reason",
+        questionIndex: 0,
+        q: OPTION_E_QUESTIONS[0],
+        gatherCfg: PHASES.reason.gather,
+        retryLimit: PHASES.reason.retryLimit,
+
+        userInput,
+
+        nextPhase: "detail",
+        nextQuestionIndex: 1,
+        nextQuestion: OPTION_E_QUESTIONS[1],
+
+        transitionNoteOnSuccess: "ask_detail",
+        transitionNoteOnAskNext: null,
+      });
     }
 
     if (session.phase === "detail") {
