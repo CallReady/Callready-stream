@@ -15,20 +15,6 @@ const OPTION_E_QUESTIONS = [
   },
 ];
 
-  return (
-    "<Say>" +
-    escapeXml(q.prompt) +
-    "</Say>" +
-    "<Gather input=\"speech dtmf\" action=\"" +
-    escapeXml(actionUrl) +
-    "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
-    String(timeoutSec) +
-    "\" speechTimeout=\"" +
-    String(speechTimeoutSec) +
-    "\"></Gather>"
-  );
-}
-
 const PHASES = {
   start: {
     nextOnEnter: "reason",
