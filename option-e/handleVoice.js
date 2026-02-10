@@ -203,6 +203,15 @@ function isValidDetailInput(text) {
   return true;
 }
 
+function isValidAnswerForQuestion(q, text) {
+  if (!q || !q.key) return false;
+
+  if (q.key === "reason") return isValidReasonInput(text);
+  if (q.key === "detail") return isValidDetailInput(text);
+
+  // Default to basic validity
+  return String(text || "").trim().length > 0;
+}
 
 function handleReasonRetry(res, callSid, session, actionUrl, limitNote) {
   session.retries = session.retries || {};
@@ -378,7 +387,7 @@ function handleVoiceOptionE(req, res) {
         return handleReasonRetry(res, callSid, session, actionUrl, "silence_limit");
       }
 
-      if (!isValidReasonInput(userInput)) {
+      if (!isValidAnswerForQuestion(currentQ, userInput)) {
         logPhaseTransition(callSid, "reason", "reason", "invalid_reason_input");
         return handleReasonRetry(res, callSid, session, actionUrl, "invalid_reason_limit");
       }
