@@ -35,19 +35,11 @@ function buildAskQuestionTwiml(q, actionUrl, timeoutSec, speechTimeoutSec) {
 }
 
 const PHASES = {
-  start: {
-    nextOnEnter: "reason",
-    gather: { timeoutSec: 3, speechTimeoutSec: 1 },
-    retryLimit: 0,
-  },
   reason: {
-    nextOnSuccess: "detail",
     gather: { timeoutSec: 3, speechTimeoutSec: 1 },
     retryLimit: OPTION_E_QUESTIONS[0].retryLimit,
-
   },
-    detail: {
-    nextOnSuccess: "wrapup",
+  detail: {
     gather: { timeoutSec: 3, speechTimeoutSec: 1 },
     retryLimit: OPTION_E_QUESTIONS[1].retryLimit,
   },
