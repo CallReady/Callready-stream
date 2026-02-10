@@ -384,7 +384,11 @@ function handleVoiceOptionE(req, res) {
       }
 
       session.slots = session.slots || {};
-      session.slots.reason = userInput;
+      session.slots = session.slots || {};
+      if (currentQ && currentQ.key) {
+        session.slots[currentQ.key] = userInput;
+      }
+
 
       session.phase = "detail";
       logPhaseTransition(callSid, "reason", "detail", "ask_detail");
@@ -430,7 +434,10 @@ function handleVoiceOptionE(req, res) {
       }
 
       session.slots = session.slots || {};
-      session.slots.detail = userInput;
+      session.slots = session.slots || {};
+      if (currentQ && currentQ.key) {
+        session.slots[currentQ.key] = userInput;
+      }
 
       session.phase = WRAPUP_PHASE;
       logPhaseTransition(callSid, "detail", session.phase, "got_detail");
