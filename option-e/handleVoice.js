@@ -155,8 +155,10 @@ function handleReasonRetry(res, callSid, session, actionUrl, limitNote) {
   return sendTwiml(
     res,
     "<Say>I did not catch a clear reason. Try again.</Say>" +
-      "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>"
+      "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>" +
+      "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
   );
+
 }
 
 function handleDetailRetry(res, callSid, session, actionUrl, limitNote) {
@@ -177,8 +179,10 @@ function handleDetailRetry(res, callSid, session, actionUrl, limitNote) {
   return sendTwiml(
     res,
     "<Say>I did not catch that. Please say the detail again.</Say>" +
-      "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>"
+      "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>" +
+      "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
   );
+
 }
 
 
