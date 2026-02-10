@@ -437,7 +437,7 @@ function handleVoiceOptionE(req, res) {
         return handleDetailRetry(res, callSid, session, actionUrl, "silence_limit");
       }
 
-      if (!isValidDetailInput(userInput)) {
+      if (!isValidAnswerForQuestion(currentQ, userInput)) {
         logPhaseTransition(callSid, "detail", "detail", "invalid_detail_input");
         return handleDetailRetry(res, callSid, session, actionUrl, "invalid_detail_limit");
       }
