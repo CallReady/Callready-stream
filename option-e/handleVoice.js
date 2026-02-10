@@ -15,17 +15,6 @@ const OPTION_E_QUESTIONS = [
   },
 ];
 
-function getCurrentQuestion(session) {
-  const idx = session && typeof session.questionIndex === "number" ? session.questionIndex : 0;
-  const q = OPTION_E_QUESTIONS[idx];
-  return q || null;
-}
-
-function buildAskQuestionTwiml(q, actionUrl, timeoutSec, speechTimeoutSec) {
-  if (!q) {
-    return "<Say>Sorry, something went wrong.</Say><Hangup/>";
-  }
-
   return (
     "<Say>" +
     escapeXml(q.prompt) +
