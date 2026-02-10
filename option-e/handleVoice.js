@@ -11,6 +11,11 @@ const PHASES = {
     gather: { timeoutSec: 3, speechTimeoutSec: 1 },
     retryLimit: 3,
   },
+    detail: {
+    nextOnSuccess: "wrapup",
+    gather: { timeoutSec: 3, speechTimeoutSec: 1 },
+    retryLimit: 2,
+  },
   wrapup: {
     retryLimit: 0,
   },
@@ -177,13 +182,24 @@ function handleVoiceOptionE(req, res) {
         "<Say>Got it.</Say>" +
           "<Say>One more question.</Say>" +
           "<Say>What is one important detail they might ask you for?</Say>" +
-          "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>" +
+          "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>" +
           "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
+
 
     }
 
         if (session.phase === "detail") {
+                if (!userInput) {
+        logPhaseTransition(callSid, "detail", "detail", "silence_input");
+        return sendTwiml(
+          res,
+          "<Say>I did not catch that. Please say the detail again.</Say>" +
+            "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" timeout=\"" + String(PHASES.detail.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.detail.gather.speechTimeoutSec) + "\"></Gather>" +
+            "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+        );
+      }
+
       if (userInput) {
         session.slots = session.slots || {};
         session.slots.detail = userInput;
