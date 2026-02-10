@@ -144,11 +144,13 @@ function handleReasonRetry(res, callSid, session, actionUrl, limitNote) {
     if ((session.retries && session.retries.reason ? session.retries.reason : 0) >= PHASES.reason.retryLimit) {
     if (callSid) clearSession(callSid);
 
+    logCallEnd(callSid, session, "reason_retry_limit_reached");
     return sendTwiml(
       res,
       "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
         "<Hangup/>"
     );
+
   }
 
 
@@ -169,11 +171,13 @@ function handleDetailRetry(res, callSid, session, actionUrl, limitNote) {
   if ((session.retries && session.retries.detail ? session.retries.detail : 0) >= PHASES.detail.retryLimit) {
     if (callSid) clearSession(callSid);
 
+    logCallEnd(callSid, session, "detail_retry_limit_reached");
     return sendTwiml(
       res,
       "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
         "<Hangup/>"
     );
+
   }
 
   return sendTwiml(
@@ -195,6 +199,17 @@ function sendTwiml(res, inner) {
       inner +
       "</Response>"
   );
+}
+
+function logCallEnd(callSid, session, reason) {
+  console.log("OptionE call end:", {
+    callSid: callSid || "(none)",
+    phase: session && session.phase ? session.phase : "(none)",
+    retries: session && session.retries ? session.retries : {},
+    slots: session && session.slots ? session.slots : {},
+    reason: reason || "(unknown)",
+    at: new Date().toISOString(),
+  });
 }
 
 function getBaseUrl(req) {
@@ -355,6 +370,7 @@ function handleVoiceOptionE(req, res) {
     }
 
     if (session.phase === WRAPUP_PHASE) {
+      logCallEnd(callSid, session, "normal_wrapup");
       if (callSid) clearSession(callSid);
 
       return sendTwiml(
@@ -370,8 +386,10 @@ function handleVoiceOptionE(req, res) {
   } catch (e) {
     const msg = e && e.message ? e.message : String(e);
     console.log("OptionE error:", msg);
+    logCallEnd("(unknown)", { phase: "error", retries: {}, slots: {} }, "exception_" + msg);
     return sendTwiml(res, "<Say>Sorry, an internal error occurred. Please try again.</Say><Hangup/>");
   }
+
 }
 
 module.exports = { handleVoiceOptionE };
