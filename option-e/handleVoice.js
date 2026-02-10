@@ -76,14 +76,16 @@ function handleReasonRetry(res, callSid, session, actionUrl, limitNote) {
   session.retries.reason = (session.retries.reason || 0) + 1;
   saveSession(session);
 
-  if ((session.retries && session.retries.reason ? session.retries.reason : 0) >= PHASES.reason.retryLimit) {
+    if ((session.retries && session.retries.reason ? session.retries.reason : 0) >= PHASES.reason.retryLimit) {
+    if (callSid) clearSession(callSid);
 
     return sendTwiml(
       res,
       "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
-        "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+        "<Hangup/>"
     );
   }
+
 
   return sendTwiml(
     res,
