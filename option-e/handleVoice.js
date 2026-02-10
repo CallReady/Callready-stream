@@ -375,45 +375,25 @@ function handleVoiceOptionE(req, res) {
   });
 
     if (session.phase === "start") {
-      session.phase = PHASES.start.nextOnEnter;
-      logPhaseTransition(callSid, "start", session.phase, "enter_reason");
+      session.phase = "reason";
+      session.questionIndex = 0;
       session.retries = {};
       session.retries.reason = 0;
-      session.questionIndex = 0;
+      session.slots = session.slots || {};
+
+      logPhaseTransition(callSid, "start", "reason", "enter_reason");
       saveSession(session);
-            if (userInput) {
-        if (!isValidReasonInput(userInput)) {
-          logPhaseTransition(callSid, "start", "start", "start_got_invalid_input");
-          return sendTwiml(
-            res,
-            "<Say>" + escapeXml(OPTION_E_QUESTIONS[0].invalidPrompt) + "</Say>" +
-              "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(PHASES.reason.gather.timeoutSec) + "\" speechTimeout=\"" + String(PHASES.reason.gather.speechTimeoutSec) + "\"></Gather>"
-          );
-        }
-
-        session.slots = session.slots || {};
-        session.slots.reason = userInput;
-
-        session.phase = "detail";
-        logPhaseTransition(callSid, "start", "detail", "start_got_reason");
-        session.questionIndex = 1;
-        session.retries.detail = 0;
-        saveSession(session);
-
-        return sendTwiml(
-          res,
-          "<Say>Got it.</Say>" +
-            "<Say>One more question.</Say>" +
-            buildAskQuestionTwiml(OPTION_E_QUESTIONS[1], actionUrl, PHASES.detail.gather.timeoutSec, PHASES.detail.gather.speechTimeoutSec)
-        );
-      }
 
       return sendTwiml(
         res,
         "<Say>Hi. This is CallReady practice mode.</Say>" +
-          buildAskQuestionTwiml(OPTION_E_QUESTIONS[0], actionUrl, PHASES.start.gather.timeoutSec, PHASES.start.gather.speechTimeoutSec)
+          buildAskQuestionTwiml(
+            OPTION_E_QUESTIONS[0],
+            actionUrl,
+            PHASES.reason.gather.timeoutSec,
+            PHASES.reason.gather.speechTimeoutSec
+          )
       );
-
     }
 
     if (session.phase === "reason") {
