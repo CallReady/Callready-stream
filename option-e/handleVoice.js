@@ -394,7 +394,6 @@ function handleVoiceOptionE(req, res) {
 
       const hasNext = idx + 1 < OPTION_E_QUESTIONS.length;
       const nextPhase = hasNext ? "detail" : WRAPUP_PHASE;
-      const nextQuestionIndex = hasNext ? idx + 1 : null;
       const nextQuestion = hasNext ? OPTION_E_QUESTIONS[idx + 1] : null;
 
       return handleGenericQuestionPhase({
@@ -404,7 +403,6 @@ function handleVoiceOptionE(req, res) {
         actionUrl,
 
         phaseKey,
-        questionIndex: idx,
         q,
         gatherCfg,
         retryLimit,
@@ -412,7 +410,6 @@ function handleVoiceOptionE(req, res) {
         userInput,
 
         nextPhase,
-        nextQuestionIndex,
         nextQuestion,
 
         transitionNoteOnSuccess: "answered_" + phaseKey,
