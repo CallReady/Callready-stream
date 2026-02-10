@@ -7,7 +7,7 @@ const PHASES = {
     retryLimit: 0,
   },
   reason: {
-    nextOnSuccess: "wrapup",
+    nextOnSuccess: "detail",
     gather: { timeoutSec: 3, speechTimeoutSec: 1 },
     retryLimit: 3,
   },
