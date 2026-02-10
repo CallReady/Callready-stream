@@ -213,7 +213,6 @@ function handleReasonRetry(res, callSid, session, actionUrl, limitNote) {
     logCallEnd(callSid, session, "reason_retry_limit_reached");
     if (callSid) clearSession(callSid);
 
-    logCallEnd(callSid, session, "reason_retry_limit_reached");
     return sendTwiml(
       res,
       "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
@@ -241,7 +240,6 @@ function handleDetailRetry(res, callSid, session, actionUrl, limitNote) {
     logCallEnd(callSid, session, "detail_retry_limit_reached");
     if (callSid) clearSession(callSid);
 
-    logCallEnd(callSid, session, "detail_retry_limit_reached");
     return sendTwiml(
       res,
       "<Say>No worries. Let us stop here for now, and you can try again anytime.</Say>" +
