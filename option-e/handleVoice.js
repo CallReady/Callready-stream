@@ -43,7 +43,7 @@ function logPhaseTransition(callSid, fromPhase, toPhase, note) {
 function isValidReasonInput(text) {
     const t = String(text || "")
     .toLowerCase()
-    .replace(/[^a-z\s]/g, "")
+    .replace(/[^a-z0-9\s]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -79,7 +79,7 @@ function isValidReasonInput(text) {
 function isValidDetailInput(text) {
   const t = String(text || "")
     .toLowerCase()
-    .replace(/[^a-z\s]/g, "")
+    .replace(/[^a-z0-9\s]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 
