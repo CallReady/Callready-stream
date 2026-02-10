@@ -290,6 +290,95 @@ function handleQuestionRetry(res, callSid, session, actionUrl, q, phaseKeyForRet
   );
 }
 
+function handleGenericQuestionPhase(opts) {
+  const res = opts.res;
+  const callSid = opts.callSid;
+  const session = opts.session;
+  const actionUrl = opts.actionUrl;
+
+  const phaseKey = opts.phaseKey; // "reason" or "detail"
+  const questionIndex = opts.questionIndex; // 0 or 1
+  const q = opts.q; // question object
+  const gatherCfg = opts.gatherCfg; // { timeoutSec, speechTimeoutSec }
+  const retryLimit = opts.retryLimit; // number
+  const userInput = opts.userInput; // string
+  const nextPhase = opts.nextPhase; // string, e.g. "detail" or "wrapup"
+  const nextQuestionIndex = opts.nextQuestionIndex; // number or null
+  const nextQuestion = opts.nextQuestion; // question object or null
+  const transitionNoteOnAskNext = opts.transitionNoteOnAskNext; // string
+  const transitionNoteOnSuccess = opts.transitionNoteOnSuccess; // string
+
+  if (typeof session.questionIndex !== "number") session.questionIndex = questionIndex;
+  if (session.questionIndex !== questionIndex) session.questionIndex = questionIndex;
+
+  if (isDuplicateNoInputHit(session, phaseKey, !!userInput)) {
+    console.log("OptionE duplicate no-input hit suppressed:", { callSid: callSid || "(none)", phase: phaseKey });
+    saveSession(session);
+    return sendTwiml(
+      res,
+      "<Say>" + escapeXml(q.prompt) + "</Say>" +
+        "<Gather input=\"speech dtmf\" action=\"" +
+        escapeXml(actionUrl) +
+        "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
+        String(gatherCfg.timeoutSec) +
+        "\" speechTimeout=\"" +
+        String(gatherCfg.speechTimeoutSec) +
+        "\"></Gather>"
+    );
+  }
+
+  if (!userInput) {
+    logPhaseTransition(callSid, phaseKey, phaseKey, "silence_input");
+    return handleQuestionRetry(res, callSid, session, actionUrl, q, phaseKey, gatherCfg, retryLimit);
+  }
+
+  if (!isValidAnswerForQuestion(q, userInput)) {
+    logPhaseTransition(callSid, phaseKey, phaseKey, "invalid_input");
+    return handleQuestionRetry(res, callSid, session, actionUrl, q, phaseKey, gatherCfg, retryLimit);
+  }
+
+  session.slots = session.slots || {};
+  session.slots[q.key] = userInput;
+
+  session.phase = nextPhase;
+  if (transitionNoteOnSuccess) {
+    logPhaseTransition(callSid, phaseKey, nextPhase, transitionNoteOnSuccess);
+  } else {
+    logPhaseTransition(callSid, phaseKey, nextPhase, "success");
+  }
+
+  if (typeof nextQuestionIndex === "number") {
+    session.questionIndex = nextQuestionIndex;
+    session.retries = session.retries || {};
+    session.retries[nextPhase] = 0;
+  }
+
+  saveSession(session);
+
+  if (nextPhase === WRAPUP_PHASE) {
+    return sendTwiml(
+      res,
+      "<Say>Okay.</Say>" +
+        "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+    );
+  }
+
+  if (nextQuestion) {
+    if (transitionNoteOnAskNext) {
+      logPhaseTransition(callSid, nextPhase, nextPhase, transitionNoteOnAskNext);
+    }
+
+    return sendTwiml(
+      res,
+      "<Say>Got it.</Say>" +
+        "<Say>One more question.</Say>" +
+        buildAskQuestionTwiml(nextQuestion, actionUrl, gatherCfg.timeoutSec, gatherCfg.speechTimeoutSec)
+    );
+  }
+
+  return sendTwiml(res, "<Say>Sorry, something went wrong.</Say><Hangup/>");
+}
+
 function sendTwiml(res, inner) {
   res.status(200);
   res.type("text/xml");
