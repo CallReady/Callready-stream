@@ -15,6 +15,12 @@ const OPTION_E_QUESTIONS = [
   },
 ];
 
+function getCurrentQuestion(session) {
+  const idx = session && typeof session.questionIndex === "number" ? session.questionIndex : 0;
+  const q = OPTION_E_QUESTIONS[idx];
+  return q || null;
+}
+
 const PHASES = {
   start: {
     nextOnEnter: "reason",
@@ -286,6 +292,8 @@ function handleVoiceOptionE(req, res) {
     phase: session.phase,
     retries: session.retries || {},
     hasInput: !!userInput,
+    question: getCurrentQuestion(session) ? getCurrentQuestion(session).key : "(none)",
+
   });
 
     if (session.phase === "start") {
@@ -333,11 +341,13 @@ function handleVoiceOptionE(req, res) {
     }
 
     if (session.phase === "reason") {
+            if (typeof session.questionIndex !== "number") session.questionIndex = 0;
+      if (session.questionIndex !== 0) session.questionIndex = 0;
             if (isDuplicateNoInputHit(session, "reason", !!userInput)) {
         console.log("OptionE duplicate no-input hit suppressed:", { callSid: callSid || "(none)", phase: "reason" });
         return sendTwiml(
           res,
-          "<Say>In one sentence, what are you calling about today?</Say>" +
+          "<Say>" + escapeXml(OPTION_E_QUESTIONS[0].prompt) + "</Say>" +
             "<Gather input=\"speech dtmf\" action=\"" +
             escapeXml(actionUrl) +
             "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
@@ -378,11 +388,13 @@ function handleVoiceOptionE(req, res) {
     }
 
     if (session.phase === "detail") {
+            if (typeof session.questionIndex !== "number") session.questionIndex = 1;
+      if (session.questionIndex !== 1) session.questionIndex = 1;
             if (isDuplicateNoInputHit(session, "detail", !!userInput)) {
         console.log("OptionE duplicate no-input hit suppressed:", { callSid: callSid || "(none)", phase: "detail" });
         return sendTwiml(
           res,
-          "<Say>What is one important detail they might ask you for?</Say>" +
+          "<Say>" + escapeXml(OPTION_E_QUESTIONS[1].prompt) + "</Say>" +
             "<Gather input=\"speech dtmf\" action=\"" +
             escapeXml(actionUrl) +
             "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
