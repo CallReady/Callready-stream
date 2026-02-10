@@ -380,9 +380,10 @@ function handleVoiceOptionE(req, res) {
       );
     }
 
-
+    logCallEnd(callSid, session, "unknown_phase_fallback");
     if (callSid) clearSession(callSid);
     return sendTwiml(res, "<Say>Option E reached an unknown step and will end now.</Say><Hangup/>");
+
   } catch (e) {
     const msg = e && e.message ? e.message : String(e);
     console.log("OptionE error:", msg);
