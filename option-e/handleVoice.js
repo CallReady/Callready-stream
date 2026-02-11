@@ -35,19 +35,15 @@ function buildAskQuestionTwiml(q, actionUrl, timeoutSec, speechTimeoutSec) {
   );
 }
 
-const PHASES = {
-  reason: {
-    gather: { timeoutSec: 3, speechTimeoutSec: 1 },
-    retryLimit: OPTION_E_QUESTIONS[0].retryLimit,
-  },
-  detail: {
-    gather: { timeoutSec: 3, speechTimeoutSec: 1 },
-    retryLimit: OPTION_E_QUESTIONS[1].retryLimit,
-  },
-  wrapup: {
-    retryLimit: 0,
-  },
-};
+const PHASES = OPTION_E_QUESTIONS.reduce((acc, q) => {
+  if (q && q.key) {
+    acc[q.key] = {
+      gather: { timeoutSec: 3, speechTimeoutSec: 1 },
+      retryLimit: typeof q.retryLimit === "number" ? q.retryLimit : 1,
+    };
+  }
+  return acc;
+}, {});
 
 function escapeXml(s) {
   return String(s || "")
