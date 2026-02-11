@@ -574,6 +574,11 @@ function handleVoiceOptionE(req, res) {
         // Valid answer, store slot and advance
         session.slots = session.slots || {};
         session.slots[key] = userInput;
+        
+        // Reset help escalation for this question once answered
+        if (session.helpCounts && session.helpCounts[key]) {
+          session.helpCounts[key] = 0;
+        }
 
         logPhaseTransition(callSid, "question", "question", "answered_" + key);
         session.stepIndex = idx + 1;
