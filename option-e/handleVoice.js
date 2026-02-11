@@ -515,12 +515,33 @@ function handleVoiceOptionE(req, res) {
         const isCoachingHelp = helpPhrases.some((p) => cleanedForHelp.includes(p));
 
         if (isCoachingHelp) {
+          // Track help requests per question key so we can escalate coaching
+          session.helpCounts = session.helpCounts || {};
+          session.helpCounts[key] = (session.helpCounts[key] || 0) + 1;
+          saveSession(session);
+
+          const helpCount = session.helpCounts[key];
+
           const coachingByKey = {
-            reason: "Try a simple one sentence reason, for example, I need to schedule an appointment, or I have a question about a symptom.",
-            detail: "Name one detail they might ask for, for example, your date of birth, your insurance, or your address.",
+            reason: {
+              first:
+                "Try a simple one sentence reason, for example, I need to schedule an appointment, or I have a question about a symptom.",
+              second:
+                "Try starting with: I’m calling because I need to. Then add one short detail, for example, I’m calling because I need to schedule a checkup.",
+            },
+            detail: {
+              first:
+                "Name one detail they might ask for, for example, your date of birth, your insurance, or your address.",
+              second:
+                "If you are stuck, pick one of these and say it out loud: My date of birth is. My insurance is. My address is. Choose one and fill in the blank.",
+            },
           };
 
-          const coaching = coachingByKey[key] || "Try a short, specific answer. You can keep it simple.";
+          const perKey = coachingByKey[key] || {};
+          const coaching =
+            helpCount >= 2
+              ? (perKey.second || "Let us make it easier. Use a starter phrase, then fill in one blank.")
+              : (perKey.first || "Try a short, specific answer. You can keep it simple.");
 
           return sendTwiml(
             res,
