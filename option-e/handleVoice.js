@@ -383,7 +383,12 @@ function handleVoiceOptionE(req, res) {
     }
 
     if (session.phase === "reason" || session.phase === "detail") {
-      const idx = session.phase === "detail" ? 1 : 0;
+      const idx = OPTION_E_QUESTIONS.findIndex((qq) => qq && qq.key === session.phase);
+      if (idx < 0) {
+        logCallEnd(callSid, session, "unknown_question_phase_" + String(session.phase || ""));
+        if (callSid) clearSession(callSid);
+        return sendTwiml(res, "<Say>Option E reached an unknown step and will end now.</Say><Hangup/>");
+      }
       const q = OPTION_E_QUESTIONS[idx];
 
       const phaseKey = q && q.key ? q.key : "reason";
@@ -391,7 +396,7 @@ function handleVoiceOptionE(req, res) {
       const retryLimit = PHASES[phaseKey] && typeof PHASES[phaseKey].retryLimit === "number" ? PHASES[phaseKey].retryLimit : 1;
 
       const hasNext = idx + 1 < OPTION_E_QUESTIONS.length;
-      const nextPhase = hasNext ? "detail" : WRAPUP_PHASE;
+      const nextPhase = hasNext ? OPTION_E_QUESTIONS[idx + 1].key : WRAPUP_PHASE;
       const nextQuestion = hasNext ? OPTION_E_QUESTIONS[idx + 1] : null;
 
       return handleGenericQuestionPhase({
