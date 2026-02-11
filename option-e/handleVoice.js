@@ -87,6 +87,29 @@ function makeSafeCoachingLine(raw, fallback) {
   return t;
 }
 
+function getCoachingLineForKey(key, helpCount) {
+  const coachingByKey = {
+    reason: {
+      first:
+        "Try a simple one sentence reason, for example, I need to schedule an appointment, or I have a question about a symptom.",
+      second:
+        "Try starting with: I'm calling because I need to. Then add one short detail, for example, I'm calling because I need to schedule a checkup.",
+    },
+    detail: {
+      first:
+        "Name one detail they might ask for, for example, your date of birth, your insurance, or your address.",
+      second:
+        "If you are stuck, pick one of these and say it out loud: My date of birth is. My insurance is. My address is. Choose one and fill in the blank.",
+    },
+  };
+
+  const perKey = coachingByKey[key] || {};
+  if (helpCount >= 2) {
+    return perKey.second || "Let us make it easier. Use a starter phrase, then fill in one blank.";
+  }
+  return perKey.first || "Try a short, specific answer. You can keep it simple.";
+}
+
 function logPhaseTransition(callSid, fromPhase, toPhase, note) {
   console.log("OptionE transition:", {
     callSid: callSid || "(none)",
@@ -564,17 +587,11 @@ function handleVoiceOptionE(req, res) {
             },
           };
 
-          const perKey = coachingByKey[key] || {};
-          const coachingRaw =
-            helpCount >= 2
-              ? (perKey.second || "Let us make it easier. Use a starter phrase, then fill in one blank.")
-              : (perKey.first || "Try a short, specific answer. You can keep it simple.");
-
+          const coachingRaw = getCoachingLineForKey(key, helpCount);
           const coaching = makeSafeCoachingLine(
             coachingRaw,
             "Try a short, specific answer. You can keep it simple."
           );
-
 
           return sendTwiml(
             res,
