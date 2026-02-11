@@ -61,6 +61,32 @@ function escapeXml(s) {
     .replace(/'/g, "&apos;");
 }
 
+function makeSafeCoachingLine(raw, fallback) {
+  const fb = String(fallback || "Try a short, specific answer. You can keep it simple.").trim();
+
+  let t = String(raw || "").replace(/\s+/g, " ").trim();
+  if (!t) return fb;
+
+  // Hard length cap, keeps TwiML and audio predictable
+  if (t.length > 220) t = t.slice(0, 220).trim();
+
+  // Keep at most two sentences to avoid rambling
+  const parts = t.split(/[.!?]+/).map((p) => p.trim()).filter(Boolean);
+  if (parts.length >= 3) {
+    t = parts.slice(0, 2).join(". ") + ".";
+  } else if (parts.length === 2) {
+    t = parts[0] + ". " + parts[1] + ".";
+  } else if (parts.length === 1) {
+    t = parts[0] + ".";
+  }
+
+  // Remove any characters that might sound odd in TTS if an AI ever outputs them
+  t = t.replace(/[<>]/g, "").trim();
+  if (!t) return fb;
+
+  return t;
+}
+
 function logPhaseTransition(callSid, fromPhase, toPhase, note) {
   console.log("OptionE transition:", {
     callSid: callSid || "(none)",
@@ -539,10 +565,16 @@ function handleVoiceOptionE(req, res) {
           };
 
           const perKey = coachingByKey[key] || {};
-          const coaching =
+          const coachingRaw =
             helpCount >= 2
               ? (perKey.second || "Let us make it easier. Use a starter phrase, then fill in one blank.")
               : (perKey.first || "Try a short, specific answer. You can keep it simple.");
+
+          const coaching = makeSafeCoachingLine(
+            coachingRaw,
+            "Try a short, specific answer. You can keep it simple."
+          );
+
 
           return sendTwiml(
             res,
