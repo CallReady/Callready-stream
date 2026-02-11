@@ -209,25 +209,7 @@ function isValidDetailInput(text) {
   const stripped = stripFillers(t);
   if (!stripped || stripped.length < 2) return false;
 
-    const weakWords = [
-    "call",
-    "schedule",
-    "appointment",
-    "check",
-    "sick",
-    "pain",
-    "refill",
-    "problem",
-    "question",
-    "follow",
-    "visit",
-    "need",
-    "want",
-  ];
-
-  const hasContentWord = weakWords.some((w) => stripped.includes(w));
-
-  return hasContentWord;
+  return true;
 
 }
 
