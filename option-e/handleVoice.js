@@ -527,7 +527,7 @@ function handleVoiceOptionE(req, res) {
               first:
                 "Try a simple one sentence reason, for example, I need to schedule an appointment, or I have a question about a symptom.",
               second:
-                "Try starting with: I’m calling because I need to. Then add one short detail, for example, I’m calling because I need to schedule a checkup.",
+                "Try starting with: I'm calling because I need to. Then add one short detail, for example, I'm calling because I need to schedule a checkup.",
             },
             detail: {
               first:
