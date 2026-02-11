@@ -1,4 +1,4 @@
-//OptionE normalize transition logging
+//Stable Option E flow using stepIndex engine
 const { getOrCreateSession, saveSession, clearSession, getCallSid } = require("./sessionStore");
 const WRAPUP_PHASE = "wrapup";
 const OPTION_E_QUESTIONS = [
