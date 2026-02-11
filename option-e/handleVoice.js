@@ -20,8 +20,8 @@ const OPTION_E_QUESTIONS = [
 
 const FLOWS = {
   default: ["reason", "detail"],
+  quick: ["reason"]
 };
-
 
 function buildAskQuestionTwiml(q, actionUrl, timeoutSec, speechTimeoutSec) {
   if (!q) {
@@ -364,7 +364,7 @@ function handleVoiceOptionE(req, res) {
 
     if (session.phase === "start") {
       // Library-driven: choose a flow and start at stepIndex 0
-      session.flowId = session.flowId || "default";
+      session.flowId = "quick";
       session.stepIndex = 0;
       session.phase = "question";
       session.retries = {};
