@@ -7,12 +7,14 @@ const OPTION_E_QUESTIONS = [
     prompt: "In one sentence, what are you calling about today?",
     invalidPrompt: "I did not catch a clear reason. Try again.",
     retryLimit: 3,
+    isValid: isValidReasonInput,
   },
   {
     key: "detail",
     prompt: "What is one important detail they might ask you for?",
     invalidPrompt: "I did not catch that. Please say the detail again.",
     retryLimit: 2,
+    isValid: isValidDetailInput,
   },
 ];
 
@@ -187,12 +189,10 @@ function isValidDetailInput(text) {
 }
 
 function isValidAnswerForQuestion(q, text) {
-  if (!q || !q.key) return false;
-
-  if (q.key === "reason") return isValidReasonInput(text);
-  if (q.key === "detail") return isValidDetailInput(text);
-
-  // Default to basic validity
+  if (!q) return false;
+  if (typeof q.isValid === "function") {
+    return q.isValid(text);
+  }
   return String(text || "").trim().length > 0;
 }
 
