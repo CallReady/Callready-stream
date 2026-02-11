@@ -389,7 +389,8 @@ function handleVoiceOptionE(req, res) {
 
       return sendTwiml(
         res,
-        "<Say>Hi. This is CallReady practice mode.</Say>" +
+        "<Say>DEBUG OPTION E START. Hi. This is CallReady practice mode.</Say>" +
+
           buildAskQuestionTwiml(
             q0,
             actionUrl,
