@@ -278,10 +278,8 @@ function handleGenericQuestionPhase(opts) {
     logPhaseTransition(callSid, phaseKey, nextPhase, "success");
   }
 
-  if (typeof nextQuestionIndex === "number") {
-    session.retries = session.retries || {};
-    session.retries[nextPhase] = 0;
-  }
+  session.retries = session.retries || {};
+  session.retries[nextPhase] = 0;
 
   saveSession(session);
 
