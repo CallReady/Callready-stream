@@ -341,6 +341,14 @@ function getBaseUrl(req) {
 }
 
 function handleVoiceOptionE(req, res) {
+  const debugEnabled = String((req.body && req.body.Debug) || "") === "1";
+
+  function dbgSay(text) {
+    if (!debugEnabled) return "";
+    const safe = String(text || "").replace(/[<>&]/g, "");
+    return "<Say>DEBUG " + safe + ".</Say>";
+  }
+
   try {
     const callSid = getCallSid(req);
     const session = getOrCreateSession(req);
@@ -389,6 +397,7 @@ function handleVoiceOptionE(req, res) {
 
       return sendTwiml(
         res,
+        dbgSay("START. CallStatus " + String(req.body && req.body.CallStatus ? req.body.CallStatus : "none") + ". Direction " + String(req.body && req.body.Direction ? req.body.Direction : "none")) +
         "<Say>Hi. This is CallReady practice mode.</Say>" +
 
           buildAskQuestionTwiml(
@@ -491,14 +500,7 @@ function handleVoiceOptionE(req, res) {
 
           return sendTwiml(
             res,
-            "<Say>DEBUG FINISHED FLOW. flowId " +
-              String(session.flowId || "none") +
-              ". stepIndex " +
-              String(typeof session.stepIndex === "number" ? session.stepIndex : "none") +
-              ". flowLength " +
-              String(flow && Array.isArray(flow) ? flow.length : "none") +
-              ".</Say>" +
-              "<Say>Nice work. You can practice again anytime.</Say><Hangup/>"
+            "<Say>Nice work. You can practice again anytime.</Say><Hangup/>"
           );
 
         }
