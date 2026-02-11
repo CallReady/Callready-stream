@@ -373,7 +373,20 @@ function handleVoiceOptionE(req, res) {
       logPhaseTransition(callSid, "start", "question", "enter_flow_" + String(session.flowId));
       saveSession(session);
 
-      const q0 = OPTION_E_QUESTIONS[0];
+      const flowId = session.flowId || "default";
+      const flow = FLOWS[flowId] || FLOWS["default"] || [];
+      const defaultFlow = FLOWS["default"] || [];
+
+      const firstKey =
+        (flow && flow.length ? flow[0] : null) ||
+        (defaultFlow && defaultFlow.length ? defaultFlow[0] : null) ||
+        "reason";
+
+      const q0 =
+        OPTION_E_QUESTIONS.find((qq) => qq && qq.key === firstKey) ||
+        OPTION_E_QUESTIONS.find((qq) => qq && qq.key === "reason") ||
+        OPTION_E_QUESTIONS[0];
+
       return sendTwiml(
         res,
         "<Say>Hi. This is CallReady practice mode.</Say>" +
