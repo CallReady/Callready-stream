@@ -495,6 +495,45 @@ function handleVoiceOptionE(req, res) {
           typeof q.retryLimit === "number" ? q.retryLimit : 1;
 
         // If no input or invalid input, retry or end
+                const cleanedForHelp = String(userInput || "")
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        const helpPhrases = [
+          "what should i say",
+          "i dont know what to say",
+          "im stuck",
+          "give me an example",
+          "coach me",
+          "can you help me",
+          "help me practice",
+          "can you give me an example",
+        ];
+
+        const isCoachingHelp = helpPhrases.some((p) => cleanedForHelp.includes(p));
+
+        if (isCoachingHelp) {
+          const coachingByKey = {
+            reason: "Try a simple one sentence reason, for example, I need to schedule an appointment, or I have a question about a symptom.",
+            detail: "Name one detail they might ask for, for example, your date of birth, your insurance, or your address.",
+          };
+
+          const coaching = coachingByKey[key] || "Try a short, specific answer. You can keep it simple.";
+
+          return sendTwiml(
+            res,
+            "<Say>" + escapeXml(coaching) + "</Say>" +
+              buildAskQuestionTwiml(
+                q,
+                actionUrl,
+                gatherCfg.timeoutSec,
+                gatherCfg.speechTimeoutSec
+              )
+          );
+        }
+
         const ok = isValidAnswerForQuestion(q, userInput);
 
         if (!ok) {
