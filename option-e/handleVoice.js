@@ -400,10 +400,18 @@ function handleVoiceOptionE(req, res) {
     }
 
     if (session.phase === "question") {
-      // Current step comes from the flow list
       const flowId = session.flowId || "default";
-      const flow = FLOWS[flowId] || FLOWS["default"];
+      const flow = FLOWS[flowId] || FLOWS["default"] || [];
+      console.log("OptionE flow debug:", {
+        callSid: callSid || "(none)",
+        flowId,
+        flowLength: flow.length,
+        flow,
+        stepIndex: typeof session.stepIndex === "number" ? session.stepIndex : "(none)",
+        hasInput: !!userInput,
+      });
 
+      // Current step comes from the flow list
       const idx = typeof session.stepIndex === "number" ? session.stepIndex : 0;
 
       if (idx < 0 || idx >= flow.length) {
