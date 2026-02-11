@@ -18,6 +18,11 @@ const OPTION_E_QUESTIONS = [
   },
 ];
 
+const FLOWS = {
+  default: ["reason", "detail"],
+};
+
+
 function buildAskQuestionTwiml(q, actionUrl, timeoutSec, speechTimeoutSec) {
   if (!q) {
     return "<Say>Sorry, something went wrong.</Say><Hangup/>";
@@ -383,7 +388,9 @@ function handleVoiceOptionE(req, res) {
 
     if (session.phase === "question") {
       // Current step comes from the flow list
-      const flow = OPTION_E_QUESTIONS.map((qq) => qq.key);
+      const flowId = session.flowId || "default";
+      const flow = FLOWS[flowId] || FLOWS["default"];
+
       const idx = typeof session.stepIndex === "number" ? session.stepIndex : 0;
 
       if (idx < 0 || idx >= flow.length) {
