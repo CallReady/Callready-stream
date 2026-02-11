@@ -170,7 +170,15 @@ function isValidReasonInput(text) {
 
   const hasContentWord = weakWords.some((w) => stripped.includes(w));
 
-  return hasContentWord;
+  if (hasContentWord) return true;
+
+  const words = stripped.split(" ").filter(Boolean);
+
+  // If they gave 3+ real words, treat it as specific enough even without keywords.
+  if (words.length >= 3) return true;
+
+  return false;
+
 
 }
 
