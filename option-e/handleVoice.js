@@ -358,73 +358,128 @@ function handleVoiceOptionE(req, res) {
   });
 
     if (session.phase === "start") {
-      session.phase = "reason";
+      // Library-driven: choose a flow and start at stepIndex 0
+      session.flowId = session.flowId || "default";
+      session.stepIndex = 0;
+      session.phase = "question";
       session.retries = {};
-      session.retries.reason = 0;
       session.slots = session.slots || {};
 
-      logPhaseTransition(callSid, "start", "reason", "enter_reason");
+      logPhaseTransition(callSid, "start", "question", "enter_flow_" + String(session.flowId));
       saveSession(session);
 
+      const q0 = OPTION_E_QUESTIONS[0];
       return sendTwiml(
         res,
         "<Say>Hi. This is CallReady practice mode.</Say>" +
           buildAskQuestionTwiml(
-            OPTION_E_QUESTIONS[0],
+            q0,
             actionUrl,
-            PHASES.reason.gather.timeoutSec,
-            PHASES.reason.gather.speechTimeoutSec
+            PHASES[q0.key] && PHASES[q0.key].gather ? PHASES[q0.key].gather.timeoutSec : 3,
+            PHASES[q0.key] && PHASES[q0.key].gather ? PHASES[q0.key].gather.speechTimeoutSec : 1
           )
       );
     }
 
-    if (session.phase === "reason" || session.phase === "detail") {
-      const idx = OPTION_E_QUESTIONS.findIndex((qq) => qq && qq.key === session.phase);
-      if (idx < 0) {
-        logCallEnd(callSid, session, "unknown_question_phase_" + String(session.phase || ""));
+    if (session.phase === "question") {
+      // Current step comes from the flow list
+      const flow = OPTION_E_QUESTIONS.map((qq) => qq.key);
+      const idx = typeof session.stepIndex === "number" ? session.stepIndex : 0;
+
+      if (idx < 0 || idx >= flow.length) {
+        session.phase = WRAPUP_PHASE;
+        saveSession(session);
+
+        logCallEnd(callSid, session, "normal_wrapup");
         if (callSid) clearSession(callSid);
-        return sendTwiml(res, "<Say>Option E reached an unknown step and will end now.</Say><Hangup/>");
+
+        return sendTwiml(
+          res,
+          "<Say>Nice work. You can practice again anytime.</Say><Hangup/>"
+        );
+      } else {
+
+        const key = flow[idx];
+        const q = OPTION_E_QUESTIONS.find((qq) => qq && qq.key === key);
+
+        if (!q) {
+          logCallEnd(callSid, session, "unknown_question_key_" + String(key || ""));
+          if (callSid) clearSession(callSid);
+          return sendTwiml(res, "<Say>Option E reached an unknown step and will end now.</Say><Hangup/>");
+        }
+
+        // Retry tracking per question key
+        session.retries = session.retries || {};
+        session.retries[key] = session.retries[key] || 0;
+
+        const gatherCfg =
+          PHASES[key] && PHASES[key].gather
+            ? PHASES[key].gather
+            : { timeoutSec: 3, speechTimeoutSec: 1 };
+
+        const retryLimit =
+          typeof q.retryLimit === "number" ? q.retryLimit : 1;
+
+        // If no input or invalid input, retry or end
+        const ok = isValidAnswerForQuestion(q, userInput);
+
+        if (!ok) {
+          return handleQuestionRetry(
+            res,
+            callSid,
+            session,
+            actionUrl,
+            q,
+            key,
+            gatherCfg,
+            retryLimit
+          );
+        }
+
+        // Valid answer, store slot and advance
+        session.slots = session.slots || {};
+        session.slots[key] = userInput;
+
+        logPhaseTransition(callSid, "question", "question", "answered_" + key);
+        session.stepIndex = idx + 1;
+        saveSession(session);
+
+        // If we finished the flow, wrap up
+        if (session.stepIndex >= flow.length) {
+          session.phase = WRAPUP_PHASE;
+          saveSession(session);
+
+          logCallEnd(callSid, session, "normal_wrapup");
+          if (callSid) clearSession(callSid);
+
+          return sendTwiml(
+            res,
+            "<Say>Nice work. You can practice again anytime.</Say><Hangup/>"
+          );
+        }
+
+        // Ask the next question
+        const nextKey = flow[session.stepIndex];
+        const nextQ = OPTION_E_QUESTIONS.find((qq) => qq && qq.key === nextKey);
+
+        if (!nextQ) {
+          logCallEnd(callSid, session, "unknown_next_question_key_" + String(nextKey || ""));
+          if (callSid) clearSession(callSid);
+          return sendTwiml(res, "<Say>Option E reached an unknown step and will end now.</Say><Hangup/>");
+        }
+
+        return sendTwiml(
+          res,
+          "<Say>Got it.</Say>" +
+            "<Say>One more question.</Say>" +
+            buildAskQuestionTwiml(
+              nextQ,
+              actionUrl,
+              PHASES[nextQ.key] && PHASES[nextQ.key].gather ? PHASES[nextQ.key].gather.timeoutSec : 3,
+              PHASES[nextQ.key] && PHASES[nextQ.key].gather ? PHASES[nextQ.key].gather.speechTimeoutSec : 1
+            )
+        );
       }
-      const q = OPTION_E_QUESTIONS[idx];
-
-      const phaseKey = q && q.key ? q.key : "reason";
-      const gatherCfg = PHASES[phaseKey] && PHASES[phaseKey].gather ? PHASES[phaseKey].gather : { timeoutSec: 3, speechTimeoutSec: 1 };
-      const retryLimit = PHASES[phaseKey] && typeof PHASES[phaseKey].retryLimit === "number" ? PHASES[phaseKey].retryLimit : 1;
-
-      const hasNext = idx + 1 < OPTION_E_QUESTIONS.length;
-      const nextPhase = hasNext ? OPTION_E_QUESTIONS[idx + 1].key : WRAPUP_PHASE;
-      const nextQuestion = hasNext ? OPTION_E_QUESTIONS[idx + 1] : null;
-
-      return handleGenericQuestionPhase({
-        res,
-        callSid,
-        session,
-        actionUrl,
-
-        phaseKey,
-        q,
-        gatherCfg,
-        retryLimit,
-
-        userInput,
-
-        nextPhase,
-        nextQuestion,
-
-        transitionNoteOnSuccess: "answered_" + phaseKey,
-        transitionNoteOnAskNext: null,
-      });
-    }
-
-    if (session.phase === WRAPUP_PHASE) {
-      logCallEnd(callSid, session, "normal_wrapup");
-      if (callSid) clearSession(callSid);
-
-      return sendTwiml(
-        res,
-        "<Say>Nice work. You can practice again anytime.</Say>" +
-          "<Hangup/>"
-      );
     }
 
     logCallEnd(callSid, session, "unknown_phase_fallback");
