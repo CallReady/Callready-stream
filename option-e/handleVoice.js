@@ -390,13 +390,14 @@ function handleVoiceOptionE(req, res) {
     const userInput = (speech || digits).trim();
 
     console.log("OptionE hit:", {
-    callSid: callSid || "(none)",
-    path: basePath,
-    phase: session.phase,
-    retries: session.retries || {},
-    hasInput: !!userInput,
-    question: "(config-driven)",
-  });
+      callSid: callSid || "(none)",
+      path: basePath,
+      phase: session.phase,
+      retries: session.retries || {},
+      helpCounts: session.helpCounts || {},
+      hasInput: !!userInput,
+      question: "(config-driven)",
+    });
 
     if (session.phase === "start") {
       // Library-driven: choose a flow and start at stepIndex 0
