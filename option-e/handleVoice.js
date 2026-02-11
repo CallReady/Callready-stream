@@ -364,7 +364,7 @@ function handleVoiceOptionE(req, res) {
 
     if (session.phase === "start") {
       // Library-driven: choose a flow and start at stepIndex 0
-      session.flowId = "quick";
+      session.flowId = "medical";
       session.stepIndex = 0;
       session.phase = "question";
       session.retries = {};
