@@ -424,8 +424,16 @@ function handleVoiceOptionE(req, res) {
 
         return sendTwiml(
           res,
-          "<Say>Nice work. You can practice again anytime.</Say><Hangup/>"
+          "<Say>DEBUG WRAPUP. flowId " +
+            String(session.flowId || "none") +
+            ". stepIndex " +
+            String(typeof session.stepIndex === "number" ? session.stepIndex : "none") +
+            ". flowLength " +
+            String(flow && Array.isArray(flow) ? flow.length : "none") +
+            ".</Say>" +
+            "<Say>Nice work. You can practice again anytime.</Say><Hangup/>"
         );
+
       } else {
 
         const key = flow[idx];
