@@ -2201,7 +2201,7 @@ app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to PO
 // Temporary Marin test audio route
 // This allows us to test Twilio <Play> before wiring real Marin TTS.
 app.get("/test-marin.mp3", (req, res) => {
-  res.redirect(302, "https://api.twilio.com/cowbell.mp3");
+  res.redirect(302, "https://demo.twilio.com/docs/classic.mp3");
 });
 
 app.post("/voice", async (req, res) => {
