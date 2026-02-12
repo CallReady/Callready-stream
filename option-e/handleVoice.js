@@ -112,15 +112,25 @@ function getCoachingLineForKey(key, helpCount) {
 
 async function getCoachingLine(key, helpCount, session) {
   // Seam for AI coaching with strict timeout and deterministic fallback.
-  // If anything fails, we return the scripted line.
   const fallback = getCoachingLineForKey(key, helpCount);
 
+  session.coachingMeta = session.coachingMeta || {};
+  session.coachingMeta.source = "fallback";
+  session.coachingMeta.reason = "init";
+
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return fallback;
+  if (!apiKey) {
+    session.coachingMeta.reason = "no_api_key";
+    return fallback;
+  }
+
+  if (typeof fetch !== "function") {
+    session.coachingMeta.reason = "no_fetch";
+    return fallback;
+  }
 
   const model = process.env.OPENAI_COACHING_MODEL || "gpt-4o-mini";
 
-  // Keep the model tightly boxed in.
   const questionLabel = key === "reason" ? "reason for calling" : "one detail they might ask for";
   const helpLevel = helpCount >= 2 ? "second" : "first";
 
@@ -137,7 +147,6 @@ async function getCoachingLine(key, helpCount, session) {
     "Help request level: " + helpLevel + ". " +
     "Give one coaching line they can immediately say.";
 
-  // Hard timeout so Twilio never waits long.
   const timeoutMs = Number(process.env.OPENAI_COACHING_TIMEOUT_MS || 1200);
 
   try {
@@ -163,23 +172,43 @@ async function getCoachingLine(key, helpCount, session) {
 
     clearTimeout(timer);
 
-    if (!resp.ok) return fallback;
+    if (!resp.ok) {
+      session.coachingMeta.reason = "http_" + String(resp.status);
+      return fallback;
+    }
 
     const data = await resp.json();
 
-    // Prefer output_text when present, otherwise try common nested shapes.
     let text = "";
     if (data && typeof data.output_text === "string") {
       text = data.output_text;
-    } else if (data && Array.isArray(data.output) && data.output[0] && Array.isArray(data.output[0].content) && data.output[0].content[0] && typeof data.output[0].content[0].text === "string") {
+    } else if (
+      data &&
+      Array.isArray(data.output) &&
+      data.output[0] &&
+      Array.isArray(data.output[0].content) &&
+      data.output[0].content[0] &&
+      typeof data.output[0].content[0].text === "string"
+    ) {
       text = data.output[0].content[0].text;
     }
 
     text = String(text || "").trim();
-    if (!text) return fallback;
+    if (!text) {
+      session.coachingMeta.reason = "empty_text";
+      return fallback;
+    }
 
+    session.coachingMeta.source = "ai";
+    session.coachingMeta.reason = "ok";
     return text;
   } catch (e) {
+    const name = e && e.name ? String(e.name) : "";
+    if (name === "AbortError") {
+      session.coachingMeta.reason = "timeout";
+    } else {
+      session.coachingMeta.reason = "exception";
+    }
     return fallback;
   }
 }
@@ -683,8 +712,10 @@ async function handleVoiceOptionE(req, res) {
             "Try a short, specific answer. You can keep it simple."
           );
 
-                   const coachingSource = coachingRaw === getCoachingLineForKey(key, helpCount) ? "fallback" : "ai";
-          const coachingDebug = debugEnabled ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ".</Say>" : "";
+          const coachingSource = coachingRaw === getCoachingLineForKey(key, helpCount) ? "fallback" : "ai";
+          const reason = session && session.coachingMeta && session.coachingMeta.reason ? String(session.coachingMeta.reason) : "unknown";
+          const coachingDebug = debugEnabled ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ". REASON " + reason + ".</Say>" : "";
+
  
           return sendTwiml(
             res,
