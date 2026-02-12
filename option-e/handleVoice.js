@@ -983,19 +983,9 @@ async function handleVoiceOptionE(req, res) {
 
         const wrapup = await getWrapupLine(session);
 
-const wrapupLine = await getWrapupLine(session);
-
-const debugWrap =
-  "<Say>DEBUG WRAPUP SOURCE " +
-  String(session.wrapupMeta && session.wrapupMeta.source ? session.wrapupMeta.source : "none") +
-  ". REASON " +
-  String(session.wrapupMeta && session.wrapupMeta.reason ? session.wrapupMeta.reason : "none") +
-  ".</Say>";
-
 return sendTwiml(
   res,
-  debugWrap +
-  "<Say>" + escapeXml(wrapupLine) + "</Say><Hangup/>"
+  "<Say>Nice work. You can practice again anytime.</Say><Hangup/>"
 );
 
         }
