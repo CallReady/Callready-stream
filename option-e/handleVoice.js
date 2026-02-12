@@ -787,7 +787,21 @@ async function handleVoiceOptionE(req, res) {
           session.pendingCoaching = { key, helpCount };
           saveSession(session);
 
-          const filler = "Okay. Give me a second.";
+          const fallbackFiller = "Okay. Give me a second.";
+
+          let filler = fallbackFiller;
+
+          try {
+            const fillerRaw = await getCoachingLine("filler", 1, session);
+            const safe = makeSafeCoachingLine(fillerRaw, fallbackFiller);
+
+            if (safe && safe.length <= 60) {
+              filler = safe;
+            }
+          } catch (e) {
+            filler = fallbackFiller;
+          }
+
           await sleepMs(300);
 
           return sendTwiml(
@@ -795,6 +809,7 @@ async function handleVoiceOptionE(req, res) {
             "<Say>" + escapeXml(filler) + "</Say>" +
               "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
           );
+
         }
 
         const ok = isValidAnswerForQuestion(q, userInput);
