@@ -899,14 +899,24 @@ async function handleVoiceOptionE(req, res) {
     logCallEnd(callSid, session, "unknown_phase_fallback");
     if (callSid) clearSession(callSid);
     return sendTwiml(res, "<Say>Option E reached an unknown step and will end now.</Say><Hangup/>");
+  } catch (err) {
+    const safeCallSid = getCallSid(req) || "(unknown)";
+    const safeSession = session || {};
 
-  } catch (e) {
-    const msg = e && e.message ? e.message : String(e);
-    console.log("OptionE error:", msg);
-    logCallEnd("(unknown)", { phase: "error", retries: {}, slots: {} }, "exception_" + msg);
-    return sendTwiml(res, "<Say>Sorry, an internal error occurred. Please try again.</Say><Hangup/>");
+    const msg = err && err.message ? String(err.message) : String(err);
+    console.error("OptionE error:", msg);
+
+    console.log("OptionE call end:", {
+      callSid: safeCallSid,
+      phase: "error",
+      retries: safeSession.retries || {},
+      slots: safeSession.slots || {},
+      reason: "exception_" + msg,
+      at: new Date().toISOString(),
+    });
+
+    return sendTwiml(res, buildErrorTwiml());
   }
-
 }
 
 module.exports = { handleVoiceOptionE };
