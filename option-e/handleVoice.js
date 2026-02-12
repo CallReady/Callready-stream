@@ -110,10 +110,78 @@ function getCoachingLineForKey(key, helpCount) {
   return perKey.first || "Try a short, specific answer. You can keep it simple.";
 }
 
-function getCoachingLine(key, helpCount, session) {
-  // Seam for future AI coaching.
-  // For now, keep deterministic scripted behavior.
-  return getCoachingLineForKey(key, helpCount);
+async function getCoachingLine(key, helpCount, session) {
+  // Seam for AI coaching with strict timeout and deterministic fallback.
+  // If anything fails, we return the scripted line.
+  const fallback = getCoachingLineForKey(key, helpCount);
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return fallback;
+
+  const model = process.env.OPENAI_COACHING_MODEL || "gpt-4o-mini";
+
+  // Keep the model tightly boxed in.
+  const questionLabel = key === "reason" ? "reason for calling" : "one detail they might ask for";
+  const helpLevel = helpCount >= 2 ? "second" : "first";
+
+  const developerText =
+    "You are a calm phone call practice coach. " +
+    "Return exactly one short coaching line, no more than 18 words. " +
+    "No greeting. No bullets. No quotes. No emojis. " +
+    "Do not roleplay the receptionist. Do not answer the question for them. " +
+    "Give a starter phrase or a simple example template they can say out loud.";
+
+  const userText =
+    "Context: This is a medical clinic call practice. " +
+    "The student asked for help while answering the " + questionLabel + ". " +
+    "Help request level: " + helpLevel + ". " +
+    "Give one coaching line they can immediately say.";
+
+  // Hard timeout so Twilio never waits long.
+  const timeoutMs = Number(process.env.OPENAI_COACHING_TIMEOUT_MS || 1200);
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    const resp = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + apiKey,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model,
+        input: [
+          { role: "developer", content: [{ type: "text", text: developerText }] },
+          { role: "user", content: [{ type: "text", text: userText }] },
+        ],
+        max_output_tokens: 60,
+      }),
+    });
+
+    clearTimeout(timer);
+
+    if (!resp.ok) return fallback;
+
+    const data = await resp.json();
+
+    // Prefer output_text when present, otherwise try common nested shapes.
+    let text = "";
+    if (data && typeof data.output_text === "string") {
+      text = data.output_text;
+    } else if (data && Array.isArray(data.output) && data.output[0] && Array.isArray(data.output[0].content) && data.output[0].content[0] && typeof data.output[0].content[0].text === "string") {
+      text = data.output[0].content[0].text;
+    }
+
+    text = String(text || "").trim();
+    if (!text) return fallback;
+
+    return text;
+  } catch (e) {
+    return fallback;
+  }
 }
 
 function logPhaseTransition(callSid, fromPhase, toPhase, note) {
@@ -609,7 +677,7 @@ async function handleVoiceOptionE(req, res) {
             },
           };
 
-          const coachingRaw = getCoachingLine(key, helpCount, session);
+          const coachingRaw = await getCoachingLine(key, helpCount, session);
           const coaching = makeSafeCoachingLine(
             coachingRaw,
             "Try a short, specific answer. You can keep it simple."
