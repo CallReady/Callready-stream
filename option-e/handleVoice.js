@@ -960,11 +960,12 @@ async function handleVoiceOptionE(req, res) {
 
           const wrapupLine = await getWrapupLine(session);
 
-
           return sendTwiml(
             res,
-            "<Say>" + escapeXml(wrapup) + "</Say><Hangup/>"
+            "<Say>DEBUG WRAPUP LINE.</Say>" +
+            "<Say>" + escapeXml(wrapupLine) + "</Say><Hangup/>"
           );
+
 
         }
 
