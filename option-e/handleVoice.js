@@ -849,12 +849,7 @@ async function handleVoiceOptionE(req, res) {
           let filler = fallbackFiller;
 
           try {
-            const fillerRaw = await getCoachingLine("filler", 1, session);
-            const safe = makeSafeCoachingLine(fillerRaw, fallbackFiller);
-
-            if (safe && safe.length <= 60) {
-              filler = safe;
-            }
+            filler = await getFillerLine(session);
           } catch (e) {
             filler = fallbackFiller;
           }
