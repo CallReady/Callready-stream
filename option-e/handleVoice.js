@@ -163,8 +163,8 @@ async function getCoachingLine(key, helpCount, session) {
       body: JSON.stringify({
         model,
         input: [
-          { role: "developer", content: [{ type: type: "input_text", text: developerText }] },
-          { role: "user", content: [{ type: type: "input_text", text: userText }] },
+          { role: "developer", content: [{ type: "input_text", text: developerText }] },
+          { role: "user", content: [{ type: "input_text", text: userText }] },
         ],
         max_output_tokens: 60,
       }),
