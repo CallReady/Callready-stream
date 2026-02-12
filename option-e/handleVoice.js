@@ -557,6 +557,7 @@ function handleVoiceOptionE(req, res) {
           .replace(/\s+/g, " ")
           .trim();
 
+        // Detect explicit coaching requests, but avoid catching real call content
         const helpPhrases = [
           "what should i say",
           "i dont know what to say",
@@ -568,7 +569,22 @@ function handleVoiceOptionE(req, res) {
           "can you give me an example",
         ];
 
-        const isCoachingHelp = helpPhrases.some((p) => cleanedForHelp.includes(p));
+        const matchesExplicitPhrase = helpPhrases.some((p) =>
+          cleanedForHelp.includes(p)
+        );
+
+        // Short direct help requests like "help" or "i need help"
+        const shortHelpPatterns = [
+          /^help$/,
+          /^i need help$/,
+          /^i need some help$/,
+        ];
+
+        const matchesShortHelp = shortHelpPatterns.some((re) =>
+          re.test(cleanedForHelp)
+        );
+
+        const isCoachingHelp = matchesExplicitPhrase || matchesShortHelp;
 
         if (isCoachingHelp) {
           // Track help requests per question key so we can escalate coaching
