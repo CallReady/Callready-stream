@@ -169,9 +169,18 @@ async function getFillerLine(session) {
 
 async function getWrapupLine(session) {
   const fallback = "Nice work. You can practice again anytime.";
+  session.wrapupMeta = session.wrapupMeta || {};
+  session.wrapupMeta.source = "fallback";
+  session.wrapupMeta.reason = "init";
 
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey || typeof fetch !== "function") {
+  if (!apiKey) {
+    session.wrapupMeta.reason = "no_api_key";
+    return fallback;
+  }
+
+  if (typeof fetch !== "function") {
+    session.wrapupMeta.reason = "no_fetch";
     return fallback;
   }
 
@@ -207,18 +216,34 @@ async function getWrapupLine(session) {
 
     clearTimeout(timer);
 
-    if (!resp.ok) return fallback;
+    if (!resp.ok) {
+      session.wrapupMeta.reason = "http_" + String(resp.status);
+      return fallback;
+    }
 
     const data = await resp.json();
     const text = data && typeof data.output_text === "string" ? data.output_text : "";
     const t = String(text || "").trim();
 
-    if (!t || t.length > 80) return fallback;
+    if (!t || t.length > 80) {
+      session.wrapupMeta.reason = "empty_text";
+      return fallback;
+    }
 
+    session.wrapupMeta.source = "ai";
+    session.wrapupMeta.reason = "ok";
     return t;
+
   } catch (e) {
+    const name = e && e.name ? String(e.name) : "";
+    if (name === "AbortError") {
+      session.wrapupMeta.reason = "timeout";
+    } else {
+      session.wrapupMeta.reason = "exception";
+    }
     return fallback;
   }
+
 }
 
 async function getCoachingLine(key, helpCount, session) {
