@@ -1,4 +1,4 @@
-//Stable Option E after troubleshooting twilio webhook and more
+//option-e stable deterministic baseline before ai integration
 const { getOrCreateSession, saveSession, clearSession, getCallSid } = require("./sessionStore");
 const WRAPUP_PHASE = "wrapup";
 const OPTION_E_QUESTIONS = [
