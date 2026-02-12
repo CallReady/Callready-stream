@@ -52,8 +52,9 @@ const PHASES = OPTION_E_QUESTIONS.reduce((acc, q) => {
   return acc;
 }, {});
 
-function escapeXml(s) {
-  return String(s || "")
+function escapeXml(value) {
+  const s = typeof value === "string" ? value : String(value ?? "");
+  return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -983,9 +984,11 @@ async function handleVoiceOptionE(req, res) {
 
         const wrapup = await getWrapupLine(session);
 
+const TEST_MARIN_AUDIO_URL = "https://callready-stream.onrender.com/test-marin.mp3";
+
 return sendTwiml(
   res,
-  "<Say>Nice work. You can practice again anytime.</Say><Hangup/>"
+  "<Play>" + TEST_MARIN_AUDIO_URL + "</Play><Hangup/>"
 );
 
         }

@@ -2198,6 +2198,12 @@ if (session && safeStep === 4 && speechResult) {
 
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
 
+// Temporary Marin test audio route
+// This allows us to test Twilio <Play> before wiring real Marin TTS.
+app.get("/test-marin.mp3", (req, res) => {
+  res.redirect(302, "https://api.twilio.com/cowbell.mp3");
+});
+
 app.post("/voice", async (req, res) => {
     const mode = (process.env.CALL_FLOW_MODE || "legacy").toLowerCase();
   if (mode === "option_e") {
