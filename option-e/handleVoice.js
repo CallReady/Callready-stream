@@ -134,12 +134,15 @@ async function getCoachingLine(key, helpCount, session) {
   const questionLabel = key === "reason" ? "reason for calling" : "one detail they might ask for";
   const helpLevel = helpCount >= 2 ? "second" : "first";
 
-  const developerText =
-    "You are a calm phone call practice coach. " +
-    "Return exactly one short coaching line, no more than 18 words. " +
-    "No greeting. No bullets. No quotes. No emojis. " +
-    "Do not roleplay the receptionist. Do not answer the question for them. " +
-    "Give a starter phrase or a simple example template they can say out loud.";
+const developerText =
+  "You are a calm phone call practice coach. " +
+  "You are NOT the receptionist. " +
+  "Do NOT speak as the clinic. " +
+  "Do NOT ask questions. " +
+  "Return exactly one short coaching line, no more than 16 words. " +
+  "Give a starter sentence the student can say. " +
+  "Use first person language like: I am calling to. or My date of birth is. " +
+  "No quotes. No greeting. No emojis. No extra commentary.";
 
   const userText =
     "Context: This is a medical clinic call practice. " +
