@@ -226,101 +226,6 @@ function logPhaseTransition(callSid, fromPhase, toPhase, note) {
   });
 }
 
-function prefetchAiCoachingLine(key, helpCount, session) {
-  try {
-    if (!session) return;
-
-    session.prefetchedCoaching = session.prefetchedCoaching || {};
-    session.prefetchedCoaching[key] = session.prefetchedCoaching[key] || {};
-
-    // Already prefetched
-    if (session.prefetchedCoaching[key][helpCount]) return;
-
-    // Prevent duplicate in-flight prefetch
-    session.prefetchInFlight = session.prefetchInFlight || {};
-    const inFlightKey = key + "_" + String(helpCount);
-    if (session.prefetchInFlight[inFlightKey]) return;
-    session.prefetchInFlight[inFlightKey] = true;
-
-    // Fire and forget
-    (async () => {
-      const fallback = getCoachingLineForKey(key, helpCount);
-
-      const apiKey = process.env.OPENAI_API_KEY;
-      if (!apiKey || typeof fetch !== "function") {
-        session.prefetchedCoaching[key][helpCount] = fallback;
-        session.prefetchInFlight[inFlightKey] = false;
-        saveSession(session);
-        return;
-      }
-
-      const model = process.env.OPENAI_COACHING_MODEL || "gpt-4o-mini";
-      const timeoutMs = Number(process.env.OPENAI_COACHING_TIMEOUT_MS || 3000);
-
-      const developerText =
-        "You are a calm phone call practice coach. " +
-        "You are NOT the receptionist. " +
-        "Do NOT speak as the clinic. " +
-        "Do NOT roleplay. " +
-        "Return exactly one short coaching line, no more than 16 words. " +
-        "Start with a coaching frame such as: You might try saying: or Try saying:. " +
-        "Then provide a short first-person starter fragment. " +
-        "Do not use brackets. Do not use quotes. No greeting. No emojis.";
-
-      const questionLabel = key === "reason" ? "reason for calling" : "one detail they might ask for";
-      const helpLevel = helpCount >= 2 ? "second" : "first";
-
-      const userText =
-        "Context: This is a medical clinic call practice. " +
-        "The student asked for help while answering the " + questionLabel + ". " +
-        "Help request level: " + helpLevel + ". " +
-        "Give one coaching line they can immediately say.";
-
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-        const resp = await fetch("https://api.openai.com/v1/responses", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + apiKey,
-          },
-          signal: controller.signal,
-          body: JSON.stringify({
-            model,
-            input: [
-              { role: "developer", content: [{ type: "input_text", text: developerText }] },
-              { role: "user", content: [{ type: "input_text", text: userText }] },
-            ],
-            max_output_tokens: 60,
-          }),
-        });
-
-        clearTimeout(timer);
-
-        let raw = "";
-        if (resp && resp.ok) {
-          const data = await resp.json();
-          raw = data && typeof data.output_text === "string" ? data.output_text : "";
-        }
-
-        const coaching = makeSafeCoachingLine(raw, fallback);
-
-        session.prefetchedCoaching[key][helpCount] = coaching;
-        session.prefetchInFlight[inFlightKey] = false;
-        saveSession(session);
-      } catch (e) {
-        session.prefetchedCoaching[key][helpCount] = fallback;
-        session.prefetchInFlight[inFlightKey] = false;
-        saveSession(session);
-      }
-    })();
-  } catch (e) {
-    // Never let prefetch affect the live call
-  }
-}
-
 function isDuplicateNoInputHit(session, phase, hasInput) {
   if (!session) return false;
   if (hasInput) return false;
@@ -804,29 +709,7 @@ async function handleVoiceOptionE(req, res) {
             },
           };
 
-          const prefetched =
-            session &&
-            session.prefetchedCoaching &&
-            session.prefetchedCoaching[key] &&
-            session.prefetchedCoaching[key][helpCount]
-              ? String(session.prefetchedCoaching[key][helpCount])
-              : "";
-          const usedPrefetch = !!prefetched;
-
-          if (usedPrefetch) {
-            session.coachingMeta = session.coachingMeta || {};
-
-            const fallbackRaw = getCoachingLineForKey(key, helpCount);
-            const fallbackSafe = makeSafeCoachingLine(
-              fallbackRaw,
-              "Try a short, specific answer. You can keep it simple."
-            );
-
-            session.coachingMeta.source = prefetched === fallbackSafe ? "fallback" : "ai";
-            session.coachingMeta.reason = "prefetch";
-          }
-
-          const coachingRaw = prefetched || (await getCoachingLine(key, helpCount, session));
+          const coachingRaw = await getCoachingLine(key, helpCount, session);
 
           const coaching = makeSafeCoachingLine(
             coachingRaw,
@@ -898,8 +781,6 @@ async function handleVoiceOptionE(req, res) {
         // Ask the next question
         const nextKey = flow[session.stepIndex];
         const nextQ = OPTION_E_QUESTIONS.find((qq) => qq && qq.key === nextKey);
-        prefetchAiCoachingLine(nextKey, 1, session);
-        prefetchAiCoachingLine(nextKey, 2, session);
 
         if (!nextQ) {
           logCallEnd(callSid, session, "unknown_next_question_key_" + String(nextKey || ""));
