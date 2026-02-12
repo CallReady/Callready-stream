@@ -811,6 +811,20 @@ async function handleVoiceOptionE(req, res) {
             session.prefetchedCoaching[key][helpCount]
               ? String(session.prefetchedCoaching[key][helpCount])
               : "";
+          const usedPrefetch = !!prefetched;
+
+          if (usedPrefetch) {
+            session.coachingMeta = session.coachingMeta || {};
+
+            const fallbackRaw = getCoachingLineForKey(key, helpCount);
+            const fallbackSafe = makeSafeCoachingLine(
+              fallbackRaw,
+              "Try a short, specific answer. You can keep it simple."
+            );
+
+            session.coachingMeta.source = prefetched === fallbackSafe ? "fallback" : "ai";
+            session.coachingMeta.reason = "prefetch";
+          }
 
           const coachingRaw = prefetched || (await getCoachingLine(key, helpCount, session));
 
