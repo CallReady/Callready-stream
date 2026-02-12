@@ -145,9 +145,9 @@ async function getCoachingLine(key, helpCount, session) {
     "Start with exactly: Try saying: " +
     "Then provide a first-person starter fragment the student can say right now. " +
     "If the student is answering the reason for calling, give one sentence that starts with: I am calling because I need to " +
-    "If the student is answering one detail they might ask for, you MUST choose exactly one of these starters: " +
+    "If the student is answering one detail they might ask for, you MUST output only one of these exact starters and nothing else: " +
     "My date of birth is, My insurance is, My address is, My phone number is. " +
-    "Do not add extra explanation after the starter fragment.";
+    "Do NOT add any numbers, names, dates, or examples. End immediately after the starter. " +
 
   const userText =
     "Context: This is a medical clinic call practice. " +
