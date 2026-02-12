@@ -670,53 +670,11 @@ async function handleVoiceOptionE(req, res) {
         );
 
       } else {
-
         const key = flow[idx];
         const q = OPTION_E_QUESTIONS.find((qq) => qq && qq.key === key);
 
-                // If we previously queued coaching, deliver it now without waiting on user input.
-        if (session.pendingCoaching && session.pendingCoaching.key === key) {
-          const pendingHelpCount =
-            typeof session.pendingCoaching.helpCount === "number"
-              ? session.pendingCoaching.helpCount
-              : 1;
-
-          // Clear pending flag so we do not loop.
-          session.pendingCoaching = null;
-          saveSession(session);
-
-          const coachingRaw = await getCoachingLine(phaseKey, pendingHelpCount, session);
-          const coaching = makeSafeCoachingLine(
-            coachingRaw,
-            "Try a short, specific answer. You can keep it simple."
-          );
-
-          const coachingSource =
-            coachingRaw === getCoachingLineForKey(phaseKey, pendingHelpCount) ? "fallback" : "ai";
-
-          const reason =
-            session && session.coachingMeta && session.coachingMeta.reason
-              ? String(session.coachingMeta.reason)
-              : "unknown";
-
-          const coachingDebug = debugEnabled
-            ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ". REASON " + reason + ".</Say>"
-            : "";
-
-          return sendTwiml(
-            res,
-            coachingDebug +
-              "<Say>" + escapeXml(coaching) + "</Say>" +
-              buildAskQuestionTwiml(
-                q,
-                actionUrl,
-                gatherCfg.timeoutSec,
-                gatherCfg.speechTimeoutSec
-              )
-          );
-        }
-
         if (!q) {
+
           logCallEnd(callSid, session, "unknown_question_key_" + String(key || ""));
           if (callSid) clearSession(callSid);
           return sendTwiml(res, "<Say>Option E reached an unknown step and will end now.</Say><Hangup/>");
