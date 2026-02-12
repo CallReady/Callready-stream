@@ -958,7 +958,8 @@ async function handleVoiceOptionE(req, res) {
 
         const wrapup = await getWrapupLine(session);
 
-          const wrapup = await getWrapupLine(session);
+          const wrapupLine = await getWrapupLine(session);
+
 
           return sendTwiml(
             res,
