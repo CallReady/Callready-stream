@@ -167,6 +167,60 @@ async function getFillerLine(session) {
   }
 }
 
+async function getWrapupLine(session) {
+  const fallback = "Nice work. You can practice again anytime.";
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey || typeof fetch !== "function") {
+    return fallback;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 900);
+
+    const resp = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + apiKey,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: process.env.OPENAI_COACHING_MODEL || "gpt-4o-mini",
+        input: [
+          {
+            role: "developer",
+            content: [
+              {
+                type: "input_text",
+                text:
+                  "Return one short supportive wrap up line for practice. " +
+                  "Under 12 words. No emojis. No quotes. Plain ASCII.",
+              },
+            ],
+          },
+        ],
+        max_output_tokens: 25,
+      }),
+    });
+
+    clearTimeout(timer);
+
+    if (!resp.ok) return fallback;
+
+    const data = await resp.json();
+    const text = data && typeof data.output_text === "string" ? data.output_text : "";
+    const t = String(text || "").trim();
+
+    if (!t || t.length > 80) return fallback;
+
+    return t;
+  } catch (e) {
+    return fallback;
+  }
+}
+
 async function getCoachingLine(key, helpCount, session) {
   // Seam for AI coaching with strict timeout and deterministic fallback.
   const fallback = getCoachingLineForKey(key, helpCount);
@@ -723,6 +777,8 @@ async function handleVoiceOptionE(req, res) {
         logCallEnd(callSid, session, "normal_wrapup");
         if (callSid) clearSession(callSid);
 
+        const wrapup = await getWrapupLine(session);
+
         return sendTwiml(
           res,
           "<Say>DEBUG WRAPUP. flowId " +
@@ -732,7 +788,7 @@ async function handleVoiceOptionE(req, res) {
             ". flowLength " +
             String(flow && Array.isArray(flow) ? flow.length : "none") +
             ".</Say>" +
-            "<Say>Nice work. You can practice again anytime.</Say><Hangup/>"
+            "<Say>" + escapeXml(wrapup) + "</Say><Hangup/>"
         );
 
       } else {
@@ -900,10 +956,12 @@ async function handleVoiceOptionE(req, res) {
           logCallEnd(callSid, session, "normal_wrapup");
           if (callSid) clearSession(callSid);
 
-          return sendTwiml(
-            res,
-            "<Say>Nice work. You can practice again anytime.</Say><Hangup/>"
-          );
+        const wrapup = await getWrapupLine(session);
+
+        return sendTwiml(
+          res,
+          "<Say>" + escapeXml(wrapup) + "</Say><Hangup/>"
+        );
 
         }
 
