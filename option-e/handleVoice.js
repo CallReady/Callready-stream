@@ -538,6 +538,10 @@ async function handleGenericQuestionPhase(opts) {
   return sendTwiml(res, "<Say>Sorry, something went wrong.</Say><Hangup/>");
 }
 
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function sendTwiml(res, inner) {
   res.status(200);
   res.type("text/xml");
@@ -784,6 +788,7 @@ async function handleVoiceOptionE(req, res) {
           saveSession(session);
 
           const filler = "Okay. Give me a second.";
+          await sleepMs(300);
 
           return sendTwiml(
             res,
