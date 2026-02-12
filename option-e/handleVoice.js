@@ -983,8 +983,6 @@ async function handleVoiceOptionE(req, res) {
 
         const wrapup = await getWrapupLine(session);
 
-          const wrapupLine = await getWrapupLine(session);
-
 const wrapupLine = await getWrapupLine(session);
 
 const debugWrap =
