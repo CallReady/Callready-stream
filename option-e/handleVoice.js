@@ -408,7 +408,7 @@ function handleQuestionRetry(res, callSid, session, actionUrl, q, phaseKeyForRet
   );
 }
 
-function handleGenericQuestionPhase(opts) {
+async function handleGenericQuestionPhase(opts) {
   const res = opts.res;
   const callSid = opts.callSid;
   const session = opts.session;
@@ -419,6 +419,48 @@ function handleGenericQuestionPhase(opts) {
   const q = opts.q; // question object
   const gatherCfg = opts.gatherCfg; // { timeoutSec, speechTimeoutSec }
   const retryLimit = opts.retryLimit; // number
+  const debugEnabled = !!opts.debugEnabled;
+
+  // If we previously queued coaching, deliver it now without waiting on user input.
+    if (session.pendingCoaching && session.pendingCoaching.key === phaseKey) {
+          const pendingHelpCount =
+            typeof session.pendingCoaching.helpCount === "number"
+              ? session.pendingCoaching.helpCount
+              : 1;
+
+          session.pendingCoaching = null;
+          saveSession(session);
+
+          const coachingRaw = await getCoachingLine(key, pendingHelpCount, session);
+          const coaching = makeSafeCoachingLine(
+            coachingRaw,
+            "Try a short, specific answer. You can keep it simple."
+          );
+
+          const coachingSource =
+            coachingRaw === getCoachingLineForKey(key, pendingHelpCount) ? "fallback" : "ai";
+
+          const reason =
+            session && session.coachingMeta && session.coachingMeta.reason
+              ? String(session.coachingMeta.reason)
+              : "unknown";
+
+          const coachingDebug = debugEnabled
+            ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ". REASON " + reason + ".</Say>"
+            : "";
+
+          return sendTwiml(
+            res,
+            coachingDebug +
+              "<Say>" + escapeXml(coaching) + "</Say>" +
+              buildAskQuestionTwiml(
+                q,
+                actionUrl,
+                gatherCfg.timeoutSec,
+                gatherCfg.speechTimeoutSec
+              )
+          );
+        }
   const userInput = opts.userInput; // string
   const nextPhase = opts.nextPhase; // string, e.g. "detail" or "wrapup"
   const nextQuestionIndex = opts.nextQuestionIndex; // number or null
@@ -632,6 +674,48 @@ async function handleVoiceOptionE(req, res) {
         const key = flow[idx];
         const q = OPTION_E_QUESTIONS.find((qq) => qq && qq.key === key);
 
+                // If we previously queued coaching, deliver it now without waiting on user input.
+        if (session.pendingCoaching && session.pendingCoaching.key === key) {
+          const pendingHelpCount =
+            typeof session.pendingCoaching.helpCount === "number"
+              ? session.pendingCoaching.helpCount
+              : 1;
+
+          // Clear pending flag so we do not loop.
+          session.pendingCoaching = null;
+          saveSession(session);
+
+          const coachingRaw = await getCoachingLine(phaseKey, pendingHelpCount, session);
+          const coaching = makeSafeCoachingLine(
+            coachingRaw,
+            "Try a short, specific answer. You can keep it simple."
+          );
+
+          const coachingSource =
+            coachingRaw === getCoachingLineForKey(phaseKey, pendingHelpCount) ? "fallback" : "ai";
+
+          const reason =
+            session && session.coachingMeta && session.coachingMeta.reason
+              ? String(session.coachingMeta.reason)
+              : "unknown";
+
+          const coachingDebug = debugEnabled
+            ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ". REASON " + reason + ".</Say>"
+            : "";
+
+          return sendTwiml(
+            res,
+            coachingDebug +
+              "<Say>" + escapeXml(coaching) + "</Say>" +
+              buildAskQuestionTwiml(
+                q,
+                actionUrl,
+                gatherCfg.timeoutSec,
+                gatherCfg.speechTimeoutSec
+              )
+          );
+        }
+
         if (!q) {
           logCallEnd(callSid, session, "unknown_question_key_" + String(key || ""));
           if (callSid) clearSession(callSid);
@@ -651,7 +735,48 @@ async function handleVoiceOptionE(req, res) {
           typeof q.retryLimit === "number" ? q.retryLimit : 1;
 
         // If no input or invalid input, retry or end
-                const cleanedForHelp = String(userInput || "")
+                // If we previously queued coaching, deliver it now without waiting on user input.
+        if (session.pendingCoaching && session.pendingCoaching.key === key) {
+          const pendingHelpCount =
+            typeof session.pendingCoaching.helpCount === "number"
+              ? session.pendingCoaching.helpCount
+              : 1;
+
+          session.pendingCoaching = null;
+          saveSession(session);
+
+          const coachingRaw = await getCoachingLine(key, pendingHelpCount, session);
+          const coaching = makeSafeCoachingLine(
+            coachingRaw,
+            "Try a short, specific answer. You can keep it simple."
+          );
+
+          const coachingSource =
+            coachingRaw === getCoachingLineForKey(key, pendingHelpCount) ? "fallback" : "ai";
+
+          const reason =
+            session && session.coachingMeta && session.coachingMeta.reason
+              ? String(session.coachingMeta.reason)
+              : "unknown";
+
+          const coachingDebug = debugEnabled
+            ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ". REASON " + reason + ".</Say>"
+            : "";
+
+          return sendTwiml(
+            res,
+            coachingDebug +
+              "<Say>" + escapeXml(coaching) + "</Say>" +
+              buildAskQuestionTwiml(
+                q,
+                actionUrl,
+                gatherCfg.timeoutSec,
+                gatherCfg.speechTimeoutSec
+              )
+          );
+        }
+
+        const cleanedForHelp = String(userInput || "")
           .toLowerCase()
           .replace(/[^a-z0-9\s]/g, "")
           .replace(/\s+/g, " ")
@@ -687,40 +812,36 @@ async function handleVoiceOptionE(req, res) {
         const isCoachingHelp = matchesExplicitPhrase || matchesShortHelp;
 
         if (isCoachingHelp) {
-          // Track help requests per question key so we can escalate coaching
           session.helpCounts = session.helpCounts || {};
           session.helpCounts[key] = (session.helpCounts[key] || 0) + 1;
-          saveSession(session);
 
           const helpCount = session.helpCounts[key];
 
-          const coachingByKey = {
-            reason: {
-              first:
-                "Try a simple one sentence reason, for example, I need to schedule an appointment, or I have a question about a symptom.",
-              second:
-                "Try starting with: I'm calling because I need to. Then add one short detail, for example, I'm calling because I need to schedule a checkup.",
-            },
-            detail: {
-              first:
-                "Name one detail they might ask for, for example, your date of birth, your insurance, or your address.",
-              second:
-                "If you are stuck, pick one of these and say it out loud: My date of birth is. My insurance is. My address is. Choose one and fill in the blank.",
-            },
-          };
+          session.pendingCoaching = { key, helpCount };
+          saveSession(session);
 
-          const coachingRaw = await getCoachingLine(key, helpCount, session);
+          const filler = "Okay. Give me a second.";
 
-          const coaching = makeSafeCoachingLine(
-            coachingRaw,
-            "Try a short, specific answer. You can keep it simple."
+          return sendTwiml(
+            res,
+            "<Say>" + escapeXml(filler) + "</Say>" +
+              "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+          );
+        }
+
+
+          // Queue coaching for the same question, then speak a quick filler line immediately.
+          session.pendingCoaching = { key, helpCount };
+          saveSession(session);
+
+          const filler = "Okay. Give me a second.";
+
+          return sendTwiml(
+            res,
+            "<Say>" + escapeXml(filler) + "</Say>" +
+              "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
           );
 
-          const coachingSource = coachingRaw === getCoachingLineForKey(key, helpCount) ? "fallback" : "ai";
-          const reason = session && session.coachingMeta && session.coachingMeta.reason ? String(session.coachingMeta.reason) : "unknown";
-          const coachingDebug = debugEnabled ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ". REASON " + reason + ".</Say>" : "";
-
- 
           return sendTwiml(
             res,
             coachingDebug +
