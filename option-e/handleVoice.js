@@ -423,7 +423,7 @@ function getBaseUrl(req) {
   return "https://callready-stream.onrender.com";
 }
 
-function handleVoiceOptionE(req, res) {
+async function handleVoiceOptionE(req, res) {
   const debugEnabled = String((req.body && req.body.Debug) || "") === "1";
 
   function dbgSay(text) {
