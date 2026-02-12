@@ -829,33 +829,6 @@ async function handleVoiceOptionE(req, res) {
           );
         }
 
-
-          // Queue coaching for the same question, then speak a quick filler line immediately.
-          session.pendingCoaching = { key, helpCount };
-          saveSession(session);
-
-          const filler = "Okay. Give me a second.";
-
-          return sendTwiml(
-            res,
-            "<Say>" + escapeXml(filler) + "</Say>" +
-              "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
-          );
-
-          return sendTwiml(
-            res,
-            coachingDebug +
-            "<Say>" + escapeXml(coaching) + "</Say>" +
-
-              buildAskQuestionTwiml(
-                q,
-                actionUrl,
-                gatherCfg.timeoutSec,
-                gatherCfg.speechTimeoutSec
-              )
-          );
-        }
-
         const ok = isValidAnswerForQuestion(q, userInput);
 
         if (!ok) {
