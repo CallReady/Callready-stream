@@ -683,9 +683,14 @@ async function handleVoiceOptionE(req, res) {
             "Try a short, specific answer. You can keep it simple."
           );
 
+                   const coachingSource = coachingRaw === getCoachingLineForKey(key, helpCount) ? "fallback" : "ai";
+          const coachingDebug = debugEnabled ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ".</Say>" : "";
+ 
           return sendTwiml(
             res,
+            coachingDebug +
             "<Say>" + escapeXml(coaching) + "</Say>" +
+
               buildAskQuestionTwiml(
                 q,
                 actionUrl,
