@@ -110,6 +110,63 @@ function getCoachingLineForKey(key, helpCount) {
   return perKey.first || "Try a short, specific answer. You can keep it simple.";
 }
 
+async function getFillerLine(session) {
+  const fallback = "Okay. Give me a second.";
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey || typeof fetch !== "function") {
+    return fallback;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 800);
+
+    const resp = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + apiKey,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: process.env.OPENAI_COACHING_MODEL || "gpt-4o-mini",
+        input: [
+          {
+            role: "developer",
+            content: [
+              {
+                type: "input_text",
+                text:
+                  "Return one very short conversational filler line, under 8 words. " +
+                  "No coaching. No instructions. No Try saying. " +
+                  "Just a brief natural pause line.",
+              },
+            ],
+          },
+        ],
+        max_output_tokens: 20,
+      }),
+    });
+
+    clearTimeout(timer);
+
+    if (!resp.ok) return fallback;
+
+    const data = await resp.json();
+    let text = data && typeof data.output_text === "string"
+      ? data.output_text
+      : "";
+
+    text = String(text || "").trim();
+    if (!text || text.length > 60) return fallback;
+
+    return text;
+  } catch (e) {
+    return fallback;
+  }
+}
+
 async function getCoachingLine(key, helpCount, session) {
   // Seam for AI coaching with strict timeout and deterministic fallback.
   const fallback = getCoachingLineForKey(key, helpCount);
