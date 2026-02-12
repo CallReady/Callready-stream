@@ -984,7 +984,7 @@ async function handleVoiceOptionE(req, res) {
 
         const wrapup = await getWrapupLine(session);
 
-const TEST_MARIN_AUDIO_URL = "https://callready-stream.onrender.com/test-marin.mp3";
+const TEST_MARIN_AUDIO_URL = "https://callready-stream.onrender.com/tts?key=wrapup";
 
 return sendTwiml(
   res,
