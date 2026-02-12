@@ -110,6 +110,12 @@ function getCoachingLineForKey(key, helpCount) {
   return perKey.first || "Try a short, specific answer. You can keep it simple.";
 }
 
+function getCoachingLine(key, helpCount, session) {
+  // Seam for future AI coaching.
+  // For now, keep deterministic scripted behavior.
+  return getCoachingLineForKey(key, helpCount);
+}
+
 function logPhaseTransition(callSid, fromPhase, toPhase, note) {
   console.log("OptionE transition:", {
     callSid: callSid || "(none)",
@@ -587,7 +593,7 @@ function handleVoiceOptionE(req, res) {
             },
           };
 
-          const coachingRaw = getCoachingLineForKey(key, helpCount);
+          const coachingRaw = getCoachingLine(key, helpCount, session);
           const coaching = makeSafeCoachingLine(
             coachingRaw,
             "Try a short, specific answer. You can keep it simple."
