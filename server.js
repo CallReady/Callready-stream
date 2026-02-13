@@ -2213,6 +2213,78 @@ app.get("/test-marin.mp3", (req, res) => {
   res.redirect(302, "https://demo.twilio.com/docs/classic.mp3");
 });
 
+function warmTtsPresetCache() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey || typeof fetch !== "function") return;
+
+  const dir = path.join(__dirname, "audio-cache");
+  try {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  } catch (e) {
+    return;
+  }
+
+  const presetByKey = {
+    opener: "Hi. This is CallReady practice mode.",
+    wrapup: "Nice work. You can practice again anytime.",
+  };
+
+  setImmediate(async () => {
+    for (const k of Object.keys(presetByKey)) {
+      try {
+        const safeKey = String(k).toLowerCase().replace(/[^a-z0-9_-]/g, "");
+        if (!safeKey) continue;
+
+        const filePath = path.join(dir, safeKey + ".mp3");
+        if (fs.existsSync(filePath)) continue;
+
+        const tempPath = filePath + ".tmp";
+        if (fs.existsSync(tempPath)) {
+          try { fs.unlinkSync(tempPath); } catch (e0) {}
+        }
+
+        fs.writeFileSync(tempPath, "");
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 6000);
+
+        const resp = await fetch("https://api.openai.com/v1/audio/speech", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + apiKey,
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
+            voice: process.env.OPENAI_TTS_VOICE || "marin",
+            response_format: "mp3",
+            input: presetByKey[k],
+          }),
+        });
+
+        clearTimeout(timer);
+
+        if (!resp.ok) {
+          try { fs.unlinkSync(tempPath); } catch (e1) {}
+          continue;
+        }
+
+        const buf = Buffer.from(await resp.arrayBuffer());
+        fs.writeFileSync(tempPath, buf);
+
+        try {
+          fs.renameSync(tempPath, filePath);
+        } catch (e2) {
+          try { fs.unlinkSync(tempPath); } catch (e3) {}
+        }
+      } catch (e) {
+        // best effort only
+      }
+    }
+  });
+}
+
 // Simple disk-cached TTS route (instant response, cache builds in parallel)
 // Supports two modes:
 // 1) Preset keys: /tts?key=wrapup
