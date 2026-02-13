@@ -157,8 +157,12 @@ app.post(
 // Put this AFTER the Stripe webhook route so Twilio form posts still work
 app.use(express.urlencoded({ extended: false }));
 
-
-const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
+const pool = DATABASE_URL
+  ? new Pool({
+      connectionString: DATABASE_URL,
+      ssl: { rejectUnauthorized: false }
+    })
+  : null;
 
 function nowIso() {
   return new Date().toISOString();
