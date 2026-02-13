@@ -2209,7 +2209,6 @@ app.get("/test-marin.mp3", (req, res) => {
   res.redirect(302, "https://demo.twilio.com/docs/classic.mp3");
 });
 
-const fs = require("fs");
 // Simple disk-cached TTS route (instant response, cache builds in parallel)
 app.get("/tts", (req, res) => {
   const key = String((req.query && req.query.key) || "").toLowerCase();
