@@ -857,37 +857,86 @@ async function handleVoiceOptionE(req, res) {
     }
 
     if (session.phase === "intent") {
-      const raw = String(userInput || "").toLowerCase();
+const cleaned = String(userInput || "")
+  .toLowerCase()
+  .replace(/[^a-z0-9\s]/g, " ")
+  .replace(/\s+/g, " ")
+  .trim();
 
-      // Minimal deterministic matcher, we can expand later.
-      // Business hours intent keywords
-      const isHours =
-        raw.includes("hours") ||
-        raw.includes("open") ||
-        raw.includes("close") ||
-        raw.includes("closing") ||
-        raw.includes("opening") ||
-        raw.includes("what time") ||
-        raw.includes("when are you") ||
-        raw.includes("business hours") ||
-        raw.includes("store hours");
+// Surprise detection
+const surprisePhrases = [
+  "surprise",
+  "you choose",
+  "choose for me",
+  "pick",
+  "pick one",
+  "you pick",
+  "anything",
+  "whatever",
+  "random",
+  "doesnt matter",
+  "doesn't matter"
+];
 
-      // If they say "surprise me", choose a default (medical for now).
-      const isSurprise =
-        raw.includes("surprise") ||
-        raw.includes("pick") ||
-        raw.includes("choose") ||
-        raw.includes("anything");
+const yesShort = ["yes", "yeah", "yep", "sure", "okay", "ok", "fine"];
 
-      session.flowId = isHours ? "hours" : "medical";
-      if (isSurprise && !isHours) session.flowId = "medical";
+const isSurprise =
+  surprisePhrases.some(p => cleaned.includes(p)) ||
+  yesShort.includes(cleaned) ||
+  cleaned === "1";
+
+// Basic invalid detection
+const invalidSingles = ["help", "what", "hi", "hello", "test"];
+const words = cleaned.split(" ").filter(Boolean);
+
+const isTooGeneric =
+  !cleaned ||
+  cleaned.length < 3 ||
+  (words.length === 1 && invalidSingles.includes(words[0]));
+
+if (isSurprise) {
+  session.flowId = "medical"; // default surprise choice for now
+} else if (!isTooGeneric) {
+  // Label-based matching
+  const isHours =
+    cleaned.includes("hours") ||
+    cleaned.includes("open") ||
+    cleaned.includes("close") ||
+    cleaned.includes("closing") ||
+    cleaned.includes("opening") ||
+    cleaned.includes("what time") ||
+    cleaned.includes("when are you") ||
+    cleaned.includes("business hours") ||
+    cleaned.includes("store hours");
+
+  session.flowId = isHours ? "hours" : "medical";
+  session.slots = session.slots || {};
+  session.slots.intent_label = cleaned;
+} else {
+  // Retry intent up to 2 times, then default to surprise
+  session.retries = session.retries || {};
+  session.retries.intent = (session.retries.intent || 0) + 1;
+  saveSession(session);
+
+  if (session.retries.intent >= 2) {
+    session.flowId = "medical";
+  } else {
+    return sendTwiml(
+      res,
+      "<Say>Say a call type, like scheduling an appointment, or say surprise me.</Say>" +
+      "<Gather input=\"speech dtmf\" action=\"" +
+      escapeXml(actionUrl) +
+      "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
+    );
+  }
+}
+
 
       session.stepIndex = 0;
       session.phase = "question";
       session.retries = {};
       session.helpCounts = {};
       session.pendingCoaching = null;
-      session.slots = session.slots || {};
 
       logPhaseTransition(callSid, "intent", "question", "selected_flow_" + String(session.flowId || "none"));
       saveSession(session);
