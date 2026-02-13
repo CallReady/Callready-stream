@@ -20,7 +20,11 @@ const OPTION_E_QUESTIONS = [
 
 const FLOWS = {
   default: ["reason", "detail"],
-  quick: ["reason"]
+  quick: ["reason"],
+
+  // v1 flows
+  medical: ["reason", "detail"],
+  hours: ["reason", "detail"],
 };
 
 function buildAskQuestionTwiml(q, actionUrl, timeoutSec, speechTimeoutSec) {
@@ -757,41 +761,76 @@ async function handleVoiceOptionE(req, res) {
     });
 
     if (session.phase === "start") {
-      // Library-driven: choose a flow and start at stepIndex 0
-      session.flowId = "medical";
+      // Start now collects intent, then selects a flow deterministically.
+      session.flowId = null;
       session.stepIndex = 0;
-      session.phase = "question";
+      session.phase = "intent";
       session.retries = {};
+      session.helpCounts = {};
+      session.pendingCoaching = null;
       session.slots = session.slots || {};
 
-      logPhaseTransition(callSid, "start", "question", "enter_flow_" + String(session.flowId));
+      logPhaseTransition(callSid, "start", "intent", "ask_intent");
       saveSession(session);
-
-      const flowId = session.flowId || "default";
-      const flow = FLOWS[flowId] || FLOWS["default"] || [];
-      const defaultFlow = FLOWS["default"] || [];
-
-      const firstKey =
-        (flow && flow.length ? flow[0] : null) ||
-        (defaultFlow && defaultFlow.length ? defaultFlow[0] : null) ||
-        "reason";
-
-      const q0 =
-        OPTION_E_QUESTIONS.find((qq) => qq && qq.key === firstKey) ||
-        OPTION_E_QUESTIONS.find((qq) => qq && qq.key === "reason") ||
-        OPTION_E_QUESTIONS[0];
 
       return sendTwiml(
         res,
-        dbgSay("START. CallStatus " + String(req.body && req.body.CallStatus ? req.body.CallStatus : "none") + ". Direction " + String(req.body && req.body.Direction ? req.body.Direction : "none")) +
-        "<Say>Hi. This is CallReady practice mode.</Say>" +
+        dbgSay(
+          "START. CallStatus " +
+            String(req.body && req.body.CallStatus ? req.body.CallStatus : "none") +
+            ". Direction " +
+            String(req.body && req.body.Direction ? req.body.Direction : "none")
+        ) +
+          "<Say>Hi. This is CallReady practice mode.</Say>" +
+          "<Say>Tell me what call you want to practice, or say surprise me.</Say>" +
+          "<Gather input=\"speech dtmf\" action=\"" +
+          escapeXml(actionUrl) +
+          "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
+      );
+    }
 
-          buildAskQuestionTwiml(
-            q0,
-            actionUrl,
-            PHASES[q0.key] && PHASES[q0.key].gather ? PHASES[q0.key].gather.timeoutSec : 3,
-            PHASES[q0.key] && PHASES[q0.key].gather ? PHASES[q0.key].gather.speechTimeoutSec : 1
-          )
+    if (session.phase === "intent") {
+      const raw = String(userInput || "").toLowerCase();
+
+      // Minimal deterministic matcher, we can expand later.
+      // Business hours intent keywords
+      const isHours =
+        raw.includes("hours") ||
+        raw.includes("open") ||
+        raw.includes("close") ||
+        raw.includes("closing") ||
+        raw.includes("opening") ||
+        raw.includes("what time") ||
+        raw.includes("when are you") ||
+        raw.includes("business hours") ||
+        raw.includes("store hours");
+
+      // If they say "surprise me", choose a default (medical for now).
+      const isSurprise =
+        raw.includes("surprise") ||
+        raw.includes("pick") ||
+        raw.includes("choose") ||
+        raw.includes("anything");
+
+      session.flowId = isHours ? "hours" : "medical";
+      if (isSurprise && !isHours) session.flowId = "medical";
+
+      session.stepIndex = 0;
+      session.phase = "question";
+      session.retries = {};
+      session.helpCounts = {};
+      session.pendingCoaching = null;
+      session.slots = session.slots || {};
+
+      logPhaseTransition(callSid, "intent", "question", "selected_flow_" + String(session.flowId || "none"));
+      saveSession(session);
+
+      const chosenLabel = session.flowId === "hours" ? "finding out business hours" : "making a medical appointment";
+
+      return sendTwiml(
+        res,
+        "<Say>Okay. We will practice " + escapeXml(chosenLabel) + ".</Say>" +
+          "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
     }
 
