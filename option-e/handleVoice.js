@@ -411,6 +411,47 @@ function stripFillers(text) {
   return t.replace(/\s+/g, " ").trim();
 }
 
+function isNonsenseSpeechInput(speechText, confidenceValue) {
+  const raw = String(speechText || "").trim();
+  if (!raw) return true;
+
+  // If Twilio provided a confidence score, use it as a strong signal.
+  // Keep threshold conservative to avoid rejecting real answers with imperfect audio.
+  const hasConfidence = typeof confidenceValue === "number" && Number.isFinite(confidenceValue);
+  const threshold = Number(process.env.OPTION_E_SPEECH_CONFIDENCE_MIN || 0.35);
+
+  if (hasConfidence && confidenceValue < threshold) return true;
+
+  // Normalize for heuristic checks
+  const t = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!t) return true;
+
+  // Very short speech results are often clicks, breaths, or partial recognitions
+  if (t.length < 2) return true;
+
+  // Repeated single character like "aaa" or "mmm"
+  if (/^(.)\1{2,}$/.test(t)) return true;
+
+  // Common non-answers and filler-only
+  const stripped = stripFillers(t);
+  if (!stripped || stripped.length < 2) return true;
+
+  // Single token that is extremely likely to be filler or noise
+  const tokens = stripped.split(" ").filter(Boolean);
+  if (tokens.length === 1) {
+    const w = tokens[0];
+    const badSingles = ["uh", "um", "umm", "hmm", "mm", "m", "k"];
+    if (badSingles.includes(w)) return true;
+  }
+
+  return false;
+}
+
 function isValidReasonInput(text) {
     const t = String(text || "")
     .toLowerCase()
@@ -748,7 +789,17 @@ async function handleVoiceOptionE(req, res) {
 
     const speech = req && req.body && req.body.SpeechResult ? String(req.body.SpeechResult).trim() : "";
     const digits = req && req.body && req.body.Digits ? String(req.body.Digits).trim() : "";
-    const userInput = (speech || digits).trim();
+
+    const confidenceRaw =
+      req && req.body && req.body.Confidence !== undefined ? String(req.body.Confidence).trim() : "";
+
+    const confidenceVal = confidenceRaw ? Number.parseFloat(confidenceRaw) : NaN;
+
+    // If speech looks like nonsense (noise, breaths, bad recognition), treat it as no input
+    // so normal retry logic handles it consistently.
+    const speechIsUsable = speech && !isNonsenseSpeechInput(speech, confidenceVal);
+
+    const userInput = ((speechIsUsable ? speech : "") || digits).trim();
 
     console.log("OptionE hit:", {
       callSid: callSid || "(none)",
