@@ -765,6 +765,7 @@ async function handleVoiceOptionE(req, res) {
       session.flowId = null;
       session.stepIndex = 0;
       session.phase = "intent";
+      session.startedAt = Date.now();
       session.retries = {};
       session.helpCounts = {};
       session.pendingCoaching = null;
