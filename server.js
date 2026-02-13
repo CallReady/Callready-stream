@@ -8,6 +8,7 @@ const twilio = require("twilio");
 const { Pool } = require("pg");
 const Stripe = require("stripe");
 const { handleVoiceOptionE } = require("./option-e/handleVoice");
+const path = require("path");
 
 function getTestMedicalPrompt(session, safeStep) {
   const step = Number.isFinite(safeStep) ? safeStep : 0;
@@ -88,6 +89,8 @@ const E_PHASES = {
 
 const app = express();
 app.set("strict routing", true);
+// Serve cached Marin audio files
+app.use("/audio-cache", express.static(path.join(__dirname, "audio-cache")));
 
 const PORT = process.env.PORT || 10000;
 const CALLREADY_VERSION =
