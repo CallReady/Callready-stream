@@ -2214,14 +2214,46 @@ app.get("/test-marin.mp3", (req, res) => {
 });
 
 // Simple disk-cached TTS route (instant response, cache builds in parallel)
+// Supports two modes:
+// 1) Preset keys: /tts?key=wrapup
+// 2) Dynamic text: /tts?key=CAxxxx_step3&text=Hello%20there
 app.get("/tts", (req, res) => {
-  const key = String((req.query && req.query.key) || "").toLowerCase();
+  const key = String((req.query && req.query.key) || "").toLowerCase().trim();
 
   if (!key) {
     return res.status(400).send("Missing key");
   }
 
-  const filePath = path.join(__dirname, "audio-cache", key + ".mp3");
+  const presetByKey = {
+    wrapup: "Nice work. You can practice again anytime.",
+    opener: "Hi. This is CallReady practice mode.",
+  };
+
+  const dynamicTextRaw = req.query && req.query.text !== undefined ? String(req.query.text) : "";
+  const dynamicText = dynamicTextRaw.trim();
+
+  // Choose text source: dynamic text if provided, otherwise preset text by key
+  let textToSpeak = "";
+  if (dynamicText) {
+    textToSpeak = dynamicText;
+  } else if (presetByKey[key]) {
+    textToSpeak = presetByKey[key];
+  } else {
+    return res.status(400).send("Unknown key and missing text");
+  }
+
+  // Hard caps to keep latency and cost bounded
+  if (textToSpeak.length > 240) {
+    textToSpeak = textToSpeak.slice(0, 240).trim();
+  }
+
+  // Restrict filename characters so a caller-provided key cannot escape the cache dir
+  const safeKey = key.replace(/[^a-z0-9_-]/g, "");
+  if (!safeKey) {
+    return res.status(400).send("Invalid key");
+  }
+
+  const filePath = path.join(__dirname, "audio-cache", safeKey + ".mp3");
 
   // If file already exists, serve it
   if (fs.existsSync(filePath)) {
@@ -2231,7 +2263,6 @@ app.get("/tts", (req, res) => {
   // If it doesn't exist yet, start creating it, but DO NOT wait.
   // Always respond immediately with the known-working Marin test audio.
   try {
-    // Ensure folder exists
     const dir = path.join(__dirname, "audio-cache");
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
@@ -2239,38 +2270,52 @@ app.get("/tts", (req, res) => {
 
     // Avoid duplicate work if a temp file is already being written
     if (!fs.existsSync(tempPath)) {
-      const file = fs.createWriteStream(tempPath);
+      fs.writeFileSync(tempPath, ""); // create placeholder immediately
 
-      const req2 = https.get("https://demo.twilio.com/docs/classic.mp3", (resp) => {
-        if (resp.statusCode !== 200) {
-          file.destroy();
-          try { fs.unlinkSync(tempPath); } catch (e) {}
-          return;
-        }
+      setImmediate(async () => {
+        try {
+          const apiKey = process.env.OPENAI_API_KEY;
+          if (!apiKey || typeof fetch !== "function") {
+            try { fs.unlinkSync(tempPath); } catch (e0) {}
+            return;
+          }
 
-        resp.pipe(file);
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 3500);
 
-        file.on("finish", () => {
-          file.close(() => {
-            try {
-              fs.renameSync(tempPath, filePath);
-            } catch (e) {
-              try { fs.unlinkSync(tempPath); } catch (e2) {}
-            }
+          const resp = await fetch("https://api.openai.com/v1/audio/speech", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + apiKey,
+            },
+            signal: controller.signal,
+            body: JSON.stringify({
+              model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
+              voice: process.env.OPENAI_TTS_VOICE || "marin",
+              response_format: "mp3",
+              input: textToSpeak,
+            }),
           });
-        });
-      });
 
-      req2.on("error", () => {
-        file.destroy();
-        try { fs.unlinkSync(tempPath); } catch (e) {}
-      });
+          clearTimeout(timer);
 
-      // Hard timeout so we never hang the server if outbound stalls
-      req2.setTimeout(2500, () => {
-        try { req2.destroy(); } catch (e) {}
-        file.destroy();
-        try { fs.unlinkSync(tempPath); } catch (e2) {}
+          if (!resp.ok) {
+            try { fs.unlinkSync(tempPath); } catch (e1) {}
+            return;
+          }
+
+          const buf = Buffer.from(await resp.arrayBuffer());
+          fs.writeFileSync(tempPath, buf);
+
+          try {
+            fs.renameSync(tempPath, filePath);
+          } catch (e2) {
+            try { fs.unlinkSync(tempPath); } catch (e3) {}
+          }
+        } catch (e) {
+          try { fs.unlinkSync(tempPath); } catch (e4) {}
+        }
       });
     }
   } catch (e) {
