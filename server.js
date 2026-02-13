@@ -3896,4 +3896,11 @@ closeAll("Redirect to /unavailable failed");
 server.listen(PORT, () => {
   console.log(nowIso(), `Server listening on ${PORT}`, "version:", CALLREADY_VERSION);
   console.log(nowIso(), "POST /voice, WS /media");
+
+  // Warm preset TTS cache in background
+  try {
+    warmTtsPresetCache();
+  } catch (e) {
+    console.log("TTS warmup failed to start");
+  }
 });
