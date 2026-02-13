@@ -1,4 +1,4 @@
-//option-e stable separate ai filler from coaching and add micro delay
+//Stable fallback after adding intro and retry 
 const { getOrCreateSession, saveSession, clearSession, getCallSid } = require("./sessionStore");
 const WRAPUP_PHASE = "wrapup";
 const OPTION_E_QUESTIONS = [
