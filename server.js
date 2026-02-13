@@ -2224,12 +2224,24 @@ app.get("/tts", (req, res) => {
     return res.sendFile(filePath);
   }
 
-  // If it doesn't exist, create it by copying the working test audio once
-  const sourceUrl = "https://callready-stream.onrender.com/test-marin.mp3";
+  // If it doesn't exist, create it once by downloading the test audio
+  const https = require("https");
+  const file = fs.createWriteStream(filePath);
 
-  // Instead of downloading manually, redirect once to test audio
-  // This guarantees Twilio works while we build real Marin next
-  return res.redirect(302, sourceUrl);
+  https
+    .get("https://demo.twilio.com/docs/classic.mp3", (response) => {
+      response.pipe(file);
+      file.on("finish", () => {
+        file.close(() => {
+          res.sendFile(filePath);
+        });
+      });
+    })
+    .on("error", (err) => {
+      console.error("Error creating cached audio:", err);
+      res.status(500).send("Audio generation failed");
+    });
+
 });
 
 app.post("/voice", async (req, res) => {
