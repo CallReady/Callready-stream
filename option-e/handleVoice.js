@@ -931,41 +931,18 @@ if (isSurprise) {
   }
 }
 
-
       session.stepIndex = 0;
-      session.phase = "question";
+      session.phase = "announce";
       session.retries = {};
       session.helpCounts = {};
       session.pendingCoaching = null;
 
-      logPhaseTransition(callSid, "intent", "question", "selected_flow_" + String(session.flowId || "none"));
+      logPhaseTransition(callSid, "intent", "announce", "selected_flow_" + String(session.flowId || "none"));
       saveSession(session);
-
-      const chosenLabel = session.flowId === "hours" ? "finding out business hours" : "making a medical appointment";
-
-      const flowId = session.flowId || "default";
-      const flow = FLOWS[flowId] || FLOWS["default"] || [];
-      const defaultFlow = FLOWS["default"] || [];
-
-      const firstKey =
-        (flow && flow.length ? flow[0] : null) ||
-        (defaultFlow && defaultFlow.length ? defaultFlow[0] : null) ||
-        "reason";
-
-      const q0 =
-        OPTION_E_QUESTIONS.find((qq) => qq && qq.key === firstKey) ||
-        OPTION_E_QUESTIONS.find((qq) => qq && qq.key === "reason") ||
-        OPTION_E_QUESTIONS[0];
 
       return sendTwiml(
         res,
-        "<Say>Okay. We will practice " + escapeXml(chosenLabel) + ".</Say>" +
-          buildAskQuestionTwiml(
-            q0,
-            actionUrl,
-            PHASES[q0.key] && PHASES[q0.key].gather ? PHASES[q0.key].gather.timeoutSec : 3,
-            PHASES[q0.key] && PHASES[q0.key].gather ? PHASES[q0.key].gather.speechTimeoutSec : 1
-          )
+        "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
 
     }
