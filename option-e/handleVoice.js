@@ -712,6 +712,20 @@ function getBaseUrl(req) {
 }
 
 async function handleVoiceOptionE(req, res) {
+  const callStatusRaw = req && req.body && req.body.CallStatus ? String(req.body.CallStatus) : "";
+  const callStatus = callStatusRaw.trim().toLowerCase();
+
+  if (
+    callStatus === "completed" ||
+    callStatus === "canceled" ||
+    callStatus === "busy" ||
+    callStatus === "failed" ||
+    callStatus === "no-answer"
+  ) {
+    res.type("text/xml");
+    return res.send("<Response><Hangup/></Response>");
+  }
+
   const debugEnabled = String((req.body && req.body.Debug) || "") === "1";
 
   function dbgSay(text) {
