@@ -832,6 +832,7 @@ async function handleVoiceOptionE(req, res) {
         "<Say>Okay. We will practice " + escapeXml(chosenLabel) + ".</Say>" +
           "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
+
     }
 
     if (session.phase === "question") {
