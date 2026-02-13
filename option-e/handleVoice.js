@@ -854,6 +854,116 @@ async function handleVoiceOptionE(req, res) {
 
     }
 
+    if (session.phase === WRAPUP_PHASE) {
+      // End-of-session choice: practice again or end.
+      const limitSeconds = Number(process.env.OPTION_E_SESSION_LIMIT_SECONDS || 300);
+      const startedAt = typeof session.startedAt === "number" ? session.startedAt : null;
+      const elapsedSeconds = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
+
+      const shouldForceEnd = startedAt && elapsedSeconds >= limitSeconds;
+
+      const raw = String(userInput || "").toLowerCase().trim();
+      const cleaned = raw.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+
+      const isAgain =
+        cleaned === "1" ||
+        cleaned.includes("again") ||
+        cleaned.includes("practice again") ||
+        cleaned.includes("one more time") ||
+        cleaned.includes("restart");
+
+      const isEnd =
+        cleaned === "2" ||
+        cleaned.includes("end") ||
+        cleaned.includes("stop") ||
+        cleaned.includes("done") ||
+        cleaned.includes("hang up") ||
+        cleaned.includes("hangup");
+
+      const AUDIO_URL = "https://callready-stream.onrender.com/tts?key=wrapup";
+
+      if (shouldForceEnd) {
+        logCallEnd(callSid, session, "forced_end_time_limit");
+        if (callSid) clearSession(callSid);
+        return sendTwiml(res, "<Play>" + AUDIO_URL + "</Play><Hangup/>");
+      }
+
+      session.wrapupRetries = typeof session.wrapupRetries === "number" ? session.wrapupRetries : 0;
+
+      // If no input, or invalid input, retry a couple times, then end.
+      if (!userInput) {
+        session.wrapupRetries += 1;
+        saveSession(session);
+
+        if (session.wrapupRetries >= 2) {
+          logCallEnd(callSid, session, "wrapup_choice_no_input_end");
+          if (callSid) clearSession(callSid);
+          return sendTwiml(res, "<Play>" + AUDIO_URL + "</Play><Hangup/>");
+        }
+
+        return sendTwiml(
+          res,
+          "<Say>I did not catch that.</Say>" +
+            "<Say>Say practice again, or say end session.</Say>" +
+            "<Gather input=\"speech dtmf\" action=\"" +
+            escapeXml(actionUrl) +
+            "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
+        );
+      }
+
+      if (isAgain) {
+        // Reset to a fresh session that can go a different direction.
+        session.flowId = null;
+        session.stepIndex = 0;
+        session.phase = "intent";
+        session.retries = {};
+        session.helpCounts = {};
+        session.pendingCoaching = null;
+        session.slots = {};
+        session.wrapupRetries = 0;
+
+        // Reset the session timer for the new practice session.
+        session.startedAt = Date.now();
+
+        logPhaseTransition(callSid, WRAPUP_PHASE, "intent", "practice_again_reset");
+        saveSession(session);
+
+        return sendTwiml(
+          res,
+          "<Say>Okay. Let us practice another call.</Say>" +
+            "<Say>Tell me what call you want to practice, or say surprise me.</Say>" +
+            "<Gather input=\"speech dtmf\" action=\"" +
+            escapeXml(actionUrl) +
+            "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
+        );
+      }
+
+      if (isEnd) {
+        logCallEnd(callSid, session, "wrapup_choice_end");
+        if (callSid) clearSession(callSid);
+        return sendTwiml(res, "<Play>" + AUDIO_URL + "</Play><Hangup/>");
+      }
+
+      // Invalid choice, retry a couple times, then end.
+      session.wrapupRetries += 1;
+      saveSession(session);
+
+      if (session.wrapupRetries >= 2) {
+        logCallEnd(callSid, session, "wrapup_choice_invalid_end");
+        if (callSid) clearSession(callSid);
+        return sendTwiml(res, "<Play>" + AUDIO_URL + "</Play><Hangup/>");
+      }
+
+      return sendTwiml(
+        res,
+        "<Say>I did not catch a clear choice.</Say>" +
+          "<Say>Say practice again, or say end session.</Say>" +
+          "<Gather input=\"speech dtmf\" action=\"" +
+          escapeXml(actionUrl) +
+          "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
+      );
+    }
+
     if (session.phase === "question") {
       const flowId = session.flowId || "default";
       const flow = FLOWS[flowId] || FLOWS["default"] || [];
@@ -866,228 +976,191 @@ async function handleVoiceOptionE(req, res) {
         hasInput: !!userInput,
       });
 
-      // Current step comes from the flow list
       const idx = typeof session.stepIndex === "number" ? session.stepIndex : 0;
 
       if (idx < 0 || idx >= flow.length) {
+        // If we somehow land out of bounds, treat it as wrapup choice.
         session.phase = WRAPUP_PHASE;
+        session.wrapupRetries = 0;
+        if (typeof session.startedAt !== "number") session.startedAt = Date.now();
         saveSession(session);
 
-        logCallEnd(callSid, session, "normal_wrapup");
+        return sendTwiml(
+          res,
+          "<Say>Nice work.</Say>" +
+            "<Say>Do you want to practice again, or end session?</Say>" +
+            "<Gather input=\"speech dtmf\" action=\"" +
+            escapeXml(actionUrl) +
+            "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
+        );
+      }
+
+      const key = flow[idx];
+      const q = OPTION_E_QUESTIONS.find((qq) => qq && qq.key === key);
+
+      if (!q) {
+        logCallEnd(callSid, session, "unknown_question_key_" + String(key || ""));
         if (callSid) clearSession(callSid);
+        return sendTwiml(res, "<Say>Option E reached an unknown step and will end now.</Say><Hangup/>");
+      }
 
-        const wrapup = await getWrapupLine(session);
+      session.retries = session.retries || {};
+      session.retries[key] = session.retries[key] || 0;
 
-        return sendTwiml(
-          res,
-          "<Say>DEBUG WRAPUP. flowId " +
-            String(session.flowId || "none") +
-            ". stepIndex " +
-            String(typeof session.stepIndex === "number" ? session.stepIndex : "none") +
-            ". flowLength " +
-            String(flow && Array.isArray(flow) ? flow.length : "none") +
-            ".</Say>" +
-            "<Say>" + escapeXml(wrapup) + "</Say><Hangup/>"
-        );
+      const gatherCfg =
+        PHASES[key] && PHASES[key].gather
+          ? PHASES[key].gather
+          : { timeoutSec: 3, speechTimeoutSec: 1 };
 
-      } else {
-        const key = flow[idx];
-        const q = OPTION_E_QUESTIONS.find((qq) => qq && qq.key === key);
+      const retryLimit = typeof q.retryLimit === "number" ? q.retryLimit : 1;
 
-        if (!q) {
+      if (session.pendingCoaching && session.pendingCoaching.key === key) {
+        const pendingHelpCount =
+          typeof session.pendingCoaching.helpCount === "number"
+            ? session.pendingCoaching.helpCount
+            : 1;
 
-          logCallEnd(callSid, session, "unknown_question_key_" + String(key || ""));
-          if (callSid) clearSession(callSid);
-          return sendTwiml(res, "<Say>Option E reached an unknown step and will end now.</Say><Hangup/>");
-        }
-
-        // Retry tracking per question key
-        session.retries = session.retries || {};
-        session.retries[key] = session.retries[key] || 0;
-
-        const gatherCfg =
-          PHASES[key] && PHASES[key].gather
-            ? PHASES[key].gather
-            : { timeoutSec: 3, speechTimeoutSec: 1 };
-
-        const retryLimit =
-          typeof q.retryLimit === "number" ? q.retryLimit : 1;
-
-        // If no input or invalid input, retry or end
-                // If we previously queued coaching, deliver it now without waiting on user input.
-        if (session.pendingCoaching && session.pendingCoaching.key === key) {
-          const pendingHelpCount =
-            typeof session.pendingCoaching.helpCount === "number"
-              ? session.pendingCoaching.helpCount
-              : 1;
-
-          session.pendingCoaching = null;
-          saveSession(session);
-
-          const coachingRaw = await getCoachingLine(key, pendingHelpCount, session);
-          const coaching = makeSafeCoachingLine(
-            coachingRaw,
-            "Try a short, specific answer. You can keep it simple."
-          );
-
-          const coachingSource =
-            coachingRaw === getCoachingLineForKey(key, pendingHelpCount) ? "fallback" : "ai";
-
-          const reason =
-            session && session.coachingMeta && session.coachingMeta.reason
-              ? String(session.coachingMeta.reason)
-              : "unknown";
-
-          const coachingDebug = debugEnabled
-            ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ". REASON " + reason + ".</Say>"
-            : "";
-
-          return sendTwiml(
-            res,
-            coachingDebug +
-              "<Say>" + escapeXml(coaching) + "</Say>" +
-              buildAskQuestionTwiml(
-                q,
-                actionUrl,
-                gatherCfg.timeoutSec,
-                gatherCfg.speechTimeoutSec
-              )
-          );
-        }
-
-        const cleanedForHelp = String(userInput || "")
-          .toLowerCase()
-          .replace(/[^a-z0-9\s]/g, "")
-          .replace(/\s+/g, " ")
-          .trim();
-
-        // Detect explicit coaching requests, but avoid catching real call content
-        const helpPhrases = [
-          "what should i say",
-          "i dont know what to say",
-          "im stuck",
-          "give me an example",
-          "coach me",
-          "can you help me",
-          "help me practice",
-          "can you give me an example",
-        ];
-
-        const matchesExplicitPhrase = helpPhrases.some((p) =>
-          cleanedForHelp.includes(p)
-        );
-
-        // Short direct help requests like "help" or "i need help"
-        const shortHelpPatterns = [
-          /^help$/,
-          /^i need help$/,
-          /^i need some help$/,
-        ];
-
-        const matchesShortHelp = shortHelpPatterns.some((re) =>
-          re.test(cleanedForHelp)
-        );
-
-        const isCoachingHelp = matchesExplicitPhrase || matchesShortHelp;
-
-        if (isCoachingHelp) {
-          session.helpCounts = session.helpCounts || {};
-          session.helpCounts[key] = (session.helpCounts[key] || 0) + 1;
-
-          const helpCount = session.helpCounts[key];
-
-          session.pendingCoaching = { key, helpCount };
-          saveSession(session);
-
-          const fallbackFiller = "Okay. Give me a second.";
-
-          let filler = fallbackFiller;
-
-          try {
-            filler = await getFillerLine(session);
-          } catch (e) {
-            filler = fallbackFiller;
-          }
-
-          await sleepMs(300);
-
-          return sendTwiml(
-            res,
-            "<Say>" + escapeXml(filler) + "</Say>" +
-              "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
-          );
-
-        }
-
-        const ok = isValidAnswerForQuestion(q, userInput);
-
-        if (!ok) {
-          return handleQuestionRetry(
-            res,
-            callSid,
-            session,
-            actionUrl,
-            q,
-            key,
-            gatherCfg,
-            retryLimit
-          );
-        }
-
-        // Valid answer, store slot and advance
-        session.slots = session.slots || {};
-        session.slots[key] = userInput;
-        
-        // Reset help escalation for this question once answered
-        if (session.helpCounts && session.helpCounts[key]) {
-          session.helpCounts[key] = 0;
-        }
-
-        logPhaseTransition(callSid, "question", "question", "answered_" + key);
-        session.stepIndex = idx + 1;
+        session.pendingCoaching = null;
         saveSession(session);
 
-        // If we finished the flow, wrap up
-        if (session.stepIndex >= flow.length) {
-          session.phase = WRAPUP_PHASE;
-          saveSession(session);
+        const coachingRaw = await getCoachingLine(key, pendingHelpCount, session);
+        const coaching = makeSafeCoachingLine(
+          coachingRaw,
+          "Try a short, specific answer. You can keep it simple."
+        );
 
-          logCallEnd(callSid, session, "normal_wrapup");
-          if (callSid) clearSession(callSid);
+        const coachingSource =
+          coachingRaw === getCoachingLineForKey(key, pendingHelpCount) ? "fallback" : "ai";
 
-        const wrapup = await getWrapupLine(session);
+        const reason =
+          session && session.coachingMeta && session.coachingMeta.reason
+            ? String(session.coachingMeta.reason)
+            : "unknown";
 
-const TEST_MARIN_AUDIO_URL = "https://callready-stream.onrender.com/tts?key=wrapup";
-
-return sendTwiml(
-  res,
-  "<Play>" + TEST_MARIN_AUDIO_URL + "</Play><Hangup/>"
-);
-
-        }
-
-        // Ask the next question
-        const nextKey = flow[session.stepIndex];
-        const nextQ = OPTION_E_QUESTIONS.find((qq) => qq && qq.key === nextKey);
-
-        if (!nextQ) {
-          logCallEnd(callSid, session, "unknown_next_question_key_" + String(nextKey || ""));
-          if (callSid) clearSession(callSid);
-          return sendTwiml(res, "<Say>Option E reached an unknown step and will end now.</Say><Hangup/>");
-        }
+        const coachingDebug = debugEnabled
+          ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ". REASON " + reason + ".</Say>"
+          : "";
 
         return sendTwiml(
           res,
-          "<Say>Got it.</Say>" +
-            "<Say>One more question.</Say>" +
+          coachingDebug +
+            "<Say>" + escapeXml(coaching) + "</Say>" +
             buildAskQuestionTwiml(
-              nextQ,
+              q,
               actionUrl,
-              PHASES[nextQ.key] && PHASES[nextQ.key].gather ? PHASES[nextQ.key].gather.timeoutSec : 3,
-              PHASES[nextQ.key] && PHASES[nextQ.key].gather ? PHASES[nextQ.key].gather.speechTimeoutSec : 1
+              gatherCfg.timeoutSec,
+              gatherCfg.speechTimeoutSec
             )
         );
       }
+
+      const cleanedForHelp = String(userInput || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      const helpPhrases = [
+        "what should i say",
+        "i dont know what to say",
+        "im stuck",
+        "give me an example",
+        "coach me",
+        "can you help me",
+        "help me practice",
+        "can you give me an example",
+      ];
+
+      const matchesExplicitPhrase = helpPhrases.some((p) => cleanedForHelp.includes(p));
+
+      const shortHelpPatterns = [/^help$/, /^i need help$/, /^i need some help$/];
+
+      const matchesShortHelp = shortHelpPatterns.some((re) => re.test(cleanedForHelp));
+
+      const isCoachingHelp = matchesExplicitPhrase || matchesShortHelp;
+
+      if (isCoachingHelp) {
+        session.helpCounts = session.helpCounts || {};
+        session.helpCounts[key] = (session.helpCounts[key] || 0) + 1;
+
+        const helpCount = session.helpCounts[key];
+
+        session.pendingCoaching = { key, helpCount };
+        saveSession(session);
+
+        const fallbackFiller = "Okay. Give me a second.";
+
+        let filler = fallbackFiller;
+
+        try {
+          filler = await getFillerLine(session);
+        } catch (e) {
+          filler = fallbackFiller;
+        }
+
+        await sleepMs(300);
+
+        return sendTwiml(
+          res,
+          "<Say>" + escapeXml(filler) + "</Say>" +
+            "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+        );
+      }
+
+      const ok = isValidAnswerForQuestion(q, userInput);
+
+      if (!ok) {
+        return handleQuestionRetry(res, callSid, session, actionUrl, q, key, gatherCfg, retryLimit);
+      }
+
+      session.slots = session.slots || {};
+      session.slots[key] = userInput;
+
+      if (session.helpCounts && session.helpCounts[key]) {
+        session.helpCounts[key] = 0;
+      }
+
+      logPhaseTransition(callSid, "question", "question", "answered_" + key);
+      session.stepIndex = idx + 1;
+      saveSession(session);
+
+      if (session.stepIndex >= flow.length) {
+        // Move into wrapup choice phase instead of ending immediately.
+        session.phase = WRAPUP_PHASE;
+        session.wrapupRetries = 0;
+        if (typeof session.startedAt !== "number") session.startedAt = Date.now();
+        saveSession(session);
+
+        return sendTwiml(
+          res,
+          "<Say>Nice work.</Say>" +
+            "<Say>Do you want to practice again, or end session?</Say>" +
+            "<Gather input=\"speech dtmf\" action=\"" +
+            escapeXml(actionUrl) +
+            "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
+        );
+      }
+
+      const nextKey = flow[session.stepIndex];
+      const nextQ = OPTION_E_QUESTIONS.find((qq) => qq && qq.key === nextKey);
+
+      if (!nextQ) {
+        logCallEnd(callSid, session, "unknown_next_question_key_" + String(nextKey || ""));
+        if (callSid) clearSession(callSid);
+        return sendTwiml(res, "<Say>Option E reached an unknown step and will end now.</Say><Hangup/>");
+      }
+
+      return sendTwiml(
+        res,
+        "<Say>Got it.</Say>" +
+          "<Say>One more question.</Say>" +
+          buildAskQuestionTwiml(
+            nextQ,
+            actionUrl,
+            PHASES[nextQ.key] && PHASES[nextQ.key].gather ? PHASES[nextQ.key].gather.timeoutSec : 3,
+            PHASES[nextQ.key] && PHASES[nextQ.key].gather ? PHASES[nextQ.key].gather.speechTimeoutSec : 1
+          )
+      );
     }
 
     logCallEnd(callSid, session, "unknown_phase_fallback");
