@@ -2260,67 +2260,83 @@ app.get("/tts", (req, res) => {
     return res.sendFile(filePath);
   }
 
-  // If it doesn't exist yet, start creating it, but DO NOT wait.
-  // Always respond immediately with the known-working Marin test audio.
-  try {
-    const dir = path.join(__dirname, "audio-cache");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+// If it doesn't exist yet, start creating it, but DO NOT wait.
+// Always respond immediately with the known-working Marin test audio.
+try {
+  const dir = path.join(__dirname, "audio-cache");
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-    const tempPath = filePath + ".tmp";
+  const tempPath = filePath + ".tmp";
 
-    // Avoid duplicate work if a temp file is already being written
-    if (!fs.existsSync(tempPath)) {
-      fs.writeFileSync(tempPath, ""); // create placeholder immediately
+  // If a previous attempt left a stale temp file, clear it so we can regenerate.
+  if (fs.existsSync(tempPath)) {
+    try {
+      const st = fs.statSync(tempPath);
+      const ageMs = Date.now() - st.mtimeMs;
+      const isEmpty = st.size === 0;
 
-      setImmediate(async () => {
-        try {
-          const apiKey = process.env.OPENAI_API_KEY;
-          if (!apiKey || typeof fetch !== "function") {
-            try { fs.unlinkSync(tempPath); } catch (e0) {}
-            return;
-          }
-
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 3500);
-
-          const resp = await fetch("https://api.openai.com/v1/audio/speech", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: "Bearer " + apiKey,
-            },
-            signal: controller.signal,
-            body: JSON.stringify({
-              model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
-              voice: process.env.OPENAI_TTS_VOICE || "marin",
-              response_format: "mp3",
-              input: textToSpeak,
-            }),
-          });
-
-          clearTimeout(timer);
-
-          if (!resp.ok) {
-            try { fs.unlinkSync(tempPath); } catch (e1) {}
-            return;
-          }
-
-          const buf = Buffer.from(await resp.arrayBuffer());
-          fs.writeFileSync(tempPath, buf);
-
-          try {
-            fs.renameSync(tempPath, filePath);
-          } catch (e2) {
-            try { fs.unlinkSync(tempPath); } catch (e3) {}
-          }
-        } catch (e) {
-          try { fs.unlinkSync(tempPath); } catch (e4) {}
-        }
-      });
+      // If temp is older than 60 seconds or empty, treat as stale.
+      if (ageMs > 60000 || isEmpty) {
+        try { fs.unlinkSync(tempPath); } catch (e0) {}
+      }
+    } catch (e1) {
+      try { fs.unlinkSync(tempPath); } catch (e2) {}
     }
-  } catch (e) {
-    // Even if caching fails, we still return the working audio below.
   }
+
+  // Avoid duplicate work if a temp file is already being written (and is not stale)
+  if (!fs.existsSync(tempPath)) {
+    fs.writeFileSync(tempPath, ""); // create placeholder immediately
+
+    setImmediate(async () => {
+      try {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey || typeof fetch !== "function") {
+          try { fs.unlinkSync(tempPath); } catch (e0) {}
+          return;
+        }
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3500);
+
+        const resp = await fetch("https://api.openai.com/v1/audio/speech", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + apiKey,
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
+            voice: process.env.OPENAI_TTS_VOICE || "marin",
+            response_format: "mp3",
+            input: textToSpeak,
+          }),
+        });
+
+        clearTimeout(timer);
+
+        if (!resp.ok) {
+          try { fs.unlinkSync(tempPath); } catch (e1) {}
+          return;
+        }
+
+        const buf = Buffer.from(await resp.arrayBuffer());
+        fs.writeFileSync(tempPath, buf);
+
+        try {
+          fs.renameSync(tempPath, filePath);
+        } catch (e2) {
+          try { fs.unlinkSync(tempPath); } catch (e3) {}
+        }
+      } catch (e) {
+        try { fs.unlinkSync(tempPath); } catch (e4) {}
+      }
+    });
+  }
+} catch (e) {
+  // Even if caching fails, we still return the working audio below.
+}
 
   // Immediate, known-good audio response for Twilio
   return res.redirect(302, "/test-marin.mp3");
