@@ -2204,111 +2204,43 @@ app.get("/test-marin.mp3", (req, res) => {
   res.redirect(302, "https://demo.twilio.com/docs/classic.mp3");
 });
 
+// Temporary TTS route (Marin placeholder)
+// For now this just redirects to a known MP3 so <Play> works with low latency and low cost.
+// Later we will swap this to real Marin TTS generation or cached audio.
+app.get("/tts", (req, res) => {
+  const key = String(req.query.key || "").toLowerCase();
+
+  // Map keys to audio URLs (placeholder for now)
+  const AUDIO_BY_KEY = {
+    wrapup: "https://demo.twilio.com/docs/classic.mp3",
+  };
+
+  const url = AUDIO_BY_KEY[key] || AUDIO_BY_KEY.wrapup;
+
+  // Twilio <Play> can follow redirects
+  res.redirect(302, url);
+});
+
+// TTS route (Phase 1: stable URL that points at our current test Marin audio)
+// Later we will swap this implementation to real Marin TTS with caching.
+app.get("/tts", (req, res) => {
+  const key = String(req.query.key || "");
+
+  // For now, everything maps to the test audio that we already proved works.
+  // Using a stable URL lets Twilio cache audio per key.
+  if (key === "wrapup") {
+    return res.redirect(302, "/test-marin.mp3");
+  }
+
+  // Default fallback, still Marin test audio for now
+  return res.redirect(302, "/test-marin.mp3");
+});
+
 app.post("/voice", async (req, res) => {
-    const mode = (process.env.CALL_FLOW_MODE || "legacy").toLowerCase();
-  if (mode === "option_e") {
-    return handleVoiceOptionE(req, res);
-  }
-
-    console.log(nowIso(), "VOICE_ENTRY_HIT", {
-    from: req.body && req.body.From ? String(req.body.From) : null,
-    callSid: req.body && req.body.CallSid ? String(req.body.CallSid) : null,
-    path: "/voice"
-  });
-
-  // TEMP: Restrict CallReady access to a single allowed caller number
-  const ALLOWED_CALLER = "+15419794582";
-  const fromNumber = req.body && req.body.From ? String(req.body.From) : "";
-
-  if (fromNumber !== ALLOWED_CALLER) {
-    console.log(nowIso(), "Blocked call from unauthorized number", {
-      from: fromNumber || null
-    });
-
-    const VoiceResponse = twilio.twiml.VoiceResponse;
-    const vr = new VoiceResponse();
-
-    vr.redirect({ method: "POST" }, "/unavailable");
-
-    res.type("text/xml").send(vr.toString());
-    return;
-  }
-
-    if (String(process.env.CALLREADY_UNAVAILABLE || "") === "1") {
-    const VoiceResponse = twilio.twiml.VoiceResponse;
-    const vr = new VoiceResponse();
-
-    vr.redirect({ method: "POST" }, "/unavailable");
-
-    res.type("text/xml").send(vr.toString());
-    return;
-  }
-
   try {
-    const forceUnavailable =
-    req.query &&
-    String(req.query.force_unavailable || "") === "1";
-
-    if (forceUnavailable) {
-    const VoiceResponse = twilio.twiml.VoiceResponse;
-    const vr = new VoiceResponse();
-
-    vr.redirect({ method: "POST" }, "/unavailable");
-
-    res.type("text/xml").send(vr.toString());
-    return;
-    }
-    const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
-    const from = req.body && req.body.From ? String(req.body.From) : "";
-
-    if (callSid) {
-      await logCallStartToDb(callSid, from);
-    }
-
-    const tierDecision = await applyTierForCall(from, callSid);
-
-
-    const VoiceResponse = twilio.twiml.VoiceResponse;
-    const vr = new VoiceResponse();
-
-    if (!tierDecision.allowed) {
-      console.log(nowIso(), "Blocking call due to no remaining sessions", {
-        from,
-        callSid,
-        tier: tierDecision.tier,
-        sessions_used: tierDecision.cycle_sessions_used,
-        sessions_cap: tierDecision.cycle_sessions_cap
-      });
-
-
-      if (callSid) {
-        fireAndForgetCallEndLog(callSid, "no_sessions_remaining");
-      }
-
-      vr.say(TWILIO_NO_SESSIONS_LEFT);
-      if (callSid) {
-      clearCallSession(callSid);
-      console.log(nowIso(), "Option E session cleared (test-medical)", { callSid });
-    }
-
-      vr.hangup();
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
-    if (!PUBLIC_WSS_URL) {
-      vr.say("Server is missing PUBLIC W S S U R L.");
-      vr.hangup();
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
- const connect = vr.connect();
-    connect.stream({ url: PUBLIC_WSS_URL });
-
-    res.type("text/xml").send(vr.toString());
+    return await handleVoiceOptionE(req, res);
   } catch (err) {
-    console.error("Error building TwiML:", err);
+    console.error("Error in /voice (Option E):", err);
     res.status(500).send("Error");
   }
 });
