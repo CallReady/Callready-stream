@@ -2207,36 +2207,42 @@ app.get("/test-marin.mp3", (req, res) => {
   res.redirect(302, "https://demo.twilio.com/docs/classic.mp3");
 });
 
-// Temporary TTS route (Marin placeholder)
-// For now this just redirects to a known MP3 so <Play> works with low latency and low cost.
-// Later we will swap this to real Marin TTS generation or cached audio.
-app.get("/tts", (req, res) => {
-  const key = String(req.query.key || "").toLowerCase();
+const fs = require("fs");
 
-  // Map keys to audio URLs (placeholder for now)
-  const AUDIO_BY_KEY = {
-    wrapup: "https://demo.twilio.com/docs/classic.mp3",
-  };
+// Disk-cached TTS route
+// First request for a key downloads and saves an MP3.
+// Future requests serve the cached file instantly.
+app.get("/tts", async (req, res) => {
+  const key = String((req.query && req.query.key) || "").toLowerCase();
 
-  const url = AUDIO_BY_KEY[key] || AUDIO_BY_KEY.wrapup;
-
-  // Twilio <Play> can follow redirects
-  res.redirect(302, url);
-});
-
-// TTS route (Phase 1: stable URL that points at our current test Marin audio)
-// Later we will swap this implementation to real Marin TTS with caching.
-app.get("/tts", (req, res) => {
-  const key = String(req.query.key || "");
-
-  // For now, everything maps to the test audio that we already proved works.
-  // Using a stable URL lets Twilio cache audio per key.
-  if (key === "wrapup") {
-    return res.redirect(302, "/test-marin.mp3");
+  if (!key) {
+    return res.status(400).send("Missing key");
   }
 
-  // Default fallback, still Marin test audio for now
-  return res.redirect(302, "/test-marin.mp3");
+  const filePath = path.join(__dirname, "audio-cache", key + ".mp3");
+
+  // If cached file exists, serve it immediately
+  if (fs.existsSync(filePath)) {
+    return res.sendFile(filePath);
+  }
+
+  // Otherwise download once and cache it
+  const https = require("https");
+  const file = fs.createWriteStream(filePath);
+
+  https
+    .get("https://demo.twilio.com/docs/classic.mp3", (response) => {
+      response.pipe(file);
+      file.on("finish", () => {
+        file.close(() => {
+          res.sendFile(filePath);
+        });
+      });
+    })
+    .on("error", (err) => {
+      console.error("Error creating cached audio:", err);
+      res.status(500).send("Audio generation failed");
+    });
 });
 
 app.post("/voice", async (req, res) => {
