@@ -9,6 +9,8 @@ const { Pool } = require("pg");
 const Stripe = require("stripe");
 const { handleVoiceOptionE } = require("./option-e/handleVoice");
 const path = require("path");
+const fs = require("fs");
+const https = require("https");
 
 function getTestMedicalPrompt(session, safeStep) {
   const step = Number.isFinite(safeStep) ? safeStep : 0;
@@ -2208,8 +2210,7 @@ app.get("/test-marin.mp3", (req, res) => {
 });
 
 const fs = require("fs");
-
-// Simple disk-cached TTS route (no external fetch)
+// Simple disk-cached TTS route (instant response, cache builds in parallel)
 app.get("/tts", (req, res) => {
   const key = String((req.query && req.query.key) || "").toLowerCase();
 
@@ -2224,24 +2225,57 @@ app.get("/tts", (req, res) => {
     return res.sendFile(filePath);
   }
 
-  // If it doesn't exist, create it once by downloading the test audio
-  const https = require("https");
-  const file = fs.createWriteStream(filePath);
+  // If it doesn't exist yet, start creating it, but DO NOT wait.
+  // Always respond immediately with the known-working Marin test audio.
+  try {
+    // Ensure folder exists
+    const dir = path.join(__dirname, "audio-cache");
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-  https
-    .get("https://demo.twilio.com/docs/classic.mp3", (response) => {
-      response.pipe(file);
-      file.on("finish", () => {
-        file.close(() => {
-          res.sendFile(filePath);
+    const tempPath = filePath + ".tmp";
+
+    // Avoid duplicate work if a temp file is already being written
+    if (!fs.existsSync(tempPath)) {
+      const file = fs.createWriteStream(tempPath);
+
+      const req2 = https.get("https://demo.twilio.com/docs/classic.mp3", (resp) => {
+        if (resp.statusCode !== 200) {
+          file.destroy();
+          try { fs.unlinkSync(tempPath); } catch (e) {}
+          return;
+        }
+
+        resp.pipe(file);
+
+        file.on("finish", () => {
+          file.close(() => {
+            try {
+              fs.renameSync(tempPath, filePath);
+            } catch (e) {
+              try { fs.unlinkSync(tempPath); } catch (e2) {}
+            }
+          });
         });
       });
-    })
-    .on("error", (err) => {
-      console.error("Error creating cached audio:", err);
-      res.status(500).send("Audio generation failed");
-    });
 
+      req2.on("error", () => {
+        file.destroy();
+        try { fs.unlinkSync(tempPath); } catch (e) {}
+      });
+
+      // Hard timeout so we never hang the server if outbound stalls
+      req2.setTimeout(2500, () => {
+        try { req2.destroy(); } catch (e) {}
+        file.destroy();
+        try { fs.unlinkSync(tempPath); } catch (e2) {}
+      });
+    }
+  } catch (e) {
+    // Even if caching fails, we still return the working audio below.
+  }
+
+  // Immediate, known-good audio response for Twilio
+  return res.redirect(302, "/test-marin.mp3");
 });
 
 app.post("/voice", async (req, res) => {
