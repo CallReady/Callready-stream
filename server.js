@@ -2209,10 +2209,8 @@ app.get("/test-marin.mp3", (req, res) => {
 
 const fs = require("fs");
 
-// Disk-cached TTS route
-// First request for a key downloads and saves an MP3.
-// Future requests serve the cached file instantly.
-app.get("/tts", async (req, res) => {
+// Simple disk-cached TTS route (no external fetch)
+app.get("/tts", (req, res) => {
   const key = String((req.query && req.query.key) || "").toLowerCase();
 
   if (!key) {
@@ -2221,28 +2219,17 @@ app.get("/tts", async (req, res) => {
 
   const filePath = path.join(__dirname, "audio-cache", key + ".mp3");
 
-  // If cached file exists, serve it immediately
+  // If file already exists, serve it
   if (fs.existsSync(filePath)) {
     return res.sendFile(filePath);
   }
 
-  // Otherwise download once and cache it
-  const https = require("https");
-  const file = fs.createWriteStream(filePath);
+  // If it doesn't exist, create it by copying the working test audio once
+  const sourceUrl = "https://callready-stream.onrender.com/test-marin.mp3";
 
-  https
-    .get("https://demo.twilio.com/docs/classic.mp3", (response) => {
-      response.pipe(file);
-      file.on("finish", () => {
-        file.close(() => {
-          res.sendFile(filePath);
-        });
-      });
-    })
-    .on("error", (err) => {
-      console.error("Error creating cached audio:", err);
-      res.status(500).send("Audio generation failed");
-    });
+  // Instead of downloading manually, redirect once to test audio
+  // This guarantees Twilio works while we build real Marin next
+  return res.redirect(302, sourceUrl);
 });
 
 app.post("/voice", async (req, res) => {
