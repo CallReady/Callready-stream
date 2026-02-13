@@ -797,7 +797,22 @@ async function handleVoiceOptionE(req, res) {
 
     // If speech looks like nonsense (noise, breaths, bad recognition), treat it as no input
     // so normal retry logic handles it consistently.
-    const speechIsUsable = speech && !isNonsenseSpeechInput(speech, confidenceVal);
+    const speechLooksNonsense = speech && isNonsenseSpeechInput(speech, confidenceVal);
+    const speechIsUsable = speech && !speechLooksNonsense;
+
+    if (speechLooksNonsense) {
+      const snippet = String(speech || "")
+        .replace(/[^a-z0-9\s]/gi, "")
+        .slice(0, 40);
+
+      console.log("OptionE nonsense_rejected:", {
+        callSid: callSid || "(none)",
+        phase: session && session.phase ? session.phase : "(none)",
+        confidence: Number.isFinite(confidenceVal) ? confidenceVal : "(none)",
+        speechSnippet: snippet,
+        at: new Date().toISOString(),
+      });
+    }
 
     const userInput = ((speechIsUsable ? speech : "") || digits).trim();
 
