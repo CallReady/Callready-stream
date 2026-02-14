@@ -90,6 +90,10 @@ const E_PHASES = {
 };
 
 const app = express();
+const path = require("path");
+
+// Serve static files from project root
+app.use(express.static(path.join(__dirname)));
 app.set("strict routing", true);
 // Serve cached Marin audio files
 app.use("/audio-cache", express.static(path.join(__dirname, "audio-cache")));
