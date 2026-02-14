@@ -857,6 +857,8 @@ async function handleVoiceOptionE(req, res) {
 
       // Determine which flow to test, default to medical.
       session.flowId = session.flowId || "medical";
+      session.justJumped = true;
+
 
       if (jump === "ask_reason") {
         session.phase = "question";
@@ -1167,7 +1169,7 @@ if (isSurprise) {
 
       const idx = typeof session.stepIndex === "number" ? session.stepIndex : 0;
 
-            // First entry into question phase after announce arrives via Redirect with no input.
+      // First entry into question phase after announce arrives via Redirect with no input.
       // On that first hit, we should ASK the first question, not trigger a retry prompt.
       if (!userInput && idx === 0) {
         const firstKey = flow[0];
@@ -1200,6 +1202,33 @@ if (isSurprise) {
           );
         }
 
+        }
+      }
+
+            // Debug jump entry: if we just jumped into question phase with no input,
+      // ask the current question normally instead of treating it as silence.
+      if (!userInput && session.justJumped) {
+        session.justJumped = false;
+        saveSession(session);
+
+        const currentKey = flow[idx];
+        const currentQ = OPTION_E_QUESTIONS.find((qq) => qq && qq.key === currentKey);
+
+        const gatherCfgJump =
+          PHASES[currentKey] && PHASES[currentKey].gather
+            ? PHASES[currentKey].gather
+            : { timeoutSec: 3, speechTimeoutSec: 1 };
+
+        if (currentQ) {
+          return sendTwiml(
+            res,
+            buildAskQuestionTwiml(
+              currentQ,
+              actionUrl,
+              gatherCfgJump.timeoutSec,
+              gatherCfgJump.speechTimeoutSec
+            )
+          );
         }
       }
 
