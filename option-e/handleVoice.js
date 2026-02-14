@@ -1419,10 +1419,21 @@ if (isSurprise) {
         return sendTwiml(res, "<Say>Option E reached an unknown step and will end now.</Say><Hangup/>");
       }
 
+      let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
+      while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+
+      const transitionPlay =
+        "<Play>" +
+        escapeXml(
+          baseUrl +
+            "/tts?key=transition_one_more_question&text=" +
+            encodeURIComponent("Okay. One more question.")
+        ) +
+        "</Play>";
+
       return sendTwiml(
         res,
-        "<Say>Okay.</Say>" +
-          "<Say>One more question.</Say>" +
+        transitionPlay +
           buildAskQuestionTwiml(
             nextQ,
             actionUrl,
@@ -1430,6 +1441,7 @@ if (isSurprise) {
             PHASES[nextQ.key] && PHASES[nextQ.key].gather ? PHASES[nextQ.key].gather.speechTimeoutSec : 1
           )
       );
+
     }
 
     logCallEnd(callSid, session, "unknown_phase_fallback");
