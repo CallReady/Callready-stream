@@ -947,6 +947,43 @@ if (isSurprise) {
 
     }
 
+        if (session.phase === "announce") {
+      const flowId = session.flowId || "default";
+
+      const flowLabel =
+        flowId === "hours"
+          ? "a business to ask about its hours"
+          : "a medical office to make an appointment";
+
+      const announceText =
+        "Okay. Let us practice calling " +
+        flowLabel +
+        ". I will answer after the phone rings as if you just called.";
+
+      const baseUrl = getBaseUrl(req);
+      const ringUrl = baseUrl + "/ring.mp3";
+
+      // Cache announcement audio by a stable key per flow
+      const announceKey = "announce_" + flowId;
+      const announceUrl =
+        baseUrl +
+        "/tts?key=" +
+        encodeURIComponent(announceKey) +
+        "&text=" +
+        encodeURIComponent(announceText);
+
+      // Advance to questions after the announcement and ring
+      session.phase = "question";
+      saveSession(session);
+
+      return sendTwiml(
+        res,
+        "<Play>" + escapeXml(announceUrl) + "</Play>" +
+          "<Play>" + escapeXml(ringUrl) + "</Play>" +
+          "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+      );
+    }
+
     if (session.phase === WRAPUP_PHASE) {
       // End-of-session choice: practice again or end.
       const limitSeconds = Number(process.env.OPTION_E_SESSION_LIMIT_SECONDS || 300);
