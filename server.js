@@ -2380,6 +2380,13 @@ try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 3500);
 
+        const VOICE_CONFIG = {
+          model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
+          voice: process.env.OPENAI_TTS_VOICE || "marin",
+          // reserved for future tuning, does nothing yet
+          pacing: process.env.TTS_STYLE_PACING || "medium",
+        };
+
         const resp = await fetch("https://api.openai.com/v1/audio/speech", {
           method: "POST",
           headers: {
@@ -2388,22 +2395,13 @@ try {
           },
           signal: controller.signal,
           body: JSON.stringify({
-            const VOICE_CONFIG = {
-              model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
-              voice: process.env.OPENAI_TTS_VOICE || "marin",
-              // reserved for future tuning, does nothing yet
-              pacing: process.env.TTS_STYLE_PACING || "medium"
-            };
-
-body: JSON.stringify({
-  model: VOICE_CONFIG.model,
-  voice: VOICE_CONFIG.voice,
-  response_format: "mp3",
-  input: textToSpeak
-}),
-
+            model: VOICE_CONFIG.model,
+            voice: VOICE_CONFIG.voice,
+            response_format: "mp3",
+            input: textToSpeak,
           }),
         });
+
 
         clearTimeout(timer);
 
