@@ -1333,9 +1333,10 @@ if (isSurprise) {
         }
       }
 
-            // Debug jump entry: if we just jumped into question phase with no input,
+      // Debug jump entry: if we just jumped into question phase with no input,
       // ask the current question normally instead of treating it as silence.
-      if (!userInput && session.justJumped) {
+      if (!userInput && session.justJumped && !session.pendingCoaching) {
+
         session.justJumped = false;
         saveSession(session);
 
