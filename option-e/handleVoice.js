@@ -1156,14 +1156,36 @@ if (isSurprise) {
         logPhaseTransition(callSid, WRAPUP_PHASE, "intent", "practice_again_reset");
         saveSession(session);
 
-        return sendTwiml(
-          res,
-          "<Say>Okay. Let us practice another call.</Say>" +
-            "<Say>Tell me what call you want to practice, or say surprise me.</Say>" +
-            "<Gather input=\"speech dtmf\" action=\"" +
-            escapeXml(actionUrl) +
-            "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
-        );
+      let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
+      while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+
+      const restartIntroPlay =
+        "<Play>" +
+        escapeXml(
+          baseUrl +
+            "/tts?key=restart_intro&text=" +
+            encodeURIComponent("Okay. Let us practice another call.")
+        ) +
+        "</Play>";
+
+      const restartIntentPlay =
+        "<Play>" +
+        escapeXml(
+          baseUrl +
+            "/tts?key=restart_intent_prompt&text=" +
+            encodeURIComponent("Tell me what call you want to practice, or say surprise me.")
+        ) +
+        "</Play>";
+
+      return sendTwiml(
+        res,
+        restartIntroPlay +
+          restartIntentPlay +
+          "<Gather input=\"speech dtmf\" action=\"" +
+          escapeXml(actionUrl) +
+          "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
+      );
+
       }
 
       if (isEnd) {
