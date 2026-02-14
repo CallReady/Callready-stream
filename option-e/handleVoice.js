@@ -1046,6 +1046,43 @@ if (isSurprise) {
     }
 
     if (session.phase === WRAPUP_PHASE) {
+            // Debug jump entry: if we just jumped into wrapup with no input,
+      // ask the wrapup choice prompt normally instead of treating it as silence.
+      if (!userInput && session.justJumped) {
+        session.justJumped = false;
+        saveSession(session);
+
+        let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
+        while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+
+        const wrapupIntroPlay =
+          "<Play>" +
+          escapeXml(
+            baseUrl +
+              "/tts?key=wrapup_intro&text=" +
+              encodeURIComponent("Nice work.")
+          ) +
+          "</Play>";
+
+        const wrapupChoicePlay =
+          "<Play>" +
+          escapeXml(
+            baseUrl +
+              "/tts?key=wrapup_choice&text=" +
+              encodeURIComponent("Do you want to practice again, or end session?")
+          ) +
+          "</Play>";
+
+        return sendTwiml(
+          res,
+          wrapupIntroPlay +
+            wrapupChoicePlay +
+            "<Gather input=\"speech dtmf\" action=\"" +
+            escapeXml(actionUrl) +
+            "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
+        );
+      }
+
       // End-of-session choice: practice again or end.
       const limitSeconds = Number(process.env.OPTION_E_SESSION_LIMIT_SECONDS || 300);
       const startedAt = typeof session.startedAt === "number" ? session.startedAt : null;
