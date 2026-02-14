@@ -645,17 +645,64 @@ async function handleGenericQuestionPhase(opts) {
             ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ". REASON " + reason + ".</Say>"
             : "";
 
-          return sendTwiml(
-            res,
-            coachingDebug +
-              "<Say>" + escapeXml(coaching) + "</Say>" +
-              buildAskQuestionTwiml(
-                q,
-                actionUrl,
-                gatherCfg.timeoutSec,
-                gatherCfg.speechTimeoutSec
-              )
-          );
+        let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
+        while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+
+        const coachingKey =
+          "coach_" + String(callSid || "noid") + "_" + String(key || phaseKey || "unknown");
+
+        const statusUrl =
+          baseUrl +
+          "/tts-status?key=" +
+          encodeURIComponent(coachingKey);
+
+        const coachingPlayUrl =
+          baseUrl +
+          "/tts?key=" +
+          encodeURIComponent(coachingKey) +
+          "&text=" +
+          encodeURIComponent(String(coaching));
+
+        try {
+          const statusResp = await fetch(statusUrl, { method: "GET" });
+          const ready = statusResp && statusResp.status === 200;
+
+          if (!ready) {
+            const fillerPlay =
+              "<Play>" +
+              escapeXml(
+                baseUrl +
+                  "/tts?key=filler_hold_on&text=" +
+                  encodeURIComponent("Okay. Give me a second.")
+              ) +
+              "</Play>";
+
+            return sendTwiml(
+              res,
+              fillerPlay +
+                "<Redirect method=\"POST\">" +
+                escapeXml(actionUrl) +
+                "</Redirect>"
+            );
+          }
+        } catch (e) {
+          // If status check fails, fall through and attempt to play anyway
+        }
+
+        return sendTwiml(
+          res,
+          coachingDebug +
+            "<Play>" +
+            escapeXml(coachingPlayUrl) +
+            "</Play>" +
+            buildAskQuestionTwiml(
+              q,
+              actionUrl,
+              gatherCfg.timeoutSec,
+              gatherCfg.speechTimeoutSec
+            )
+        );
+
         }
   const userInput = opts.userInput; // string
   const nextPhase = opts.nextPhase; // string, e.g. "detail" or "wrapup"
@@ -1388,10 +1435,56 @@ if (isSurprise) {
           ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ". REASON " + reason + ".</Say>"
           : "";
 
+        let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
+        while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+
+        const coachingKey =
+          "coach_" + String(callSid || "noid") + "_" + String(key || phaseKey || "unknown");
+
+        const statusUrl =
+          baseUrl +
+          "/tts-status?key=" +
+          encodeURIComponent(coachingKey);
+
+        const coachingPlayUrl =
+          baseUrl +
+          "/tts?key=" +
+          encodeURIComponent(coachingKey) +
+          "&text=" +
+          encodeURIComponent(String(coaching));
+
+        try {
+          const statusResp = await fetch(statusUrl, { method: "GET" });
+          const ready = statusResp && statusResp.status === 200;
+
+          if (!ready) {
+            const fillerPlay =
+              "<Play>" +
+              escapeXml(
+                baseUrl +
+                  "/tts?key=filler_hold_on&text=" +
+                  encodeURIComponent("Okay. Give me a second.")
+              ) +
+              "</Play>";
+
+            return sendTwiml(
+              res,
+              fillerPlay +
+                "<Redirect method=\"POST\">" +
+                escapeXml(actionUrl) +
+                "</Redirect>"
+            );
+          }
+        } catch (e) {
+          // If status check fails, fall through and attempt to play anyway
+        }
+
         return sendTwiml(
           res,
           coachingDebug +
-            "<Say>" + escapeXml(coaching) + "</Say>" +
+            "<Play>" +
+            escapeXml(coachingPlayUrl) +
+            "</Play>" +
             buildAskQuestionTwiml(
               q,
               actionUrl,
@@ -1399,6 +1492,7 @@ if (isSurprise) {
               gatherCfg.speechTimeoutSec
             )
         );
+
       }
 
       const cleanedForHelp = String(userInput || "")
