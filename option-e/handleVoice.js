@@ -617,93 +617,6 @@ async function handleGenericQuestionPhase(opts) {
   const retryLimit = opts.retryLimit; // number
   const debugEnabled = !!opts.debugEnabled;
 
-  // If we previously queued coaching, deliver it now without waiting on user input.
-    if (session.pendingCoaching && session.pendingCoaching.key === phaseKey) {
-          const pendingHelpCount =
-            typeof session.pendingCoaching.helpCount === "number"
-              ? session.pendingCoaching.helpCount
-              : 1;
-
-          session.pendingCoaching = null;
-          saveSession(session);
-
-          const coachingRaw = await getCoachingLine(key, pendingHelpCount, session);
-          const coaching = makeSafeCoachingLine(
-            coachingRaw,
-            "Try a short, specific answer. You can keep it simple."
-          );
-
-          const coachingSource =
-            coachingRaw === getCoachingLineForKey(key, pendingHelpCount) ? "fallback" : "ai";
-
-          const reason =
-            session && session.coachingMeta && session.coachingMeta.reason
-              ? String(session.coachingMeta.reason)
-              : "unknown";
-
-          const coachingDebug = debugEnabled
-            ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ". REASON " + reason + ".</Say>"
-            : "";
-
-        let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
-        while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
-
-        const coachingKey =
-          "coach_" + String(callSid || "noid") + "_" + String(key || phaseKey || "unknown");
-
-        const statusUrl =
-          baseUrl +
-          "/tts-status?key=" +
-          encodeURIComponent(coachingKey);
-
-        const coachingPlayUrl =
-          baseUrl +
-          "/tts?key=" +
-          encodeURIComponent(coachingKey) +
-          "&text=" +
-          encodeURIComponent(String(coaching));
-
-        try {
-          const statusResp = await fetch(statusUrl, { method: "GET" });
-          const ready = statusResp && statusResp.status === 200;
-
-          if (!ready) {
-            const fillerPlay =
-              "<Play>" +
-              escapeXml(
-                baseUrl +
-                  "/tts?key=filler_hold_on&text=" +
-                  encodeURIComponent("Okay. Give me a second.")
-              ) +
-              "</Play>";
-
-            return sendTwiml(
-              res,
-              fillerPlay +
-                "<Redirect method=\"POST\">" +
-                escapeXml(actionUrl) +
-                "</Redirect>"
-            );
-          }
-        } catch (e) {
-          // If status check fails, fall through and attempt to play anyway
-        }
-
-        return sendTwiml(
-          res,
-          coachingDebug +
-            "<Play>" +
-            escapeXml(coachingPlayUrl) +
-            "</Play>" +
-            buildAskQuestionTwiml(
-              q,
-              actionUrl,
-              gatherCfg.timeoutSec,
-              gatherCfg.speechTimeoutSec
-            )
-        );
-
-        }
   const userInput = opts.userInput; // string
   const nextPhase = opts.nextPhase; // string, e.g. "detail" or "wrapup"
   const nextQuestionIndex = opts.nextQuestionIndex; // number or null
@@ -1283,6 +1196,106 @@ if (isSurprise) {
     }
 
     if (session.phase === "question") {
+            // Priority: if coaching is pending, deliver it before any question-ask shortcuts.
+      if (session.pendingCoaching) {
+        const pendingKey = String(session.pendingCoaching.key || "");
+        const pendingHelpCount =
+          typeof session.pendingCoaching.helpCount === "number"
+            ? session.pendingCoaching.helpCount
+            : 1;
+
+        session.pendingCoaching = null;
+        saveSession(session);
+
+        const coachingRaw = await getCoachingLine(pendingKey, pendingHelpCount, session);
+        const coaching = makeSafeCoachingLine(
+          coachingRaw,
+          "Try a short, specific answer. You can keep it simple."
+        );
+
+        const coachingSource =
+          coachingRaw === getCoachingLineForKey(pendingKey, pendingHelpCount) ? "fallback" : "ai";
+
+        const reason =
+          session && session.coachingMeta && session.coachingMeta.reason
+            ? String(session.coachingMeta.reason)
+            : "unknown";
+
+        const coachingDebug = debugEnabled
+          ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ". REASON " + reason + ".</Say>"
+          : "";
+
+        let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
+        while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+
+        const coachingKey =
+          "coach_" + String(callSid || "noid") + "_" + String(pendingKey || "unknown");
+
+        const statusUrl =
+          baseUrl +
+          "/tts-status?key=" +
+          encodeURIComponent(coachingKey);
+
+        const coachingPlayUrl =
+          baseUrl +
+          "/tts?key=" +
+          encodeURIComponent(coachingKey) +
+          "&text=" +
+          encodeURIComponent(String(coaching));
+
+        try {
+          const statusResp = await fetch(statusUrl, { method: "GET" });
+          const ready = statusResp && statusResp.status === 200;
+
+          if (!ready) {
+            const fillerPlay =
+              "<Play>" +
+              escapeXml(
+                baseUrl +
+                  "/tts?key=filler_hold_on&text=" +
+                  encodeURIComponent("Okay. Give me a second.")
+              ) +
+              "</Play>";
+
+            return sendTwiml(
+              res,
+              fillerPlay +
+                "<Redirect method=\"POST\">" +
+                escapeXml(actionUrl) +
+                "</Redirect>"
+            );
+          }
+        } catch (e) {
+          // If status check fails, fall through and attempt to play anyway.
+        }
+
+        // Ask the current question again after coaching, so the student can answer immediately.
+        const flowId = session.flowId || "default";
+        const flow = FLOWS[flowId] || FLOWS["default"] || [];
+        const idx = typeof session.stepIndex === "number" ? session.stepIndex : 0;
+        const currentKey = flow[idx];
+        const currentQ = OPTION_E_QUESTIONS.find((qq) => qq && qq.key === currentKey);
+
+        const gatherCfg =
+          PHASES[currentKey] && PHASES[currentKey].gather
+            ? PHASES[currentKey].gather
+            : { timeoutSec: 3, speechTimeoutSec: 1 };
+
+        return sendTwiml(
+          res,
+          coachingDebug +
+            "<Play>" +
+            escapeXml(coachingPlayUrl) +
+            "</Play>" +
+            buildAskQuestionTwiml(
+              currentQ,
+              actionUrl,
+              gatherCfg.timeoutSec,
+              gatherCfg.speechTimeoutSec
+            )
+        );
+      }
+
       const flowId = session.flowId || "default";
       const flow = FLOWS[flowId] || FLOWS["default"] || [];
       console.log("OptionE flow debug:", {
@@ -1418,93 +1431,6 @@ if (isSurprise) {
           : { timeoutSec: 3, speechTimeoutSec: 1 };
 
       const retryLimit = typeof q.retryLimit === "number" ? q.retryLimit : 1;
-
-      if (session.pendingCoaching && session.pendingCoaching.key === key) {
-        const pendingHelpCount =
-          typeof session.pendingCoaching.helpCount === "number"
-            ? session.pendingCoaching.helpCount
-            : 1;
-
-        session.pendingCoaching = null;
-        saveSession(session);
-
-        const coachingRaw = await getCoachingLine(key, pendingHelpCount, session);
-        const coaching = makeSafeCoachingLine(
-          coachingRaw,
-          "Try a short, specific answer. You can keep it simple."
-        );
-
-        const coachingSource =
-          coachingRaw === getCoachingLineForKey(key, pendingHelpCount) ? "fallback" : "ai";
-
-        const reason =
-          session && session.coachingMeta && session.coachingMeta.reason
-            ? String(session.coachingMeta.reason)
-            : "unknown";
-
-        const coachingDebug = debugEnabled
-          ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ". REASON " + reason + ".</Say>"
-          : "";
-
-        let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
-        while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
-
-        const coachingKey =
-          "coach_" + String(callSid || "noid") + "_" + String(key || phaseKey || "unknown");
-
-        const statusUrl =
-          baseUrl +
-          "/tts-status?key=" +
-          encodeURIComponent(coachingKey);
-
-        const coachingPlayUrl =
-          baseUrl +
-          "/tts?key=" +
-          encodeURIComponent(coachingKey) +
-          "&text=" +
-          encodeURIComponent(String(coaching));
-
-        try {
-          const statusResp = await fetch(statusUrl, { method: "GET" });
-          const ready = statusResp && statusResp.status === 200;
-
-          if (!ready) {
-            const fillerPlay =
-              "<Play>" +
-              escapeXml(
-                baseUrl +
-                  "/tts?key=filler_hold_on&text=" +
-                  encodeURIComponent("Okay. Give me a second.")
-              ) +
-              "</Play>";
-
-            return sendTwiml(
-              res,
-              fillerPlay +
-                "<Redirect method=\"POST\">" +
-                escapeXml(actionUrl) +
-                "</Redirect>"
-            );
-          }
-        } catch (e) {
-          // If status check fails, fall through and attempt to play anyway
-        }
-
-        return sendTwiml(
-          res,
-          coachingDebug +
-            "<Play>" +
-            escapeXml(coachingPlayUrl) +
-            "</Play>" +
-            buildAskQuestionTwiml(
-              q,
-              actionUrl,
-              gatherCfg.timeoutSec,
-              gatherCfg.speechTimeoutSec
-            )
-        );
-
-      }
 
       const cleanedForHelp = String(userInput || "")
         .toLowerCase()
