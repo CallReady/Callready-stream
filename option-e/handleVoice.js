@@ -851,6 +851,14 @@ async function handleVoiceOptionE(req, res) {
     const safe = String(text || "").replace(/[<>&]/g, "");
     return "<Say>DEBUG " + safe + ".</Say>";
   }
+      function dbgState(session, callSid) {
+      if (!debugEnabled) return "";
+      const pid = String(process.pid || "");
+      const created = session && session.createdAt ? String(session.createdAt) : "none";
+      const phase = session && session.phase ? String(session.phase) : "none";
+      const sid = callSid ? String(callSid) : "none";
+      return "<Say>DEBUG PID " + pid + ". SID " + sid + ". CREATED " + created + ". PHASE " + phase + ".</Say>";
+    }
 
   try {
     const callSid = getCallSid(req);
@@ -956,6 +964,7 @@ async function handleVoiceOptionE(req, res) {
             ". Direction " +
             String(req.body && req.body.Direction ? req.body.Direction : "none")
         ) +
+          dbgState(session, callSid) +
           "<Play>" + escapeXml(getBaseUrl(req) + "/tts?key=opener") + "</Play>" +
           "<Play>" + escapeXml(getBaseUrl(req) + "/tts?key=intent_prompt") + "</Play>" +
           "<Gather input=\"speech dtmf\" action=\"" +
