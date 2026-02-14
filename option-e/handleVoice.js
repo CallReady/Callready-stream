@@ -454,7 +454,7 @@ function isNonsenseSpeechInput(speechText, confidenceValue) {
   const tokens = stripped.split(" ").filter(Boolean);
   if (tokens.length === 1) {
     const w = tokens[0];
-    const badSingles = ["uh", "um", "umm", "hmm", "mm", "m", "k"];
+    const badSingles = ["uh", "um", "umm", "hmm", "mm", "m"];
     if (badSingles.includes(w)) return true;
   }
 
@@ -720,7 +720,7 @@ async function handleGenericQuestionPhase(opts) {
 
     return sendTwiml(
       res,
-      "<Say>Got it.</Say>" +
+      "<Say>Okay.</Say>" +
         "<Say>One more question.</Say>" +
         buildAskQuestionTwiml(nextQuestion, actionUrl, gatherCfg.timeoutSec, gatherCfg.speechTimeoutSec)
     );
@@ -965,7 +965,7 @@ if (isSurprise) {
           : "a medical office to make an appointment";
 
       const announceText =
-        "Okay. Let us practice calling " +
+        "Okay. Let's practice calling " +
         flowLabel +
         ". I will answer after the phone rings as if you just called.";
 
@@ -1096,7 +1096,7 @@ if (isSurprise) {
       return sendTwiml(
         res,
         "<Say>I did not catch a clear choice.</Say>" +
-          "<Say>Say practice again, or say end session.</Say>" +
+          "<Say>Do you want practice again, or end session.</Say>" +
           "<Gather input=\"speech dtmf\" action=\"" +
           escapeXml(actionUrl) +
           "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
@@ -1321,7 +1321,7 @@ if (isSurprise) {
 
       return sendTwiml(
         res,
-        "<Say>Got it.</Say>" +
+        "<Say>Okay.</Say>" +
           "<Say>One more question.</Say>" +
           buildAskQuestionTwiml(
             nextQ,
