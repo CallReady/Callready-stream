@@ -1289,7 +1289,8 @@ if (isSurprise) {
 
       // First entry into question phase after announce arrives via Redirect with no input.
       // On that first hit, we should ASK the first question, not trigger a retry prompt.
-      if (!userInput && idx === 0) {
+      if (!userInput && idx === 0 && !session.pendingCoaching) {
+
         const firstKey = flow[0];
         const firstQ = OPTION_E_QUESTIONS.find((qq) => qq && qq.key === firstKey);
 
