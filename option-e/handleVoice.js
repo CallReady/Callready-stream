@@ -31,20 +31,29 @@ function buildAskQuestionTwiml(q, actionUrl, timeoutSec, speechTimeoutSec) {
   if (!q) {
     return "<Say>Sorry, something went wrong.</Say><Hangup/>";
   }
+  const baseUrl = (process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com").replace(/\/+$/, "");
+  const ttsKey = "q_" + String(q.key || "unknown").toLowerCase();
+  const playUrl =
+    baseUrl +
+    "/tts?key=" +
+    encodeURIComponent(ttsKey) +
+    "&text=" +
+    encodeURIComponent(String(q.prompt || ""));
 
   return (
-    "<Say>" +
-    escapeXml(q.prompt) +
-    "</Say>" +
+    "<Play>" +
+    escapeXml(playUrl) +
+    "</Play>" +
     "<Gather input=\"speech dtmf\" action=\"" +
     escapeXml(actionUrl) +
-    "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
-    String(timeoutSec) +
+    "\" method=\"POST\" timeout=\"" +
+    escapeXml(String(timeoutSec)) +
     "\" speechTimeout=\"" +
-    String(speechTimeoutSec) +
+    escapeXml(String(speechTimeoutSec)) +
     "\"></Gather>"
   );
 }
+
 
 const PHASES = OPTION_E_QUESTIONS.reduce((acc, q) => {
   if (q && q.key) {
