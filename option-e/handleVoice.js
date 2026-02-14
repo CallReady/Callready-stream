@@ -961,7 +961,7 @@ if (isSurprise) {
         ". I will answer after the phone rings as if you just called.";
 
       const baseUrl = getBaseUrl(req);
-      const ringUrl = baseUrl + "/ring.mp3";
+      const ringUrl = getBaseUrl(req) + "/cellphonering.mp3";
 
       // Cache announcement audio by a stable key per flow
       const announceKey = "announce_" + flowId;
