@@ -1204,9 +1204,6 @@ if (isSurprise) {
             ? session.pendingCoaching.helpCount
             : 1;
 
-        session.pendingCoaching = null;
-        saveSession(session);
-
         const coachingRaw = await getCoachingLine(pendingKey, pendingHelpCount, session);
         const coaching = makeSafeCoachingLine(
           coachingRaw,
@@ -1243,11 +1240,20 @@ if (isSurprise) {
           "&text=" +
           encodeURIComponent(String(coaching));
 
+        session.pendingCoaching = session.pendingCoaching || {};
+        session.pendingCoaching.preparedKey = coachingKey;
+        session.pendingCoaching.preparedText = coaching;
+        saveSession(session);
+
+
         try {
           const statusResp = await fetch(statusUrl, { method: "GET" });
           const ready = statusResp && statusResp.status === 200;
 
           if (!ready) {
+            // Prewarm: trigger TTS generation on a cache miss, then wait via Redirect.
+            try { fetch(coachingPlayUrl).catch(() => {}); } catch (e) {}
+
             const fillerPlay =
               "<Play>" +
               escapeXml(
@@ -1268,6 +1274,8 @@ if (isSurprise) {
         } catch (e) {
           // If status check fails, fall through and attempt to play anyway.
         }
+        session.pendingCoaching = null;
+        saveSession(session);
 
         // Ask the current question again after coaching, so the student can answer immediately.
         const flowId = session.flowId || "default";
