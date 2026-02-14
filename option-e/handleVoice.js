@@ -1218,10 +1218,6 @@ if (isSurprise) {
             ? String(session.coachingMeta.reason)
             : "unknown";
 
-        const coachingDebug = debugEnabled
-          ? "<Say>DEBUG COACHING_SOURCE " + coachingSource + ". REASON " + reason + ".</Say>"
-          : "";
-
         let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
         while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
 
@@ -1291,8 +1287,7 @@ if (isSurprise) {
 
         return sendTwiml(
           res,
-          coachingDebug +
-            "<Play>" +
+          "<Play>" +
             escapeXml(coachingPlayUrl) +
             "</Play>" +
             buildAskQuestionTwiml(
