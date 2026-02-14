@@ -842,6 +842,39 @@ async function handleVoiceOptionE(req, res) {
 
     const userInput = ((speechIsUsable ? speech : "") || digits).trim();
 
+        // Debug-only jump shortcuts for faster testing.
+    // Active ONLY when Debug=1 is present in the request.
+    const debugEnabled = req && req.body && String(req.body.Debug || "").trim() === "1";
+    const jump = req && req.body && req.body.Jump ? String(req.body.Jump).trim() : "";
+
+    if (debugEnabled && jump) {
+      // Reset common session fields so jumps are predictable.
+      session.retries = {};
+      session.helpCounts = {};
+      session.pendingCoaching = null;
+      session.slots = session.slots || {};
+      if (typeof session.startedAt !== "number") session.startedAt = Date.now();
+
+      // Determine which flow to test, default to medical.
+      session.flowId = session.flowId || "medical";
+
+      if (jump === "ask_reason") {
+        session.phase = "question";
+        session.stepIndex = 0;
+        saveSession(session);
+      } else if (jump === "ask_detail") {
+        session.phase = "question";
+        session.stepIndex = 1;
+        saveSession(session);
+      } else if (jump === "wrapup_choice") {
+        session.phase = WRAPUP_PHASE;
+        session.stepIndex = 0;
+        session.wrapupRetries = 0;
+        saveSession(session);
+      }
+      // If jump value is unknown, do nothing and continue normal flow.
+    }
+
     console.log("OptionE hit:", {
       callSid: callSid || "(none)",
       path: basePath,
