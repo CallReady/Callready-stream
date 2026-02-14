@@ -2461,10 +2461,35 @@ try {
         } catch (e2) {
           try { fs.unlinkSync(tempPath); } catch (e3) {}
         }
-      } catch (e) {
+      } catch (e) {return res.redirect(302, "/test-marin.mp3");
         try { fs.unlinkSync(tempPath); } catch (e4) {}
       }
     });
+    // Returns whether a TTS key is already cached on disk.
+// Intended for Option E latency-cover loops, so we can play a cached filler
+// while waiting for a specific line to finish generating.
+app.get("/tts-status", (req, res) => {
+  const key = String((req.query && req.query.key) || "").toLowerCase().trim();
+  if (!key) return res.status(400).send("Missing key");
+
+  const safeKey = key.replace(/[^a-z0-9_-]/g, "");
+  if (!safeKey) return res.status(400).send("Invalid key");
+
+  const styleSuffix = process.env.TTS_STYLE_VERSION
+    ? "_" + String(process.env.TTS_STYLE_VERSION).toLowerCase().trim()
+    : "";
+
+  const filePath = path.join(__dirname, "audio-cache", safeKey + styleSuffix + ".mp3");
+
+  if (fs.existsSync(filePath)) {
+    res.type("text/plain");
+    return res.status(200).send("ready");
+  }
+
+  res.type("text/plain");
+  return res.status(404).send("miss");
+});
+
   }
 } catch (e) {
   // Even if caching fails, we still return the working audio below.
