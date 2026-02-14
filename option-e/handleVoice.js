@@ -848,8 +848,8 @@ async function handleVoiceOptionE(req, res) {
             ". Direction " +
             String(req.body && req.body.Direction ? req.body.Direction : "none")
         ) +
-          "<Say>Hi. This is CallReady practice mode.</Say>" +
-          "<Say>Tell me what call you want to practice, or say surprise me.</Say>" +
+          "<Play>" + escapeXml(getBaseUrl(req) + "/tts?key=opener") + "</Play>" +
+          "<Play>" + escapeXml(getBaseUrl(req) + "/tts?key=intent_prompt") + "</Play>" +
           "<Gather input=\"speech dtmf\" action=\"" +
           escapeXml(actionUrl) +
           "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
