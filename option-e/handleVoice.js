@@ -1306,14 +1306,29 @@ if (isSurprise) {
         if (typeof session.startedAt !== "number") session.startedAt = Date.now();
         saveSession(session);
 
-        return sendTwiml(
-          res,
-          "<Say>Nice work.</Say>" +
-            "<Say>Do you want to practice again, or end session?</Say>" +
-            "<Gather input=\"speech dtmf\" action=\"" +
-            escapeXml(actionUrl) +
-            "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
-        );
+      let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
+      while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+
+      const transitionPlay =
+        "<Play>" +
+        escapeXml(
+          baseUrl +
+            "/tts?key=transition_one_more_question&text=" +
+            encodeURIComponent("Okay. One more question.")
+        ) +
+        "</Play>";
+
+      return sendTwiml(
+        res,
+        transitionPlay +
+          buildAskQuestionTwiml(
+            nextQ,
+            actionUrl,
+            PHASES[nextQ.key] && PHASES[nextQ.key].gather ? PHASES[nextQ.key].gather.timeoutSec : 3,
+            PHASES[nextQ.key] && PHASES[nextQ.key].gather ? PHASES[nextQ.key].gather.speechTimeoutSec : 1
+          )
+      );
+
       }
 
       const nextKey = flow[session.stepIndex];
