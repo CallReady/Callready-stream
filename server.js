@@ -2465,7 +2465,17 @@ try {
         try { fs.unlinkSync(tempPath); } catch (e4) {}
       }
     });
-    // Returns whether a TTS key is already cached on disk.
+
+  }
+} catch (e) {
+  // Even if caching fails, we still return the working audio below.
+}
+
+  // Immediate, known-good audio response for Twilio
+  return res.redirect(302, "/test-marin.mp3");
+});
+
+// Returns whether a TTS key is already cached on disk.
 // Intended for Option E latency-cover loops, so we can play a cached filler
 // while waiting for a specific line to finish generating.
 app.get("/tts-status", (req, res) => {
@@ -2488,15 +2498,6 @@ app.get("/tts-status", (req, res) => {
 
   res.type("text/plain");
   return res.status(404).send("miss");
-});
-
-  }
-} catch (e) {
-  // Even if caching fails, we still return the working audio below.
-}
-
-  // Immediate, known-good audio response for Twilio
-  return res.redirect(302, "/test-marin.mp3");
 });
 
 app.post("/voice", async (req, res) => {
