@@ -1460,9 +1460,12 @@ if (isSurprise) {
           ) +
           "</Play>";
 
+        const helpMarker = debugEnabled ? "<Say>DEBUG HELP_FILLER_TTS_ON.</Say>" : "";
+
         return sendTwiml(
           res,
-          fillerPlay +
+          helpMarker +
+            fillerPlay +
             "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
         );
 
