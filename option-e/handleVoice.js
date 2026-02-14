@@ -1133,17 +1133,23 @@ if (isSurprise) {
               ? PHASES[firstKey].gather
               : { timeoutSec: 3, speechTimeoutSec: 1 };
 
+        if (firstQ && firstRetries === 0) {
+          const gatherCfg0 =
+            PHASES[firstKey] && PHASES[firstKey].gather
+              ? PHASES[firstKey].gather
+              : { timeoutSec: 3, speechTimeoutSec: 1 };
+
           return sendTwiml(
             res,
-            "<Say>" + escapeXml(firstQ.prompt) + "</Say>" +
-              "<Gather input=\"speech dtmf\" action=\"" +
-              escapeXml(actionUrl) +
-              "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
-              String(gatherCfg0.timeoutSec) +
-              "\" speechTimeout=\"" +
-              String(gatherCfg0.speechTimeoutSec) +
-              "\"></Gather>"
+            buildAskQuestionTwiml(
+              firstQ,
+              actionUrl,
+              gatherCfg0.timeoutSec,
+              gatherCfg0.speechTimeoutSec
+            )
           );
+        }
+
         }
       }
 
