@@ -2333,7 +2333,8 @@ app.get("/tts", (req, res) => {
     return res.status(400).send("Invalid key");
   }
 
-  const filePath = path.join(__dirname, "audio-cache", safeKey + ".mp3");
+const styleSuffix = process.env.TTS_STYLE_VERSION ? "_" + String(process.env.TTS_STYLE_VERSION).toLowerCase().trim() : "";
+const filePath = path.join(__dirname, "audio-cache", safeKey + styleSuffix + ".mp3");
 
   // If file already exists, serve it
   if (fs.existsSync(filePath)) {
