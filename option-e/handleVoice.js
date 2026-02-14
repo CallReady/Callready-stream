@@ -1239,14 +1239,36 @@ if (isSurprise) {
         if (typeof session.startedAt !== "number") session.startedAt = Date.now();
         saveSession(session);
 
+        let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
+        while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+
+        const wrapupIntroPlay =
+          "<Play>" +
+          escapeXml(
+            baseUrl +
+              "/tts?key=wrapup_intro&text=" +
+              encodeURIComponent("Nice work.")
+          ) +
+          "</Play>";
+
+        const wrapupChoicePlay =
+          "<Play>" +
+          escapeXml(
+            baseUrl +
+              "/tts?key=wrapup_choice&text=" +
+              encodeURIComponent("Do you want to practice again, or end session?")
+          ) +
+          "</Play>";
+
         return sendTwiml(
           res,
-          "<Say>Nice work.</Say>" +
-            "<Say>Do you want to practice again, or end session?</Say>" +
+          wrapupIntroPlay +
+            wrapupChoicePlay +
             "<Gather input=\"speech dtmf\" action=\"" +
             escapeXml(actionUrl) +
             "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
         );
+
       }
 
       const key = flow[idx];
