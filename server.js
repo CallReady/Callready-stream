@@ -2312,10 +2312,53 @@ app.get("/tts", (req, res) => {
   const dynamicTextRaw = req.query && req.query.text !== undefined ? String(req.query.text) : "";
   const dynamicText = dynamicTextRaw.trim();
 
+    // Centralized voice style for dynamic text only.
+  // This affects only /tts calls that include &text=
+  const VOICE_STYLE = {
+    mode: String(process.env.TTS_STYLE_MODE || "off").toLowerCase().trim(), // off | on
+    pacing: String(process.env.TTS_STYLE_PACING || "medium").toLowerCase().trim(), // slow | medium | fast
+    fillers: String(process.env.TTS_STYLE_FILLERS || "none").toLowerCase().trim(), // none | light
+    fragments: String(process.env.TTS_STYLE_FRAGMENTS || "none").toLowerCase().trim(), // none | light
+  };
+
+  function applyVoiceStyle(text) {
+    let t = String(text || "").trim();
+    if (!t) return t;
+
+    if (VOICE_STYLE.mode !== "on") return t;
+
+    // Very light pacing adjustment
+    if (VOICE_STYLE.pacing === "slow") {
+      t = t.replace(/\./g, ".,");
+      t = t.replace(/,\s*/g, ", ");
+    }
+
+    // Optional light filler
+    if (VOICE_STYLE.fillers === "light") {
+      if (!/^(okay|alright)[\s,]/i.test(t)) {
+        t = "Okay, " + t;
+      }
+    }
+
+    // Optional softening
+    if (VOICE_STYLE.fragments === "light") {
+      t = t.replace(/^please\s+/i, "");
+    }
+
+    return t.trim();
+  }
+
   // Choose text source: dynamic text if provided, otherwise preset text by key
   let textToSpeak = "";
   if (dynamicText) {
-    textToSpeak = dynamicText;
+  if (dynamicText) {
+    textToSpeak = applyVoiceStyle(dynamicText);
+  } else if (presetByKey[key]) {
+    textToSpeak = presetByKey[key];
+  } else {
+    return res.status(400).send("Unknown key and missing text");
+  }
+
   } else if (presetByKey[key]) {
     textToSpeak = presetByKey[key];
   } else {
