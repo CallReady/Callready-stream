@@ -1204,14 +1204,26 @@ if (isSurprise) {
         return sendTwiml(res, "<Play>" + AUDIO_URL + "</Play><Hangup/>");
       }
 
+      let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
+      while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+
+      const wrapupRetryPlay =
+        "<Play>" +
+        escapeXml(
+          baseUrl +
+            "/tts?key=wrapup_retry&text=" +
+            encodeURIComponent("I did not catch a clear choice. Do you want practice again, or end session?")
+        ) +
+        "</Play>";
+
       return sendTwiml(
         res,
-        "<Say>I did not catch a clear choice.</Say>" +
-          "<Say>Do you want practice again, or end session.</Say>" +
+        wrapupRetryPlay +
           "<Gather input=\"speech dtmf\" action=\"" +
           escapeXml(actionUrl) +
           "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
       );
+
     }
 
     if (session.phase === "question") {
