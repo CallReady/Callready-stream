@@ -1108,6 +1108,36 @@ if (isSurprise) {
 
       const idx = typeof session.stepIndex === "number" ? session.stepIndex : 0;
 
+            // First entry into question phase after announce arrives via Redirect with no input.
+      // On that first hit, we should ASK the first question, not trigger a retry prompt.
+      if (!userInput && idx === 0) {
+        const firstKey = flow[0];
+        const firstQ = OPTION_E_QUESTIONS.find((qq) => qq && qq.key === firstKey);
+
+        session.retries = session.retries || {};
+        const firstRetries = session.retries[firstKey] || 0;
+
+        // Only treat it as first-entry if we have not started retrying yet.
+        if (firstQ && firstRetries === 0) {
+          const gatherCfg0 =
+            PHASES[firstKey] && PHASES[firstKey].gather
+              ? PHASES[firstKey].gather
+              : { timeoutSec: 3, speechTimeoutSec: 1 };
+
+          return sendTwiml(
+            res,
+            "<Say>" + escapeXml(firstQ.prompt) + "</Say>" +
+              "<Gather input=\"speech dtmf\" action=\"" +
+              escapeXml(actionUrl) +
+              "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
+              String(gatherCfg0.timeoutSec) +
+              "\" speechTimeout=\"" +
+              String(gatherCfg0.speechTimeoutSec) +
+              "\"></Gather>"
+          );
+        }
+      }
+
       if (idx < 0 || idx >= flow.length) {
         // If we somehow land out of bounds, treat it as wrapup choice.
         session.phase = WRAPUP_PHASE;
