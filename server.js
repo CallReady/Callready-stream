@@ -2388,10 +2388,20 @@ try {
           },
           signal: controller.signal,
           body: JSON.stringify({
-            model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
-            voice: process.env.OPENAI_TTS_VOICE || "marin",
-            response_format: "mp3",
-            input: textToSpeak,
+            const VOICE_CONFIG = {
+              model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
+              voice: process.env.OPENAI_TTS_VOICE || "marin",
+              // reserved for future tuning, does nothing yet
+              pacing: process.env.TTS_STYLE_PACING || "medium"
+            };
+
+body: JSON.stringify({
+  model: VOICE_CONFIG.model,
+  voice: VOICE_CONFIG.voice,
+  response_format: "mp3",
+  input: textToSpeak
+}),
+
           }),
         });
 
