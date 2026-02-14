@@ -2225,7 +2225,8 @@ function warmTtsPresetCache() {
   }
 
   const presetByKey = {
-    opener: "Hi. This is CallReady practice mode.",
+    opener: "Welcome to CallReady dot live, a place to practice phone calls until they feel familiar.",
+    intent_prompt: "What kind of call do you want to practice today, or should I surprise you.",
     wrapup: "Nice work. You can practice again anytime.",
   };
 
