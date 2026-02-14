@@ -1447,11 +1447,25 @@ if (isSurprise) {
 
         await sleepMs(300);
 
+        let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
+        while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+
+        // Use a known cached TTS filler to keep voice consistent and avoid silence.
+        const fillerPlay =
+          "<Play>" +
+          escapeXml(
+            baseUrl +
+              "/tts?key=filler_hold_on&text=" +
+              encodeURIComponent(String(filler || "Okay. Give me a second."))
+          ) +
+          "</Play>";
+
         return sendTwiml(
           res,
-          "<Say>" + escapeXml(filler) + "</Say>" +
+          fillerPlay +
             "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
         );
+
       }
 
       const ok = isValidAnswerForQuestion(q, userInput);
