@@ -718,12 +718,29 @@ async function handleGenericQuestionPhase(opts) {
       logPhaseTransition(callSid, nextPhase, nextPhase, transitionNoteOnAskNext);
     }
 
+    let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
+    while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+
+    const transitionPlay =
+      "<Play>" +
+      escapeXml(
+        baseUrl +
+          "/tts?key=transition_one_more_question&text=" +
+          encodeURIComponent("Okay. One more question.")
+      ) +
+      "</Play>";
+
     return sendTwiml(
       res,
-      "<Say>Okay.</Say>" +
-        "<Say>One more question.</Say>" +
-        buildAskQuestionTwiml(nextQuestion, actionUrl, gatherCfg.timeoutSec, gatherCfg.speechTimeoutSec)
+      transitionPlay +
+        buildAskQuestionTwiml(
+          nextQuestion,
+          actionUrl,
+          gatherCfg.timeoutSec,
+          gatherCfg.speechTimeoutSec
+        )
     );
+
   }
 
   return sendTwiml(res, "<Say>Sorry, something went wrong.</Say><Hangup/>");
