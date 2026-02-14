@@ -90,17 +90,19 @@ const E_PHASES = {
 };
 
 const app = express();
-const path = require("path");
 
-// Serve static files from project root
-app.use(express.static(path.join(__dirname)));
 app.set("strict routing", true);
-// Serve cached Marin audio files
+
+// Serve cached TTS audio
 app.use("/audio-cache", express.static(path.join(__dirname, "audio-cache")));
+
+// Serve static files from project root (for cellphonering.mp3, etc.)
+app.use(express.static(__dirname));
 
 const PORT = process.env.PORT || 10000;
 const CALLREADY_VERSION =
-  process.env.CALLREADY_VERSION ||
+  process.env.CALLREADY_VERSION || "";
+
   process.env.RENDER_GIT_COMMIT ||
   "dev";
 
