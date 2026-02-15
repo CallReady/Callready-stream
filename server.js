@@ -2215,87 +2215,6 @@ app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to PO
 
 // Temporary Marin test audio route
 // This allows us to test Twilio <Play> before wiring real Marin TTS.
-app.get("/test-marin.mp3", (req, res) => {
-  res.redirect(302, "https://demo.twilio.com/docs/classic.mp3");
-});
-
-function warmTtsPresetCache() {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey || typeof fetch !== "function") return;
-
-  const dir = path.join(__dirname, "audio-cache");
-  try {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  } catch (e) {
-    return;
-  }
-
-  const presetByKey = {
-    opener: "Welcome to CallReady dot live, a place to practice phone calls until they feel familiar.",
-    intent_prompt: "What kind of call do you want to practice today, or should I surprise you.",
-    wrapup: "Nice work. You can practice again anytime.",
-  };
-
-  setImmediate(async () => {
-    for (const k of Object.keys(presetByKey)) {
-      try {
-        const safeKey = String(k).toLowerCase().replace(/[^a-z0-9_-]/g, "");
-        if (!safeKey) continue;
-
-        const filePath = path.join(dir, safeKey + ".mp3");
-        if (fs.existsSync(filePath)) continue;
-
-        const tempPath = filePath + ".tmp";
-        if (fs.existsSync(tempPath)) {
-          try { fs.unlinkSync(tempPath); } catch (e0) {}
-        }
-
-        fs.writeFileSync(tempPath, "");
-
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 6000);
-
-        const resp = await fetch("https://api.openai.com/v1/audio/speech", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + apiKey,
-          },
-          signal: controller.signal,
-          body: JSON.stringify({
-            model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
-            voice: process.env.OPENAI_TTS_VOICE || "marin",
-            response_format: "mp3",
-            input: presetByKey[k],
-          }),
-        });
-
-        clearTimeout(timer);
-
-        if (!resp.ok) {
-          try { fs.unlinkSync(tempPath); } catch (e1) {}
-          continue;
-        }
-
-        const buf = Buffer.from(await resp.arrayBuffer());
-        fs.writeFileSync(tempPath, buf);
-
-        try {
-          fs.renameSync(tempPath, filePath);
-        } catch (e2) {
-          try { fs.unlinkSync(tempPath); } catch (e3) {}
-        }
-      } catch (e) {
-        // best effort only
-      }
-    }
-  });
-}
-
-// Simple disk-cached TTS route (instant response, cache builds in parallel)
-// Supports two modes:
-// 1) Preset keys: /tts?key=wrapup
-// 2) Dynamic text: /tts?key=CAxxxx_step3&text=Hello%20there
 app.get("/tts", (req, res) => {
   const key = String((req.query && req.query.key) || "").toLowerCase().trim();
 
@@ -2311,6 +2230,22 @@ app.get("/tts", (req, res) => {
 
   const dynamicTextRaw = req.query && req.query.text !== undefined ? String(req.query.text) : "";
   const dynamicText = dynamicTextRaw.trim();
+
+  // If this is a preset line and we have a committed MP3, serve it instantly.
+  const presetAudioByKey = {
+    opener: "opener.mp3",
+    intent_prompt: "intent_prompt.mp3",
+    wrapup: "wrapup.mp3",
+    filler_hold_on: "filler_hold_on.mp3",
+  };
+
+  if (!dynamicText && presetAudioByKey[key]) {
+    const fixedName = presetAudioByKey[key];
+    const fixedPath = path.join(FIXED_AUDIO_DIR, fixedName);
+    if (fs.existsSync(fixedPath)) {
+      return res.redirect(302, "/audio-fixed/" + fixedName);
+    }
+  }
 
     // Centralized voice style for dynamic text only.
   // This affects only /tts calls that include &text=
