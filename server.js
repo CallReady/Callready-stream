@@ -2213,6 +2213,11 @@ if (session && safeStep === 4 && speechResult) {
 
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
 
+// Permanent, repo-committed audio files for lines that never change.
+// Put mp3 files in a folder named "audio-fixed" next to this server file.
+const FIXED_AUDIO_DIR = path.join(__dirname, "audio-fixed");
+app.use("/audio-fixed", express.static(FIXED_AUDIO_DIR));
+
 // Temporary Marin test audio route
 // This allows us to test Twilio <Play> before wiring real Marin TTS.
 app.get("/tts", (req, res) => {
@@ -2286,14 +2291,7 @@ app.get("/tts", (req, res) => {
   // Choose text source: dynamic text if provided, otherwise preset text by key
   let textToSpeak = "";
   if (dynamicText) {
-  if (dynamicText) {
     textToSpeak = applyVoiceStyle(dynamicText);
-  } else if (presetByKey[key]) {
-    textToSpeak = presetByKey[key];
-  } else {
-    return res.status(400).send("Unknown key and missing text");
-  }
-
   } else if (presetByKey[key]) {
     textToSpeak = presetByKey[key];
   } else {
