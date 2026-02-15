@@ -2412,7 +2412,7 @@ try {
   if (!fs.existsSync(tempPath)) {
     fs.writeFileSync(tempPath, ""); // create placeholder immediately
 
-    setImmediate(async () => {
+        setImmediate(async () => {
       try {
         const apiKey = process.env.OPENAI_API_KEY;
         if (!apiKey || typeof fetch !== "function") {
@@ -2426,7 +2426,6 @@ try {
         const VOICE_CONFIG = {
           model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
           voice: process.env.OPENAI_TTS_VOICE || "marin",
-          // reserved for future tuning, does nothing yet
           pacing: process.env.TTS_STYLE_PACING || "medium",
         };
 
@@ -2445,7 +2444,6 @@ try {
           }),
         });
 
-
         clearTimeout(timer);
 
         if (!resp.ok) {
@@ -2461,18 +2459,19 @@ try {
         } catch (e2) {
           try { fs.unlinkSync(tempPath); } catch (e3) {}
         }
-      } catch (e) {return res.redirect(302, "/test-marin.mp3");
+      } catch (e) {
         try { fs.unlinkSync(tempPath); } catch (e4) {}
       }
     });
 
   }
-} catch (e) {
-  // Even if caching fails, we still return the working audio below.
-}
+      } catch (e) {
+        try { fs.unlinkSync(tempPath); } catch (e4) {}
+      }
 
-  // Immediate, known-good audio response for Twilio
-  return res.redirect(302, "/test-marin.mp3");
+  // Cache miss: return no content. Option E will handle waiting via /tts-status + filler loops.
+  res.status(204);
+  return res.end();
 });
 
 // Returns whether a TTS key is already cached on disk.
