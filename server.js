@@ -2410,46 +2410,6 @@ try {
   return res.end();
 });
 
-app.get("/tts-status", (req, res) => {
-  const keyRaw = (req.query && req.query.key) !== undefined ? String(req.query.key) : "";
-  const key = keyRaw.toLowerCase().trim();
-
-  if (!key) return res.status(400).send("Missing key");
-
-  // If this key is mapped to a fixed audio file, report ready if the file exists.
-  const presetAudioByKey = {
-    opener: "opener.mp3",
-    intent_prompt: "intent_prompt.mp3",
-    wrapup: "wrapup.mp3",
-    filler_hold_on: "filler_hold_on.mp3",
-    intent_retry: "intent_retry.mp3",
-    auto_start_medical: "auto_start_medical.mp3",
-  };
-
-  const fixedName = presetAudioByKey[key];
-  if (fixedName) {
-    const fixedPath = path.join(FIXED_AUDIO_DIR, fixedName);
-    if (fs.existsSync(fixedPath)) return res.status(200).send("ready");
-    return res.status(404).send("missing");
-  }
-
-  // Otherwise, check the dynamic cache path used by /tts for generated audio.
-  // This assumes your /tts route writes generated MP3s into a known cache directory.
-  // If your /tts route uses a different directory variable, we will align it in the next step.
-  const cacheDir = typeof AUDIO_CACHE_DIR !== "undefined" ? AUDIO_CACHE_DIR : null;
-
-  if (!cacheDir) {
-    // We do not know your dynamic cache directory yet.
-    // Report 404 so callers do not hang.
-    return res.status(404).send("unknown_cache_dir");
-  }
-
-  const mp3Path = path.join(cacheDir, key + ".mp3");
-  if (fs.existsSync(mp3Path)) return res.status(200).send("ready");
-
-  return res.status(404).send("not_ready");
-});
-
 // Returns whether a TTS key is already cached on disk.
 // Intended for Option E latency-cover loops, so we can play a cached filler
 // while waiting for a specific line to finish generating.
