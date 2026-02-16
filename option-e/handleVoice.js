@@ -1155,8 +1155,8 @@ if (isSurprise) {
         "&text=" +
         encodeURIComponent(announceText);
 
-      // Advance to questions after the announcement and ring
-      session.phase = "question";
+      // After the announcement and ring, play the receptionist line next.
+      session.phase = "receptionist_line";
       saveSession(session);
 
       return sendTwiml(
