@@ -1119,13 +1119,14 @@ if (isSurprise) {
       }
 
       // Ready, play it once, then move to announce.
+      // Ready, do NOT play it yet. Announce + ring should happen first.
+      // We will play the cached receptionist line after the ring.
       session.phase = "announce";
       saveSession(session);
 
       return sendTwiml(
         res,
-        "<Play>" + escapeXml(baseUrl + "/tts?key=" + encodeURIComponent(key)) + "</Play>" +
-          "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+        "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
     }
 
