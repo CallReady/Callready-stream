@@ -874,7 +874,6 @@ async function handleVoiceOptionE(req, res) {
       session.flowId = session.flowId || "medical";
       session.justJumped = true;
 
-
       if (jump === "ask_reason") {
         session.phase = "question";
         session.stepIndex = 0;
@@ -891,16 +890,14 @@ async function handleVoiceOptionE(req, res) {
       } else if (jump === "wrapup_first") {
         session.phase = WRAPUP_PHASE;
         session.stepIndex = 0;
-      } else if (jump === "announce") {
-        session.phase = "announce";
-        session.stepIndex = 0;
-        saveSession(session);
-      }
-
 
         // Reset wrapup retry state so first entry is clean.
         session.wrapupRetries = 0;
 
+        saveSession(session);
+      } else if (jump === "announce") {
+        session.phase = "announce";
+        session.stepIndex = 0;
         saveSession(session);
       }
       // If jump value is unknown, do nothing and continue normal flow.
