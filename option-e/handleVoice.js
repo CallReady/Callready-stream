@@ -977,9 +977,9 @@ if (isSurprise) {
   if (session.retries.intent >= 2) {
     session.flowId = "medical";
   } else {
-    return sendTwiml(
+        return sendTwiml(
       res,
-      "<Say>Say a call type, like scheduling an appointment, or say surprise me.</Say>" +
+      "<Play>" + escapeXml(getBaseUrl(req) + "/tts?key=intent_retry") + "</Play>" +
       "<Gather input=\"speech dtmf\" action=\"" +
       escapeXml(actionUrl) +
       "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
