@@ -2291,6 +2291,24 @@ app.get("/tts", (req, res) => {
     return t.trim();
   }
 
+  // Restrict filename characters so a caller-provided key cannot escape the cache dir
+  const safeKey = key.replace(/[^a-z0-9_-]/g, "");
+  if (!safeKey) {
+    return res.status(400).send("Invalid key");
+  }
+
+  const styleSuffix = process.env.TTS_STYLE_VERSION
+    ? "_" + String(process.env.TTS_STYLE_VERSION).toLowerCase().trim()
+    : "";
+
+  const filePath = path.join(__dirname, "audio-cache", safeKey + styleSuffix + ".mp3");
+
+  // Cached-first: if the MP3 already exists, serve it even if text= is missing.
+  // This prevents Twilio /tts?key=... from 400ing after the file has already been generated.
+  if (fs.existsSync(filePath)) {
+    return res.sendFile(filePath);
+  }
+
   // Choose text source: dynamic text if provided, otherwise preset text by key
   let textToSpeak = "";
   if (dynamicText) {
@@ -2304,20 +2322,6 @@ app.get("/tts", (req, res) => {
   // Hard caps to keep latency and cost bounded
   if (textToSpeak.length > 240) {
     textToSpeak = textToSpeak.slice(0, 240).trim();
-  }
-
-  // Restrict filename characters so a caller-provided key cannot escape the cache dir
-  const safeKey = key.replace(/[^a-z0-9_-]/g, "");
-  if (!safeKey) {
-    return res.status(400).send("Invalid key");
-  }
-
-const styleSuffix = process.env.TTS_STYLE_VERSION ? "_" + String(process.env.TTS_STYLE_VERSION).toLowerCase().trim() : "";
-const filePath = path.join(__dirname, "audio-cache", safeKey + styleSuffix + ".mp3");
-
-  // If file already exists, serve it
-  if (fs.existsSync(filePath)) {
-    return res.sendFile(filePath);
   }
 
 // If it doesn't exist yet, start creating it, but DO NOT wait.
