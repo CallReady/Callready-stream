@@ -929,7 +929,7 @@ if (!cleaned) {
   session.retries.intent_silence = (session.retries.intent_silence || 0) + 1;
   saveSession(session);
 
-  if (session.retries.intent_silence >= 1) {
+  if (session.retries.intent_silence >= 2) {
     session.flowId = "medical";
     session.stepIndex = 0;
     session.phase = "announce";
