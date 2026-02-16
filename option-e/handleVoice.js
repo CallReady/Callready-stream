@@ -979,7 +979,7 @@ if (isSurprise) {
   } else {
         return sendTwiml(
       res,
-      "<Play>" + escapeXml(getBaseUrl(req) + "/tts?key=intent_retry") + "</Play>" +
+      "<Play>" + escapeXml(getBaseUrl(req) + "/tts?key=intent_retry&text=" + encodeURIComponent("Say a call type, like scheduling an appointment, or say surprise me.")) + "</Play>" +
       "<Gather input=\"speech dtmf\" action=\"" +
       escapeXml(actionUrl) +
       "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
