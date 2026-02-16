@@ -1250,22 +1250,36 @@ if (isSurprise) {
             // Prewarm: trigger TTS generation on a cache miss, then wait via Redirect.
             try { fetch(coachingPlayUrl).catch(() => {}); } catch (e) {}
 
-            const fillerPlay =
-              "<Play>" +
-              escapeXml(
-                baseUrl +
-                  "/tts?key=filler_hold_on&text=" +
-                  encodeURIComponent("Okay. Give me a second.")
-              ) +
-              "</Play>";
+        // Use a deterministic rotating filler from the preloaded lookup pool.
+        // Varies within a call, and varies across calls, but is fully repeatable.
+        session.fillerCounts = session.fillerCounts || {};
+        const fillerCategory = "lookup";
+        const priorCount = typeof session.fillerCounts[fillerCategory] === "number" ? session.fillerCounts[fillerCategory] : 0;
 
-            return sendTwiml(
-              res,
-              fillerPlay +
-                "<Redirect method=\"POST\">" +
-                escapeXml(actionUrl) +
-                "</Redirect>"
-            );
+        const poolSize = 7; // filler_lookup_01 .. filler_lookup_07
+
+        // Deterministic start index based on CallSid (stable per call).
+        const sid = String(callSid || "");
+        let hash = 0;
+        for (let i = 0; i < sid.length; i++) {
+          const ch = sid.charCodeAt(i);
+          hash = ((hash * 31) + ch) >>> 0;
+        }
+        const start = poolSize > 0 ? (hash % poolSize) : 0;
+
+        // Rotate within the call using a counter.
+        const idx = ((start + priorCount) % poolSize) + 1;
+
+        session.fillerCounts[fillerCategory] = priorCount + 1;
+        saveSession(session);
+
+        const fillerKey = "filler_lookup_" + String(idx).padStart(2, "0");
+
+        const fillerPlay =
+          "<Play>" +
+          escapeXml(baseUrl + "/tts?key=" + encodeURIComponent(fillerKey)) +
+          "</Play>";
+
           }
         } catch (e) {
           // If status check fails, fall through and attempt to play anyway.
