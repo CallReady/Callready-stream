@@ -1043,7 +1043,7 @@ if (isSurprise) {
 }
 
       session.stepIndex = 0;
-      session.phase = "announce";
+      session.phase = "receptionist_line";
       session.retries = {};
       session.helpCounts = {};
       session.pendingCoaching = null;
