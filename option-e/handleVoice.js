@@ -829,6 +829,13 @@ async function handleVoiceOptionE(req, res) {
 
     const userInput = ((speechIsUsable ? speech : "") || digits).trim();
 
+        // Detect whether this request is a Gather callback.
+    // Twilio may POST SpeechResult or Digits even when empty if actionOnEmptyResult is true.
+    // We use presence of the fields (not their values) to distinguish callback vs Redirect entry.
+    const hasSpeechField = !!(req && req.body && Object.prototype.hasOwnProperty.call(req.body, "SpeechResult"));
+    const hasDigitsField = !!(req && req.body && Object.prototype.hasOwnProperty.call(req.body, "Digits"));
+    const isGatherCallback = hasSpeechField || hasDigitsField;
+
         // Debug-only jump shortcuts for faster testing.
     // Active ONLY when Debug=1 is present in the request.
     const debugEnabled = req && req.body && String(req.body.Debug || "").trim() === "1";
@@ -1347,7 +1354,7 @@ if (isSurprise) {
 
       // First entry into question phase after announce arrives via Redirect with no input.
       // On that first hit, we should ASK the first question, not trigger a retry prompt.
-      if (!userInput && idx === 0 && !session.pendingCoaching) {
+      if (!userInput && idx === 0 && !session.pendingCoaching && !isGatherCallback) {
 
         const firstKey = flow[0];
         const firstQ = OPTION_E_QUESTIONS.find((qq) => qq && qq.key === firstKey);
