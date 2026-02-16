@@ -2243,6 +2243,7 @@ app.get("/tts", (req, res) => {
     wrapup: "wrapup.mp3",
     filler_hold_on: "filler_hold_on.mp3",
     intent_retry: "intent_retry.mp3",
+        auto_start_medical: "auto_start_medical.mp3",
 
   };
 
