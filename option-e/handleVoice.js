@@ -764,6 +764,24 @@ function getBaseUrl(req) {
   return "https://callready-stream.onrender.com";
 }
 
+async function isTtsReady(baseUrl, key) {
+  const k = String(key || "").trim();
+  if (!k) return false;
+
+  let b = String(baseUrl || "").trim();
+  if (!b) b = "https://callready-stream.onrender.com";
+  while (b.endsWith("/")) b = b.slice(0, -1);
+
+  const url = b + "/tts-status?key=" + encodeURIComponent(k);
+
+  try {
+    const resp = await fetch(url, { method: "GET" });
+    return resp && resp.status === 200;
+  } catch (e) {
+    return false;
+  }
+}
+
 async function handleVoiceOptionE(req, res) {
   const callStatusRaw = req && req.body && req.body.CallStatus ? String(req.body.CallStatus) : "";
   const callStatus = callStatusRaw.trim().toLowerCase();
