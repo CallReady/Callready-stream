@@ -925,6 +925,22 @@ const cleaned = String(userInput || "")
 // If they said nothing, do not advance toward auto-selecting a flow.
 // Just replay the intent retry prompt.
 if (!cleaned) {
+    session.retries = session.retries || {};
+  session.retries.intent_silence = (session.retries.intent_silence || 0) + 1;
+  saveSession(session);
+
+  if (session.retries.intent_silence >= 1) {
+    session.flowId = "medical";
+    session.stepIndex = 0;
+    session.phase = "announce";
+    session.retries = {};
+    session.helpCounts = {};
+    session.pendingCoaching = null;
+    logPhaseTransition(callSid, "intent", "announce", "auto_selected_flow_medical_on_silence");
+    saveSession(session);
+    return sendTwiml(res, "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>");
+  }
+
   return sendTwiml(
     res,
     "<Play>" + escapeXml(getBaseUrl(req) + "/tts?key=intent_retry&text=" + encodeURIComponent("Say a call type, like scheduling an appointment, or say surprise me.")) + "</Play>" +
@@ -995,7 +1011,7 @@ if (isSurprise) {
   } else {
     return sendTwiml(
       res,
-      "<Play>" + escapeXml(getBaseUrl(req) + "/tts?key=intent_retry&text=" + encodeURIComponent("Say a call type, like scheduling an appointment, or say surprise me.")) + "</Play>" +
+      "<Play>" + escapeXml(getBaseUrl(req) + "/tts?key=intent_retry&text=" + encodeURIComponent("You can say a call type, like scheduling a medical appointment, or you can say surprise me and I'll pick something for you to try!")) + "</Play>" +
       "<Gather input=\"speech dtmf\" action=\"" +
       escapeXml(actionUrl) +
       "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>" +
