@@ -1121,7 +1121,7 @@ if (isSurprise) {
       );
     }
 
-        if (session.phase === "receptionist_line") {
+        if (session.phase === "announce") {
       const flowId = session.flowId || "default";
 
       const flowLabel =
