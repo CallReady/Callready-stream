@@ -31,6 +31,7 @@ function buildAskQuestionTwiml(q, actionUrl, timeoutSec, speechTimeoutSec) {
   if (!q) {
     return "<Say>Sorry, something went wrong.</Say><Hangup/>";
   }
+
   const baseUrl = (process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com").replace(/\/+$/, "");
   const ttsKey = "q_" + String(q.key || "unknown").toLowerCase();
   const playUrl =
@@ -46,14 +47,16 @@ function buildAskQuestionTwiml(q, actionUrl, timeoutSec, speechTimeoutSec) {
     "</Play>" +
     "<Gather input=\"speech dtmf\" action=\"" +
     escapeXml(actionUrl) +
-    "\" method=\"POST\" timeout=\"" +
+    "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
     escapeXml(String(timeoutSec)) +
     "\" speechTimeout=\"" +
     escapeXml(String(speechTimeoutSec)) +
-    "\"></Gather>"
+    "\"></Gather>" +
+    "<Redirect method=\"POST\">" +
+    escapeXml(actionUrl) +
+    "</Redirect>"
   );
 }
-
 
 const PHASES = OPTION_E_QUESTIONS.reduce((acc, q) => {
   if (q && q.key) {
