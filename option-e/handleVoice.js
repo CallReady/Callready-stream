@@ -596,14 +596,33 @@ function handleQuestionRetry(res, callSid, session, actionUrl, q, phaseKeyForRet
     );
   }
 
+  const retryPoolSize = 9;
+  const rand = Math.floor(Math.random() * retryPoolSize) + 1;
+  const retryKey = "retry_" + String(rand).padStart(2, "0");
+
+  let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
+  while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+
+  const retryPlay =
+    "<Play>" +
+    escapeXml(baseUrl + "/tts?key=" + encodeURIComponent(retryKey)) +
+    "</Play>";
+
   return sendTwiml(
     res,
-    "<Say>" + escapeXml(q && q.invalidPrompt ? q.invalidPrompt : "I did not catch that. Try again.") + "</Say>" +
-      "<Gather input=\"speech dtmf\" action=\"" + escapeXml(actionUrl) + "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" + String(gatherCfg.timeoutSec) + "\" speechTimeout=\"" + String(gatherCfg.speechTimeoutSec) + "\"></Gather>" +
-      "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+    retryPlay +
+      "<Gather input=\"speech dtmf\" action=\"" +
+      escapeXml(actionUrl) +
+      "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"" +
+      String(gatherCfg.timeoutSec) +
+      "\" speechTimeout=\"" +
+      String(gatherCfg.speechTimeoutSec) +
+      "\"></Gather>" +
+      "<Redirect method=\"POST\">" +
+      escapeXml(actionUrl) +
+      "</Redirect>"
   );
 }
-
 async function handleGenericQuestionPhase(opts) {
   const res = opts.res;
   const callSid = opts.callSid;
