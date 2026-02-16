@@ -891,6 +891,12 @@ async function handleVoiceOptionE(req, res) {
       } else if (jump === "wrapup_first") {
         session.phase = WRAPUP_PHASE;
         session.stepIndex = 0;
+      } else if (jump === "announce") {
+        session.phase = "announce";
+        session.stepIndex = 0;
+        saveSession(session);
+      }
+
 
         // Reset wrapup retry state so first entry is clean.
         session.wrapupRetries = 0;
