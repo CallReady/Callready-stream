@@ -2246,8 +2246,6 @@ const presetAudioByKey = {
   auto_start_medical: "auto_start_medical.mp3",
 };
 
-  };
-
   if (!dynamicText && presetAudioByKey[key]) {
     const fixedName = presetAudioByKey[key];
     const fixedPath = path.join(FIXED_AUDIO_DIR, fixedName);
