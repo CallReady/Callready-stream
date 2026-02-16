@@ -922,6 +922,19 @@ const cleaned = String(userInput || "")
   .replace(/\s+/g, " ")
   .trim();
 
+// If they said nothing, do not advance toward auto-selecting a flow.
+// Just replay the intent retry prompt.
+if (!cleaned) {
+  return sendTwiml(
+    res,
+    "<Play>" + escapeXml(getBaseUrl(req) + "/tts?key=intent_retry&text=" + encodeURIComponent("Say a call type, like scheduling an appointment, or say surprise me.")) + "</Play>" +
+    "<Gather input=\"speech dtmf\" action=\"" +
+    escapeXml(actionUrl) +
+    "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>" +
+    "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+  );
+}
+
 // Surprise detection
 const surprisePhrases = [
   "surprise",
