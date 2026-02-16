@@ -1069,70 +1069,20 @@ if (isSurprise) {
 
     }
 
-        if (session.phase === "receptionist_line") {
+    if (session.phase === "receptionist_line") {
       const baseUrl = getBaseUrl(req);
 
-      session.dynamic = session.dynamic || {};
-      const key = session.dynamic.receptionistKey;
+      // Play a fixed receptionist greeting after the ring, then move into questions.
+      const greetingUrl = baseUrl + "/audio-fixed/receptionist_medical_greeting.mp3";
 
-      // If we do not have a key yet, create one and trigger generation.
-      if (!key) {
-        const dynamicKey = "dyn_receptionist_" + String(callSid || "noid");
-
-        session.dynamic.receptionistKey = dynamicKey;
-        saveSession(session);
-
-        // Trigger generation by hitting /tts with a text payload.
-        // This is non-blocking, Twilio will hear filler while we generate.
-        const text =
-          "Thanks. What day and time works best for you?";
-
-        const genUrl =
-          baseUrl +
-          "/tts?key=" +
-          encodeURIComponent(dynamicKey) +
-          "&text=" +
-          encodeURIComponent(text);
-
-        try { fetch(genUrl).catch(() => {}); } catch (e) {}
-
-        // Play a fixed filler line while we generate.
-        const fillerPlay =
-          "<Play>" + escapeXml(baseUrl + "/tts?key=filler_hold_on") + "</Play>";
-
-        return sendTwiml(
-          res,
-          fillerPlay +
-            "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
-        );
-      }
-
-      // We have a key, poll readiness.
-      const ready = await isTtsReady(baseUrl, key);
-
-      if (!ready) {
-        const fillerPlay =
-          "<Play>" + escapeXml(baseUrl + "/tts?key=filler_hold_on") + "</Play>";
-
-        return sendTwiml(
-          res,
-          fillerPlay +
-            "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
-        );
-      }
-
-      // Ready, play it once, then move to announce.
-      // Ready, play the receptionist line now (this should happen after the ring),
-      // then move into the question phase.
       session.phase = "question";
       saveSession(session);
 
       return sendTwiml(
         res,
-        "<Play>" + escapeXml(baseUrl + "/tts?key=" + encodeURIComponent(key)) + "</Play>" +
+        "<Play>" + escapeXml(greetingUrl) + "</Play>" +
           "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
-
     }
 
         if (session.phase === "announce") {
