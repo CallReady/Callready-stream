@@ -882,7 +882,7 @@ async function handleVoiceOptionE(req, res) {
           "<Play>" + escapeXml(getBaseUrl(req) + "/tts?key=intent_prompt") + "</Play>" +
           "<Gather input=\"speech dtmf\" action=\"" +
           escapeXml(actionUrl) +
-          "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"1\"></Gather>"
+          "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"6\" speechTimeout=\"2\"></Gather>"
       );
     }
 
