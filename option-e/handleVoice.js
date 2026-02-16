@@ -1072,16 +1072,22 @@ if (isSurprise) {
     if (session.phase === "receptionist_line") {
       const baseUrl = getBaseUrl(req);
 
-      // Play a fixed receptionist greeting after the ring, then move into questions.
+      // Play the fixed receptionist greeting, then LISTEN for the caller's reply.
       const greetingUrl = baseUrl + "/audio-fixed/receptionist_medical_greeting.mp3";
 
+      // Treat the caller's reply to the greeting as the answer to the first question step.
       session.phase = "question";
+      session.stepIndex = 0;
       saveSession(session);
 
       return sendTwiml(
         res,
-        "<Play>" + escapeXml(greetingUrl) + "</Play>" +
-          "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+        "<Gather input=\"speech\" action=\"" +
+          escapeXml(actionUrl) +
+          "\" method=\"POST\" actionOnEmptyResult=\"true\" timeout=\"4\" speechTimeout=\"2\">" +
+          "<Play>" + escapeXml(greetingUrl) + "</Play>" +
+        "</Gather>" +
+        "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
       );
     }
 
