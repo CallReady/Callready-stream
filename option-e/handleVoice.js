@@ -987,7 +987,7 @@ if (isSurprise) {
 } else {
   // Retry intent up to 2 times, then default to surprise
   session.retries = session.retries || {};
-  session.retries.intent = (session.retries.intent || 0) + 1;
+  if (cleaned) session.retries.intent = (session.retries.intent || 0) + 1;
   saveSession(session);
 
   if (session.retries.intent >= 2) {
