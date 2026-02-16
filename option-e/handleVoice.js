@@ -1498,15 +1498,33 @@ if (isSurprise) {
         let baseUrl = process.env.PUBLIC_BASE_URL || "https://callready-stream.onrender.com";
         while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
 
-        // Use a known cached TTS filler to keep voice consistent and avoid silence.
+        // Use a deterministic rotating filler from the preloaded lookup pool.
+        // Varies within a call and across calls, but is repeatable.
+        session.fillerCounts = session.fillerCounts || {};
+        const fillerCategory = "lookup";
+        const priorCount = typeof session.fillerCounts[fillerCategory] === "number" ? session.fillerCounts[fillerCategory] : 0;
+
+        const poolSize = 7; // filler_lookup_01 .. filler_lookup_07
+
+        const sid = String(callSid || "");
+        let hash = 0;
+        for (let i = 0; i < sid.length; i++) {
+          const ch = sid.charCodeAt(i);
+          hash = ((hash * 31) + ch) >>> 0;
+        }
+        const start = poolSize > 0 ? (hash % poolSize) : 0;
+        const idx = ((start + priorCount) % poolSize) + 1;
+
+        session.fillerCounts[fillerCategory] = priorCount + 1;
+        saveSession(session);
+
+        const fillerKey = "filler_lookup_" + String(idx).padStart(2, "0");
+
         const fillerPlay =
           "<Play>" +
-          escapeXml(
-            baseUrl +
-              "/tts?key=filler_hold_on&text=" +
-              encodeURIComponent(String(filler || "Okay. Give me a second."))
-          ) +
+          escapeXml(baseUrl + "/tts?key=" + encodeURIComponent(fillerKey)) +
           "</Play>";
+
 
         return sendTwiml(
           res,
