@@ -938,8 +938,12 @@ if (!cleaned) {
     session.pendingCoaching = null;
     logPhaseTransition(callSid, "intent", "announce", "auto_selected_flow_medical_on_silence");
     saveSession(session);
-    return sendTwiml(res, "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>");
-  }
+    return sendTwiml(
+      res,
+      "<Play>" + escapeXml(getBaseUrl(req) + "/tts?key=auto_start_medical") + "</Play>" +
+      "<Redirect method=\"POST\">" + escapeXml(actionUrl) + "</Redirect>"
+    );
+ }
 
   return sendTwiml(
     res,
