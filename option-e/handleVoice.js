@@ -888,6 +888,14 @@ async function handleVoiceOptionE(req, res) {
         session.stepIndex = 0;
         session.wrapupRetries = 0;
         saveSession(session);
+      } else if (jump === "wrapup_first") {
+        session.phase = WRAPUP_PHASE;
+        session.stepIndex = 0;
+
+        // Reset wrapup retry state so first entry is clean.
+        session.wrapupRetries = 0;
+
+        saveSession(session);
       }
       // If jump value is unknown, do nothing and continue normal flow.
     }
