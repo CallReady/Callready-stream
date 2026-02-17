@@ -9,6 +9,8 @@ const { Pool } = require("pg");
 const Stripe = require("stripe");
 
 const app = express();
+// Serve static files (so Twilio can fetch the ring MP3)
+app.use(express.static(__dirname));
 app.set("strict routing", true);
 
 const PORT = process.env.PORT || 10000;
@@ -1768,8 +1770,14 @@ app.post("/voice", async (req, res) => {
       return;
     }
 
+    const ringUrl = String(process.env.CALLREADY_RING_MP3_URL || "").trim();
+    if (ringUrl) {
+      vr.play(ringUrl);
+    }
+
     const connect = vr.connect();
     connect.stream({ url: PUBLIC_WSS_URL });
+
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
