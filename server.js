@@ -3220,6 +3220,12 @@ wss.on("connection", (twilioWs) => {
         if (!turnDetectionEnabled) return;
         if (endingRequested || endRedirectRequested) return;
 
+        // In roleplay phase, do not auto-trigger AI unless the caller actually spoke
+        if (callState.phase === "roleplay" && !sawCallerSpeechSinceLastAIDone) {
+          console.log(nowIso(), "Roleplay guard: ignoring speech_stopped because caller did not speak");
+          return;
+        }
+
         // Guard: do not create a new response while one is already active.
         // This prevents: conversation_already_has_active_response
         if (responseActive) {
