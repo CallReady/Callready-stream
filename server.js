@@ -1735,11 +1735,11 @@ app.post("/voice", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-  // TEMP TEST OVERRIDE: allow all calls regardless of tier
-  const FORCE_ALLOW_FOR_TESTING = true;
-  if (FORCE_ALLOW_FOR_TESTING) {
-    tierDecision.allowed = true;
-  }
+    // TEMP TEST OVERRIDE: allow all calls regardless of tier
+    const FORCE_ALLOW_FOR_TESTING = true;
+    if (FORCE_ALLOW_FOR_TESTING) {
+      tierDecision.allowed = true;
+    }
 
     if (!tierDecision.allowed) {
       console.log(nowIso(), "Blocking call due to no remaining sessions", {
@@ -1826,14 +1826,14 @@ app.post("/debug/openai-realtime-check", async (req, res) => {
       try {
         if (!responded) {
           responded = true;
-          try { ws.close(); } catch {}
+          try { ws.close(); } catch { }
           res.status(504).json({ ok: false, error: "timeout_waiting_for_response" });
         }
-      } catch {}
+      } catch { }
     }, 6000);
 
     function safeClose() {
-      try { ws.close(); } catch {}
+      try { ws.close(); } catch { }
     }
 
     function extractTextFromResponseDone(msg) {
@@ -3200,6 +3200,13 @@ wss.on("connection", (twilioWs) => {
       if (msg.type === "input_audio_buffer.speech_stopped") {
         if (!turnDetectionEnabled) return;
         if (endingRequested || endRedirectRequested) return;
+
+        // Guard: do not create a new response while one is already active.
+        // This prevents: conversation_already_has_active_response
+        if (responseActive) {
+          console.log(nowIso(), "Skipping speech_stopped response.create because a response is already active");
+          return;
+        }
 
         // Allow AI to respond after the caller finishes speaking
         requireCallerSpeechBeforeNextAI = false;
