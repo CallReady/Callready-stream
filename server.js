@@ -3117,6 +3117,10 @@ wss.on("connection", (twilioWs) => {
           input_audio_transcription: { model: "whisper-1" },
           instructions:
             "You are CallReady. You help people practice phone calls in a calm, supportive way when real calls feel overwhelming.\n" +
+            "The server controls the phase of the call and may send additional instructions before each turn.\n" +
+            "You must follow the most recent instructions provided by the server.\n" +
+            "Do not invent new phases or change the flow unless explicitly instructed.\n" +
+            "\n" +
             "The practice should feel realistic, including awkward moments and unexpected questions.\n" +
             "\n" +
             "TOP PRIORITIES. These override all other rules, including speaking style:\n" +
