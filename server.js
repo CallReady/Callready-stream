@@ -1715,6 +1715,16 @@ app.post("/stream", (req, res) => {
       return;
     }
 
+    const connect = vr.connect();
+    connect.stream({ url: PUBLIC_WSS_URL });
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("Error building /stream TwiML:", err);
+    res.status(500).send("Error");
+  }
+});
+
 app.post("/voice", async (req, res) => {
   if (String(process.env.CALLREADY_UNAVAILABLE || "") === "1") {
     const VoiceResponse = twilio.twiml.VoiceResponse;
