@@ -2050,10 +2050,45 @@ wss.on("connection", (twilioWs) => {
   let liveSoftThresholdSeconds = 0;
   let liveHardCeilingSeconds = 0;
 
+  // Server-owned lightweight call state (we will start using this in the next steps)
+  const callState = {
+    phase: "boot",               // boot, opener, choose_call_type, choose_scenario, roleplay, coaching, wrap, ending
+    callType: null,              // outgoing or incoming
+    role: null,                  // answerer or caller (derived from callType when roleplay starts)
+    scenarioTag: null,           // snake_case tag once known
+    goal: null,                  // short goal text once known
+    lastUserUtterance: null,     // last transcript snippet we captured
+    summary: null,               // short rolling summary (we will add later)
+    turnIndex: 0                 // increments each time we ask OpenAI to speak
+  };
 
+  function setPhase(nextPhase, why) {
+    callState.phase = String(nextPhase || "").trim() || callState.phase;
+    try {
+      console.log(nowIso(), "callState.phase ->", callState.phase, "why:", why || "");
+    } catch (e) {}
+  }
 
+  function setCallType(nextCallType, why) {
+    const v = String(nextCallType || "").trim().toLowerCase();
+    if (v === "outgoing" || v === "incoming") {
+      callState.callType = v;
+      callState.role = (v === "outgoing") ? "answerer" : "caller";
+      try {
+        console.log(nowIso(), "callState.callType ->", callState.callType, "role ->", callState.role, "why:", why || "");
+      } catch (e) {}
+    }
+  }
 
-
+  function setScenarioTag(nextTag, why) {
+    const v = String(nextTag || "").trim();
+    if (v) {
+      callState.scenarioTag = v;
+      try {
+        console.log(nowIso(), "callState.scenarioTag ->", callState.scenarioTag, "why:", why || "");
+      } catch (e) {}
+    }
+  }
 
   let lastCancelAtMs = 0;
 
@@ -2385,6 +2420,7 @@ function buildDynamicOpenerSpeech() {
 
   function sendOpenerOnce(label) {
     console.log(nowIso(), "Sending opener", label ? "(" + label + ")" : "");
+    setPhase("opener", "sendOpenerOnce");
     const openerSpeech = buildDynamicOpenerSpeech();
     if (openerNoAudioTimer) {
 clearTimeout(openerNoAudioTimer);
@@ -2404,6 +2440,7 @@ redirectCallToUnavailable("opener_no_audio");
   }
     function sendScenarioStartOnce(label) {
       console.log(nowIso(),"Asking scenario start question",label ? "(" + label + ")" : "");
+      setPhase("choose_call_type", "sendScenarioStartOnce");
       awaitingCallTypeChoice = true;
       lockedCallType = null;
       callTypeCaptureInFlight = false;
@@ -3027,11 +3064,12 @@ closeAll("Redirect to /unavailable failed");
           }
         }
 
-                if (callTypeCaptureInFlight && awaitingCallTypeChoice) {
+        if (callTypeCaptureInFlight && awaitingCallTypeChoice) {
           const ct = extractTokenLineValue(text, "CALL_TYPE");
           if (ct) {
             const v = String(ct).trim().toLowerCase();
             if (v === "outgoing" || v === "incoming") lockedCallType = v;
+            setCallType(v, "parsed_call_type");
           }
 
           callTypeCaptureInFlight = false;
