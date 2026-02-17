@@ -1799,6 +1799,148 @@ app.post("/debug/sim-start", async (req, res) => {
   }
 });
 
+app.post("/debug/openai-realtime-check", async (req, res) => {
+  try {
+    if (!OPENAI_API_KEY) {
+      res.status(500).json({ ok: false, error: "missing_OPENAI_API_KEY" });
+      return;
+    }
+
+    const modelName = OPENAI_REALTIME_MODEL;
+    const voiceName = OPENAI_VOICE;
+
+    const url =
+      "wss://api.openai.com/v1/realtime?model=" + encodeURIComponent(modelName);
+
+    const ws = new WebSocket(url, {
+      headers: {
+        Authorization: "Bearer " + OPENAI_API_KEY,
+        "OpenAI-Beta": "realtime=v1",
+      },
+    });
+
+    let responded = false;
+    let outText = "";
+
+    const timeoutId = setTimeout(() => {
+      try {
+        if (!responded) {
+          responded = true;
+          try { ws.close(); } catch {}
+          res.status(504).json({ ok: false, error: "timeout_waiting_for_response" });
+        }
+      } catch {}
+    }, 6000);
+
+    function safeClose() {
+      try { ws.close(); } catch {}
+    }
+
+    function extractTextFromResponseDone(msg) {
+      let text = "";
+      const response = msg && msg.response ? msg.response : null;
+      if (!response) return text;
+
+      const output = Array.isArray(response.output) ? response.output : [];
+      for (let i = 0; i < output.length; i += 1) {
+        const item = output[i];
+        if (!item) continue;
+        const content = Array.isArray(item.content) ? item.content : [];
+        for (let j = 0; j < content.length; j += 1) {
+          const c = content[j];
+          if (!c) continue;
+          if (typeof c.text === "string") text += c.text + "\n";
+          if (typeof c.value === "string") text += c.value + "\n";
+          if (typeof c.transcript === "string") text += c.transcript + "\n";
+        }
+        if (typeof item.text === "string") text += item.text + "\n";
+        if (typeof item.transcript === "string") text += item.transcript + "\n";
+      }
+
+      if (typeof response.output_text === "string") text += response.output_text + "\n";
+      return text;
+    }
+
+    ws.on("open", () => {
+      ws.send(JSON.stringify({
+        type: "session.update",
+        session: {
+          voice: voiceName,
+          modalities: ["text"],
+          turn_detection: null,
+          temperature: 0.2,
+          instructions:
+            "Output exactly one line and nothing else.\n" +
+            "The line must be: OK_VOICE_MODEL: " + voiceName + " | " + modelName + "\n"
+        }
+      }));
+
+      ws.send(JSON.stringify({
+        type: "response.create",
+        response: { modalities: ["text"] }
+      }));
+    });
+
+    ws.on("message", (data) => {
+      let msg = null;
+      try { msg = JSON.parse(String(data)); } catch { msg = null; }
+      if (!msg) return;
+
+      if (msg.type === "response.done") {
+        outText = extractTextFromResponseDone(msg).trim();
+
+        if (!responded) {
+          responded = true;
+          clearTimeout(timeoutId);
+          safeClose();
+
+          res.status(200).json({
+            ok: true,
+            model: modelName,
+            voice: voiceName,
+            output: outText
+          });
+        }
+      }
+
+      if (msg.type === "error") {
+        if (!responded) {
+          responded = true;
+          clearTimeout(timeoutId);
+          safeClose();
+
+          res.status(500).json({
+            ok: false,
+            error: "openai_error_event",
+            detail: msg
+          });
+        }
+      }
+    });
+
+    ws.on("close", () => {
+      if (responded) return;
+    });
+
+    ws.on("error", (err) => {
+      if (!responded) {
+        responded = true;
+        clearTimeout(timeoutId);
+
+        res.status(500).json({
+          ok: false,
+          error: "openai_ws_error",
+          message: err && err.message ? String(err.message) : "unknown"
+        });
+      }
+    });
+
+  } catch (e) {
+    console.log(nowIso(), "debug/openai-realtime-check error:", e && e.message ? e.message : e);
+    res.status(500).json({ ok: false, error: "server_error" });
+  }
+});
+
 app.post("/create-checkout", async (req, res) => {
   try {
     if (!stripe) {
