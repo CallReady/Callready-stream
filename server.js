@@ -3413,6 +3413,35 @@ wss.on("connection", (twilioWs) => {
 
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
 
+        // If we just finished the scenario intro, transition into roleplay instructions.
+        if (callState && callState.phase === "connecting") {
+          setPhase("roleplay", "scenario_intro_done");
+
+          // Derive role from callType
+          const ct = (callState.callType || "").toLowerCase();
+          if (ct === "outgoing") callState.role = "answerer";
+          if (ct === "incoming") callState.role = "caller";
+
+          // Roleplay instructions differ by call type
+          const roleplayStart =
+            ct === "outgoing"
+              ? "We are going to do an outgoing call. You will hear a ring sound, then I will answer in role as the person you are calling. When you are ready, start the call with your first line."
+              : "We are going to do an incoming call. You will hear a ring sound. After the ring, say hello as the person answering the phone, then I will speak in role as the caller.";
+
+          callState.turnIndex = 0;
+
+          openaiSend({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              instructions: roleplayStart
+            }
+          });
+
+          callState.turnIndex += 1;
+          return;
+        }
+
         if (scenarioTagCaptureInFlight && !scenarioTagAlreadyCaptured && callSid) {
           const scenarioTag = extractTokenLineValue(text, "SCENARIO_TAG");
           console.log(nowIso(), "Scenario tag raw text (first 300 chars)", String(text || "").slice(0, 300));
@@ -3517,7 +3546,8 @@ wss.on("connection", (twilioWs) => {
               if (callSid) setScenarioTagOnce(callSid, "doctor_default");
             } catch (e) { }
 
-            setPhase("roleplay", "scenario_picked_default");
+            setPhase("connecting", "scenario_picked_default");
+
             callState.turnIndex = 0;
 
             openaiSend({
@@ -3525,7 +3555,7 @@ wss.on("connection", (twilioWs) => {
               response: {
                 modalities: ["audio", "text"],
                 instructions:
-                  buildScenarioIntro() + "\n\n" + buildRoleplayStartInstructions()
+                  buildScenarioIntro()
 
               }
             });
@@ -3859,7 +3889,6 @@ app.post("/debug/test-turnlock", (req, res) => {
     });
   }
 });
-
 
 server.listen(PORT, () => {
   console.log(nowIso(), `Server listening on ${PORT}`, "version:", CALLREADY_VERSION);
