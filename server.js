@@ -3254,6 +3254,7 @@ wss.on("connection", (twilioWs) => {
       if (msg.type === "response.done") {
         const text = extractTextFromResponseDone(msg);
         responseActive = false;
+        callState.openaiResponseActive = false;
 
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
 
@@ -3301,6 +3302,12 @@ wss.on("connection", (twilioWs) => {
           // Immediately start roleplay using server-owned call type and role rules
           setPhase("roleplay", "starting_roleplay_after_call_type");
           callState.turnIndex += 1;
+
+          if (callState.openaiResponseActive) {
+            console.log(nowIso(), "Guard: not starting roleplay, OpenAI response already active");
+            return;
+          }
+          callState.openaiResponseActive = true;
 
           openaiSend({
             type: "response.create",
