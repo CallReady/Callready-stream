@@ -3231,569 +3231,578 @@ wss.on("connection", (twilioWs) => {
         openerSent = true;
         openerAudioDeltaCount = 0;
         openerResent = false;
-        sendOpenerOnce("initial");
-        armOpenerRetryTimer();
+
+        setTimeout(() => {
+          sendOpenerOnce("initial");
+          armOpenerRetryTimer();
+        }, 250);
       }
+      openerSent = true;
+      openerAudioDeltaCount = 0;
+      openerResent = false;
+      sendOpenerOnce("initial");
+      armOpenerRetryTimer();
+    }
     });
 
-    openaiWs.on("message", (data) => {
-      const msg = safeJsonParse(data.toString());
-      if (!msg) return;
-      recordRealtimeServerEvent(msg);
+openaiWs.on("message", (data) => {
+  const msg = safeJsonParse(data.toString());
+  if (!msg) return;
+  recordRealtimeServerEvent(msg);
 
 
-      if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
-        if (openerNoAudioTimer) {
-          clearTimeout(openerNoAudioTimer);
-          openerNoAudioTimer = null;
-        }
-        const b = Buffer.from(msg.delta, "base64").length;
-        aiAudioBytesThisResponse += b;
+  if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
+    if (openerNoAudioTimer) {
+      clearTimeout(openerNoAudioTimer);
+      openerNoAudioTimer = null;
+    }
+    const b = Buffer.from(msg.delta, "base64").length;
+    aiAudioBytesThisResponse += b;
 
-        // g711_ulaw is 8000 samples per second, 1 byte per sample
-        const audioMs = Math.floor((aiAudioBytesThisResponse / 8000) * 1000);
+    // g711_ulaw is 8000 samples per second, 1 byte per sample
+    const audioMs = Math.floor((aiAudioBytesThisResponse / 8000) * 1000);
 
-        // Block listening until estimated playback end plus a small safety buffer
-        listenBlockUntilMs = Date.now() + audioMs + 10;
+    // Block listening until estimated playback end plus a small safety buffer
+    listenBlockUntilMs = Date.now() + audioMs + 10;
 
 
-        if (!turnDetectionEnabled && openerSent) {
-          openerAudioDeltaCount += 1;
-          if (openerAudioDeltaCount === 1) {
-            console.log(nowIso(), "Opener: first audio delta forwarded to Twilio");
-          }
-        }
+    if (!turnDetectionEnabled && openerSent) {
+      openerAudioDeltaCount += 1;
+      if (openerAudioDeltaCount === 1) {
+        console.log(nowIso(), "Opener: first audio delta forwarded to Twilio");
+      }
+    }
 
-        if (turnDetectionEnabled && waitingForFirstCallerSpeech && !sawSpeechStarted) {
-          cancelOpenAIResponseIfAnyOnce("AI spoke before first caller speech");
-          return;
-        }
+    if (turnDetectionEnabled && waitingForFirstCallerSpeech && !sawSpeechStarted) {
+      cancelOpenAIResponseIfAnyOnce("AI spoke before first caller speech");
+      return;
+    }
 
-        if (turnDetectionEnabled && requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
-          cancelOpenAIResponseIfAnyOnce("turn lock active");
-          return;
-        }
+    if (turnDetectionEnabled && requireCallerSpeechBeforeNextAI && !sawCallerSpeechSinceLastAIDone) {
+      cancelOpenAIResponseIfAnyOnce("turn lock active");
+      return;
+    }
 
-        if (!aiSpeaking) {
-          aiSpeaking = true;
-          try {
-            if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
-          } catch { }
-          aiSpeakingTailTimer = null;
-        }
+    if (!aiSpeaking) {
+      aiSpeaking = true;
+      try {
+        if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
+      } catch { }
+      aiSpeakingTailTimer = null;
+    }
 
-        twilioSend({ event: "media", streamSid, media: { payload: msg.delta } });
-        return;
+    twilioSend({ event: "media", streamSid, media: { payload: msg.delta } });
+    return;
+  }
+
+  if (msg.type === "input_audio_buffer.speech_started") {
+
+    sawSpeechStarted = true;
+
+    if (waitingForFirstCallerSpeech) {
+      waitingForFirstCallerSpeech = false;
+      console.log(nowIso(), "Caller speech detected, AI may respond now");
+    }
+
+    if (turnDetectionEnabled) {
+      maybeStartSessionTimer();
+    }
+
+    sawCallerSpeechSinceLastAIDone = true;
+    return;
+  }
+  if (msg.type === "input_audio_buffer.speech_stopped") {
+    if (!turnDetectionEnabled) return;
+    if (endingRequested || endRedirectRequested) return;
+
+    // In roleplay phase, do not auto-trigger AI unless the caller actually spoke
+    if (callState.phase === "roleplay" && !sawCallerSpeechSinceLastAIDone) {
+      console.log(nowIso(), "Roleplay guard: ignoring speech_stopped because caller did not speak");
+      return;
+    }
+
+    // Guard: do not create a new response while one is already active.
+    // This prevents: conversation_already_has_active_response
+    if (responseActive) {
+      console.log(nowIso(), "Skipping speech_stopped response.create because a response is already active");
+      return;
+    }
+
+    // Allow AI to respond after the caller finishes speaking
+    requireCallerSpeechBeforeNextAI = false;
+    sawCallerSpeechSinceLastAIDone = true;
+
+    if (turnDetectionEnabled && awaitingCallTypeChoice && !lockedCallType && !callTypeCaptureInFlight) {
+      callTypeCaptureInFlight = true;
+
+      openaiSend({
+        type: "response.create",
+        response: {
+          modalities: ["text"],
+          instructions:
+            "Output exactly one line and nothing else.\n" +
+            "If the HUMAN chose making a call, output: CALL_TYPE: outgoing\n" +
+            "If the HUMAN chose answering a call, output: CALL_TYPE: incoming\n" +
+            "If unclear, output: CALL_TYPE: unknown\n",
+        },
+      });
+
+      return;
+    }
+
+    if (turnDetectionEnabled && callState.phase === "choose_scenario" && !callState.scenarioChosen && !callState.scenarioCaptureInFlight) {
+      callState.scenarioCaptureInFlight = true;
+
+      openaiSend({
+        type: "response.create",
+        response: {
+          modalities: ["text"],
+          instructions:
+            "Output exactly one line and nothing else.\n" +
+            "If the HUMAN wants you to pick, output: SCENARIO_PICK: yes\n" +
+            "If the HUMAN already has a call in mind, output: SCENARIO_PICK: no\n" +
+            "If unclear, output: SCENARIO_PICK: unknown\n",
+        },
+      });
+
+      return;
+    }
+
+    // Ask OpenAI to respond now, but ALWAYS include phase instructions.
+    openaiSend({
+      type: "response.create",
+      response: {
+        modalities: ["audio", "text"],
+        instructions: buildPhaseInstructions("speech_stopped_auto_turn")
+      },
+    });
+
+    return;
+  }
+
+  if (msg.type === "response.created") {
+    responseActive = true;
+    aiAudioBytesThisResponse = 0;
+
+
+    if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.created (post-opener)");
+    return;
+  }
+
+  if (msg.type === "response.done") {
+    const text = extractTextFromResponseDone(msg);
+    responseActive = false;
+    callState.openaiResponseActive = false;
+    if (callState.pendingResponseCreate) {
+      const queued = callState.pendingResponseCreate;
+      callState.pendingResponseCreate = null;
+      console.log(nowIso(), "Guard: flushing queued response.create after response.done");
+      openaiSend(queued);
+    }
+
+    if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
+
+    if (scenarioTagCaptureInFlight && !scenarioTagAlreadyCaptured && callSid) {
+      const scenarioTag = extractTokenLineValue(text, "SCENARIO_TAG");
+      console.log(nowIso(), "Scenario tag raw text (first 300 chars)", String(text || "").slice(0, 300));
+
+      if (scenarioTag) {
+        scenarioTagAlreadyCaptured = true;
+        setScenarioTagOnce(callSid, scenarioTag);
       }
 
-      if (msg.type === "input_audio_buffer.speech_started") {
-
-        sawSpeechStarted = true;
-
-        if (waitingForFirstCallerSpeech) {
-          waitingForFirstCallerSpeech = false;
-          console.log(nowIso(), "Caller speech detected, AI may respond now");
-        }
-
-        if (turnDetectionEnabled) {
-          maybeStartSessionTimer();
-        }
-
-        sawCallerSpeechSinceLastAIDone = true;
-        return;
+      if (scenarioTagCaptureResolve) {
+        scenarioTagCaptureResolve();
+        scenarioTagCaptureResolve = null;
       }
-      if (msg.type === "input_audio_buffer.speech_stopped") {
-        if (!turnDetectionEnabled) return;
-        if (endingRequested || endRedirectRequested) return;
+    }
 
-        // In roleplay phase, do not auto-trigger AI unless the caller actually spoke
-        if (callState.phase === "roleplay" && !sawCallerSpeechSinceLastAIDone) {
-          console.log(nowIso(), "Roleplay guard: ignoring speech_stopped because caller did not speak");
-          return;
-        }
+    if (callTypeCaptureInFlight && awaitingCallTypeChoice) {
+      const ct = extractTokenLineValue(text, "CALL_TYPE");
+      if (ct) {
+        const v = String(ct).trim().toLowerCase();
+        if (v === "outgoing" || v === "incoming") lockedCallType = v;
+        setCallType(v, "parsed_call_type");
+      }
 
-        // Guard: do not create a new response while one is already active.
-        // This prevents: conversation_already_has_active_response
-        if (responseActive) {
-          console.log(nowIso(), "Skipping speech_stopped response.create because a response is already active");
-          return;
-        }
+      callTypeCaptureInFlight = false;
+      awaitingCallTypeChoice = false;
 
-        // Allow AI to respond after the caller finishes speaking
-        requireCallerSpeechBeforeNextAI = false;
-        sawCallerSpeechSinceLastAIDone = true;
+      if (!lockedCallType) lockedCallType = "outgoing";
 
-        if (turnDetectionEnabled && awaitingCallTypeChoice && !lockedCallType && !callTypeCaptureInFlight) {
-          callTypeCaptureInFlight = true;
+      openaiSend({
+        type: "response.create",
+        response: {
+          modalities: ["audio", "text"],
+          instructions:
+            "Say one short sentence confirming the call type in plain language. \n" +
+            "Then ask exactly one question, using this wording: \n" +
+            "Do you already have a call in mind, or would you like me to pick one for you? \n" +
+            "Do not use the words scenario or goal. \n" +
+            "Do not ask follow-up questions yet. \n",
+        },
+      });
 
-          openaiSend({
-            type: "response.create",
-            response: {
-              modalities: ["text"],
-              instructions:
-                "Output exactly one line and nothing else.\n" +
-                "If the HUMAN chose making a call, output: CALL_TYPE: outgoing\n" +
-                "If the HUMAN chose answering a call, output: CALL_TYPE: incoming\n" +
-                "If unclear, output: CALL_TYPE: unknown\n",
-            },
-          });
+      // Next phase is choosing the scenario (do not start roleplay yet)
+      setPhase("choose_scenario", "after_call_type_confirm");
+      callState.scenarioChosen = false;
+      callState.turnIndex += 1;
+    }
 
-          return;
-        }
+    if (callState.scenarioCaptureInFlight && callState.phase === "choose_scenario") {
+      const pick = extractTokenLineValue(text, "SCENARIO_PICK");
+      const v = pick ? String(pick).trim().toLowerCase() : "unknown";
 
-        if (turnDetectionEnabled && callState.phase === "choose_scenario" && !callState.scenarioChosen && !callState.scenarioCaptureInFlight) {
-          callState.scenarioCaptureInFlight = true;
+      console.log(nowIso(), "Parsed SCENARIO_PICK", { value: v });
 
-          openaiSend({
-            type: "response.create",
-            response: {
-              modalities: ["text"],
-              instructions:
-                "Output exactly one line and nothing else.\n" +
-                "If the HUMAN wants you to pick, output: SCENARIO_PICK: yes\n" +
-                "If the HUMAN already has a call in mind, output: SCENARIO_PICK: no\n" +
-                "If unclear, output: SCENARIO_PICK: unknown\n",
-            },
-          });
+      callState.scenarioCaptureInFlight = false;
 
-          return;
-        }
+      if (v === "yes") {
+        callState.scenarioChosen = true;
 
-        // Ask OpenAI to respond now, but ALWAYS include phase instructions.
+        // Pick a default, common scenario for now.
+        setScenarioTag("doctor_appointment_scheduling", "default_pick");
+        try {
+          if (callSid) setScenarioTagOnce(callSid, "doctor_appointment_scheduling");
+        } catch (e) { }
+
+        setPhase("roleplay", "scenario_picked_default");
+
         openaiSend({
           type: "response.create",
           response: {
             modalities: ["audio", "text"],
-            instructions: buildPhaseInstructions("speech_stopped_auto_turn")
-          },
+            instructions:
+              "We are practicing this scenario:\n" +
+              "Scheduling a doctor appointment.\n" +
+              "Goal: schedule an appointment time.\n\n" +
+              buildRoleplayStartInstructions()
+          }
         });
 
         return;
       }
 
-      if (msg.type === "response.created") {
-        responseActive = true;
-        aiAudioBytesThisResponse = 0;
-
-
-        if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.created (post-opener)");
-        return;
-      }
-
-      if (msg.type === "response.done") {
-        const text = extractTextFromResponseDone(msg);
-        responseActive = false;
-        callState.openaiResponseActive = false;
-        if (callState.pendingResponseCreate) {
-          const queued = callState.pendingResponseCreate;
-          callState.pendingResponseCreate = null;
-          console.log(nowIso(), "Guard: flushing queued response.create after response.done");
-          openaiSend(queued);
-        }
-
-        if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
-
-        if (scenarioTagCaptureInFlight && !scenarioTagAlreadyCaptured && callSid) {
-          const scenarioTag = extractTokenLineValue(text, "SCENARIO_TAG");
-          console.log(nowIso(), "Scenario tag raw text (first 300 chars)", String(text || "").slice(0, 300));
-
-          if (scenarioTag) {
-            scenarioTagAlreadyCaptured = true;
-            setScenarioTagOnce(callSid, scenarioTag);
-          }
-
-          if (scenarioTagCaptureResolve) {
-            scenarioTagCaptureResolve();
-            scenarioTagCaptureResolve = null;
-          }
-        }
-
-        if (callTypeCaptureInFlight && awaitingCallTypeChoice) {
-          const ct = extractTokenLineValue(text, "CALL_TYPE");
-          if (ct) {
-            const v = String(ct).trim().toLowerCase();
-            if (v === "outgoing" || v === "incoming") lockedCallType = v;
-            setCallType(v, "parsed_call_type");
-          }
-
-          callTypeCaptureInFlight = false;
-          awaitingCallTypeChoice = false;
-
-          if (!lockedCallType) lockedCallType = "outgoing";
-
-          openaiSend({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions:
-                "Say one short sentence confirming the call type in plain language. \n" +
-                "Then ask exactly one question, using this wording: \n" +
-                "Do you already have a call in mind, or would you like me to pick one for you? \n" +
-                "Do not use the words scenario or goal. \n" +
-                "Do not ask follow-up questions yet. \n",
-            },
-          });
-
-          // Next phase is choosing the scenario (do not start roleplay yet)
-          setPhase("choose_scenario", "after_call_type_confirm");
-          callState.scenarioChosen = false;
-          callState.turnIndex += 1;
-        }
-
-        if (callState.scenarioCaptureInFlight && callState.phase === "choose_scenario") {
-          const pick = extractTokenLineValue(text, "SCENARIO_PICK");
-          const v = pick ? String(pick).trim().toLowerCase() : "unknown";
-
-          console.log(nowIso(), "Parsed SCENARIO_PICK", { value: v });
-
-          callState.scenarioCaptureInFlight = false;
-
-          if (v === "yes") {
-            callState.scenarioChosen = true;
-
-            // Pick a default, common scenario for now.
-            setScenarioTag("doctor_appointment_scheduling", "default_pick");
-            try {
-              if (callSid) setScenarioTagOnce(callSid, "doctor_appointment_scheduling");
-            } catch (e) { }
-
-            setPhase("roleplay", "scenario_picked_default");
-
-            openaiSend({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "We are practicing this scenario:\n" +
-                  "Scheduling a doctor appointment.\n" +
-                  "Goal: schedule an appointment time.\n\n" +
-                  buildRoleplayStartInstructions()
-              }
-            });
-
-            return;
-          }
-
-          if (v === "no") {
-            callState.scenarioChosen = false;
-
-            openaiSend({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "Ask exactly one question and nothing else:\n" +
-                  "What kind of call do you want to practice?\n"
-              }
-            });
-
-            return;
-          }
-
-          // If unclear, ask again.
-          openaiSend({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions:
-                "Ask exactly one question and nothing else:\n" +
-                "Do you already have a call in mind, or would you like me to pick one for you?\n"
-            }
-          });
-
-          return;
-        }
-
-        if (openerSent && !turnDetectionEnabled) {
-          turnDetectionEnabled = true;
-          waitingForFirstCallerSpeech = true;
-          sawSpeechStarted = false;
-
-          requireCallerSpeechBeforeNextAI = false;
-          sawCallerSpeechSinceLastAIDone = false;
-
-          console.log(nowIso(), "Opener done, enabling VAD and clearing buffer");
-
-          try {
-            if (openerRetryTimer) clearTimeout(openerRetryTimer);
-          } catch { }
-          openerRetryTimer = null;
-
-          openaiSend({ type: "input_audio_buffer.clear" });
-
-          openaiSend({
-            type: "session.update",
-            session: {
-              turn_detection: {
-                type: "server_vad",
-                silence_duration_ms: 1000,
-                prefix_padding_ms: 500,
-                threshold: 0.45,
-                create_response: false,
-                interrupt_response: false,
-              },
-            },
-          });
-
-          waitingForFirstCallerSpeech = false;
-          sawSpeechStarted = true;
-          requireCallerSpeechBeforeNextAI = false;
-          sawCallerSpeechSinceLastAIDone = true;
-
-          try {
-            if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
-          } catch { }
-
-          aiSpeakingTailTimer = setTimeout(() => {
-            aiSpeaking = false;
-
-            try {
-              openaiSend({ type: "input_audio_buffer.clear" });
-            } catch { }
-          }, 50);
-
-
-          sendScenarioStartOnce("post-opener");
-          return;
-        }
-
-        if (turnDetectionEnabled) {
-          // Detect natural scenario wrap-up and whether we crossed the soft threshold
-          try {
-            const wrapPhrase = "That wraps up this practice call.";
-            const sawWrap = text && String(text).indexOf(wrapPhrase) !== -1;
-
-            if (sawWrap && liveThresholdState && liveThresholdState.overSoftThresholdLive) {
-              console.log(nowIso(), "Soft threshold reached at natural wrap-up, ending call", {
-                callSid: callSid || null,
-                softThresholdSeconds: liveSoftThresholdSeconds,
-                hardCeilingSeconds: liveHardCeilingSeconds
-              });
-
-              (async () => {
-                cancelOpenAIResponseIfAnyOnce("soft_threshold_end");
-                await requestScenarioTagTextOnlyOnce("soft_threshold_end");
-                await requestEnd("soft_threshold_end", { skipTransition: true });
-              })().catch(() => { });
-            }
-          } catch { }
-
-          const aiRequestedEnd = responseTextRequestsEnd(text);
-
-          if (!endRedirectRequested && aiRequestedEnd) {
-            (async () => {
-              cancelOpenAIResponseIfAnyOnce("AI requested end");
-
-              await requestScenarioTagTextOnlyOnce("ai_end");
-              await requestEnd("AI requested end", { skipTransition: true });
-
-            })().catch(() => { });
-            return;
-          }
-
-          try {
-            if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
-          } catch { }
-
-          aiSpeakingTailTimer = setTimeout(() => {
-            aiSpeaking = false;
-
-            try {
-              openaiSend({ type: "input_audio_buffer.clear" });
-            } catch { }
-          }, 50);
-
-
-          // Default behavior: after AI speaks, allow the next AI response.
-          // We only force a "caller must speak first" lock in specific situations
-          // (e.g., incoming ring_wait), not after every response.
-          requireCallerSpeechBeforeNextAI = false;
-          sawCallerSpeechSinceLastAIDone = true;
-
-          return;
-        }
-      }
-
-      if (msg.type === "error") {
-        const errObj = msg.error || msg;
-        const code = errObj && typeof errObj.code === "string" ? errObj.code : null;
-
-        if (code === "response_cancel_not_active") {
-          console.log(nowIso(), "OpenAI non-fatal error (ignored):", errObj);
-          return;
-        }
-
-        console.log(nowIso(), "OpenAI error event:", errObj);
-        closeAll("OpenAI error");
-        return;
-      }
-    });
-
-    openaiWs.on("close", () => {
-      console.log(nowIso(), "OpenAI WS closed");
-      openaiReady = false;
-
-      if (closing) return;
-      if (endingRequested) return;
-      if (endRedirectRequested) return;
-
-      redirectCallToUnavailable("openai_ws_closed");
-    });
-
-
-    openaiWs.on("error", (err) => {
-      const msgText = err && err.message ? String(err.message) : "";
-      if (msgText.includes("response_cancel_not_active")) {
-        console.log(nowIso(), "OpenAI WS non-fatal error (ignored):", msgText);
-        return;
-      }
-
-      console.log(nowIso(), "OpenAI WS error:", err && err.message ? err.message : err);
-      openaiReady = false;
-      closeAll("OpenAI WS error");
-    });
-  }
-
-  twilioWs.on("message", async (data) => {
-    const msg = safeJsonParse(data.toString());
-    if (!msg) return;
-
-    if (msg.event === "start") {
-      streamSid = msg.start && msg.start.streamSid ? msg.start.streamSid : null;
-      callSid = msg.start && msg.start.callSid ? msg.start.callSid : null;
-
-      console.log(nowIso(), "Twilio stream start:", streamSid || "(no streamSid)");
-      console.log(nowIso(), "Twilio callSid:", callSid || "(no callSid)");
-      usageLog.callSid = callSid || null;
-      usageLog.streamSid = streamSid || null;
-      usageLog.startedAtMs = Date.now();
-
-
-      if (callSid) {
-        priorContext = await fetchPriorCallContextByCallSid(callSid);
-        if (priorContext) {
-          console.log(nowIso(), "Loaded prior call context", priorContext);
-        }
-
-        callerRuntime = await fetchCallerRuntimeContextByCallSid(callSid);
-        if (callerRuntime) {
-          perCallCapSeconds =
-            typeof callerRuntime.perCallCapSeconds === "number" && callerRuntime.perCallCapSeconds > 0
-              ? callerRuntime.perCallCapSeconds
-              : FREE_PER_CALL_SECONDS;
-
-          console.log(nowIso(), "Loaded caller runtime", {
-            tier: callerRuntime.tier,
-            remainingSeconds: callerRuntime.remainingSeconds,
-            perCallCapSeconds,
-            totalCalls: callerRuntime.totalCalls,
-            sms_opted_in: callerRuntime.sms_opted_in,
-            cycle_anchor_at: callerRuntime.cycle_anchor_at,
-            cycle_ends_at: callerRuntime.cycle_ends_at,
-            cycle_seconds_used: callerRuntime.cycle_seconds_used,
-          });
-        }
-
-        try {
-          if (callerRuntime && callerRuntime.phone_e164) {
-            const th = await getThresholdsForPhone(callerRuntime.phone_e164);
-
-            liveSoftThresholdSeconds = th && Number(th.soft) > 0 ? Number(th.soft) : 240;
-            liveHardCeilingSeconds = th && Number(th.hard) > 0 ? Number(th.hard) : 420;
-
-            liveThresholdState = {
-              callSid: callSid || null,
-              overSoftThresholdLive: false,
-              hitHardCeilingLive: false,
-              softThresholdTimerId: null,
-              hardCeilingTimerId: null,
-            };
-
-            startLiveSessionThresholdTimers({
-              callState: liveThresholdState,
-              softThresholdSeconds: liveSoftThresholdSeconds,
-              hardCeilingSeconds: liveHardCeilingSeconds,
-              onHardCeiling: function () {
-                try {
-                  if (endingRequested || endRedirectRequested) return;
-
-                  console.log(nowIso(), "Hard ceiling reached, forcing end via /end", {
-                    callSid: callSid || null,
-                    hardCeilingSeconds: liveHardCeilingSeconds
-                  });
-
-                  (async () => {
-                    cancelOpenAIResponseIfAnyOnce("hard_ceiling_end");
-                    await requestScenarioTagTextOnlyOnce("hard_ceiling_end");
-                    await requestEnd("hard_ceiling_end", { skipTransition: true });
-                  })().catch(() => { });
-                } catch { }
-              }
-
-            });
-
-            console.log(nowIso(), "Live threshold timers armed (verification only)", {
-              callSid: callSid || null,
-              softThresholdSeconds: liveSoftThresholdSeconds,
-              hardCeilingSeconds: liveHardCeilingSeconds
-            });
-          }
-        } catch (e) {
-          console.log(nowIso(), "Failed to start live threshold timers (non-fatal)", e && e.message ? e.message : e);
-        }
-      }
-
-      startOpenAIRealtime();
-      return;
-    }
-
-    if (msg.event === "media") {
-      if (!turnDetectionEnabled) return;
-      if (suppressCallerAudioToOpenAI) return;
-      if (Date.now() < listenBlockUntilMs) return;
-
-      if (aiSpeaking) {
-        return;
-      }
-
-      if (openaiReady && msg.media && msg.media.payload) {
+      if (v === "no") {
+        callState.scenarioChosen = false;
 
         openaiSend({
-          type: "input_audio_buffer.append",
-          audio: msg.media.payload,
+          type: "response.create",
+          response: {
+            modalities: ["audio", "text"],
+            instructions:
+              "Ask exactly one question and nothing else:\n" +
+              "What kind of call do you want to practice?\n"
+          }
         });
+
+        return;
       }
+
+      // If unclear, ask again.
+      openaiSend({
+        type: "response.create",
+        response: {
+          modalities: ["audio", "text"],
+          instructions:
+            "Ask exactly one question and nothing else:\n" +
+            "Do you already have a call in mind, or would you like me to pick one for you?\n"
+        }
+      });
+
       return;
     }
 
-    if (msg.event === "stop") {
-      console.log(nowIso(), "Twilio stream stop");
+    if (openerSent && !turnDetectionEnabled) {
+      turnDetectionEnabled = true;
+      waitingForFirstCallerSpeech = true;
+      sawSpeechStarted = false;
+
+      requireCallerSpeechBeforeNextAI = false;
+      sawCallerSpeechSinceLastAIDone = false;
+
+      console.log(nowIso(), "Opener done, enabling VAD and clearing buffer");
+
       try {
-        persistUsageSummaryOnce("twilio_stop");
+        if (openerRetryTimer) clearTimeout(openerRetryTimer);
+      } catch { }
+      openerRetryTimer = null;
+
+      openaiSend({ type: "input_audio_buffer.clear" });
+
+      openaiSend({
+        type: "session.update",
+        session: {
+          turn_detection: {
+            type: "server_vad",
+            silence_duration_ms: 1000,
+            prefix_padding_ms: 500,
+            threshold: 0.45,
+            create_response: false,
+            interrupt_response: false,
+          },
+        },
+      });
+
+      waitingForFirstCallerSpeech = false;
+      sawSpeechStarted = true;
+      requireCallerSpeechBeforeNextAI = false;
+      sawCallerSpeechSinceLastAIDone = true;
+
+      try {
+        if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
       } catch { }
 
-      if (callSid) {
-        const endedReason = endRedirectRequested ? "redirected_to_end" : "hangup_or_stream_stop";
-        fireAndForgetCallEndLog(callSid, endedReason);
-      }
+      aiSpeakingTailTimer = setTimeout(() => {
+        aiSpeaking = false;
 
-      clearEndFallbackTimer();
+        try {
+          openaiSend({ type: "input_audio_buffer.clear" });
+        } catch { }
+      }, 50);
 
 
-      closeAll("Twilio stop");
+      sendScenarioStartOnce("post-opener");
       return;
     }
-  });
 
-  twilioWs.on("close", () => {
-    console.log(nowIso(), "Twilio WS closed");
-    closeAll("Twilio WS closed");
-  });
+    if (turnDetectionEnabled) {
+      // Detect natural scenario wrap-up and whether we crossed the soft threshold
+      try {
+        const wrapPhrase = "That wraps up this practice call.";
+        const sawWrap = text && String(text).indexOf(wrapPhrase) !== -1;
 
-  twilioWs.on("error", (err) => {
-    console.log(nowIso(), "Twilio WS error:", err && err.message ? err.message : err);
-    closeAll("Twilio WS error");
-  });
+        if (sawWrap && liveThresholdState && liveThresholdState.overSoftThresholdLive) {
+          console.log(nowIso(), "Soft threshold reached at natural wrap-up, ending call", {
+            callSid: callSid || null,
+            softThresholdSeconds: liveSoftThresholdSeconds,
+            hardCeilingSeconds: liveHardCeilingSeconds
+          });
+
+          (async () => {
+            cancelOpenAIResponseIfAnyOnce("soft_threshold_end");
+            await requestScenarioTagTextOnlyOnce("soft_threshold_end");
+            await requestEnd("soft_threshold_end", { skipTransition: true });
+          })().catch(() => { });
+        }
+      } catch { }
+
+      const aiRequestedEnd = responseTextRequestsEnd(text);
+
+      if (!endRedirectRequested && aiRequestedEnd) {
+        (async () => {
+          cancelOpenAIResponseIfAnyOnce("AI requested end");
+
+          await requestScenarioTagTextOnlyOnce("ai_end");
+          await requestEnd("AI requested end", { skipTransition: true });
+
+        })().catch(() => { });
+        return;
+      }
+
+      try {
+        if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
+      } catch { }
+
+      aiSpeakingTailTimer = setTimeout(() => {
+        aiSpeaking = false;
+
+        try {
+          openaiSend({ type: "input_audio_buffer.clear" });
+        } catch { }
+      }, 50);
+
+
+      // Default behavior: after AI speaks, allow the next AI response.
+      // We only force a "caller must speak first" lock in specific situations
+      // (e.g., incoming ring_wait), not after every response.
+      requireCallerSpeechBeforeNextAI = false;
+      sawCallerSpeechSinceLastAIDone = true;
+
+      return;
+    }
+  }
+
+  if (msg.type === "error") {
+    const errObj = msg.error || msg;
+    const code = errObj && typeof errObj.code === "string" ? errObj.code : null;
+
+    if (code === "response_cancel_not_active") {
+      console.log(nowIso(), "OpenAI non-fatal error (ignored):", errObj);
+      return;
+    }
+
+    console.log(nowIso(), "OpenAI error event:", errObj);
+    closeAll("OpenAI error");
+    return;
+  }
+});
+
+openaiWs.on("close", () => {
+  console.log(nowIso(), "OpenAI WS closed");
+  openaiReady = false;
+
+  if (closing) return;
+  if (endingRequested) return;
+  if (endRedirectRequested) return;
+
+  redirectCallToUnavailable("openai_ws_closed");
+});
+
+
+openaiWs.on("error", (err) => {
+  const msgText = err && err.message ? String(err.message) : "";
+  if (msgText.includes("response_cancel_not_active")) {
+    console.log(nowIso(), "OpenAI WS non-fatal error (ignored):", msgText);
+    return;
+  }
+
+  console.log(nowIso(), "OpenAI WS error:", err && err.message ? err.message : err);
+  openaiReady = false;
+  closeAll("OpenAI WS error");
+});
+  }
+
+twilioWs.on("message", async (data) => {
+  const msg = safeJsonParse(data.toString());
+  if (!msg) return;
+
+  if (msg.event === "start") {
+    streamSid = msg.start && msg.start.streamSid ? msg.start.streamSid : null;
+    callSid = msg.start && msg.start.callSid ? msg.start.callSid : null;
+
+    console.log(nowIso(), "Twilio stream start:", streamSid || "(no streamSid)");
+    console.log(nowIso(), "Twilio callSid:", callSid || "(no callSid)");
+    usageLog.callSid = callSid || null;
+    usageLog.streamSid = streamSid || null;
+    usageLog.startedAtMs = Date.now();
+
+
+    if (callSid) {
+      priorContext = await fetchPriorCallContextByCallSid(callSid);
+      if (priorContext) {
+        console.log(nowIso(), "Loaded prior call context", priorContext);
+      }
+
+      callerRuntime = await fetchCallerRuntimeContextByCallSid(callSid);
+      if (callerRuntime) {
+        perCallCapSeconds =
+          typeof callerRuntime.perCallCapSeconds === "number" && callerRuntime.perCallCapSeconds > 0
+            ? callerRuntime.perCallCapSeconds
+            : FREE_PER_CALL_SECONDS;
+
+        console.log(nowIso(), "Loaded caller runtime", {
+          tier: callerRuntime.tier,
+          remainingSeconds: callerRuntime.remainingSeconds,
+          perCallCapSeconds,
+          totalCalls: callerRuntime.totalCalls,
+          sms_opted_in: callerRuntime.sms_opted_in,
+          cycle_anchor_at: callerRuntime.cycle_anchor_at,
+          cycle_ends_at: callerRuntime.cycle_ends_at,
+          cycle_seconds_used: callerRuntime.cycle_seconds_used,
+        });
+      }
+
+      try {
+        if (callerRuntime && callerRuntime.phone_e164) {
+          const th = await getThresholdsForPhone(callerRuntime.phone_e164);
+
+          liveSoftThresholdSeconds = th && Number(th.soft) > 0 ? Number(th.soft) : 240;
+          liveHardCeilingSeconds = th && Number(th.hard) > 0 ? Number(th.hard) : 420;
+
+          liveThresholdState = {
+            callSid: callSid || null,
+            overSoftThresholdLive: false,
+            hitHardCeilingLive: false,
+            softThresholdTimerId: null,
+            hardCeilingTimerId: null,
+          };
+
+          startLiveSessionThresholdTimers({
+            callState: liveThresholdState,
+            softThresholdSeconds: liveSoftThresholdSeconds,
+            hardCeilingSeconds: liveHardCeilingSeconds,
+            onHardCeiling: function () {
+              try {
+                if (endingRequested || endRedirectRequested) return;
+
+                console.log(nowIso(), "Hard ceiling reached, forcing end via /end", {
+                  callSid: callSid || null,
+                  hardCeilingSeconds: liveHardCeilingSeconds
+                });
+
+                (async () => {
+                  cancelOpenAIResponseIfAnyOnce("hard_ceiling_end");
+                  await requestScenarioTagTextOnlyOnce("hard_ceiling_end");
+                  await requestEnd("hard_ceiling_end", { skipTransition: true });
+                })().catch(() => { });
+              } catch { }
+            }
+
+          });
+
+          console.log(nowIso(), "Live threshold timers armed (verification only)", {
+            callSid: callSid || null,
+            softThresholdSeconds: liveSoftThresholdSeconds,
+            hardCeilingSeconds: liveHardCeilingSeconds
+          });
+        }
+      } catch (e) {
+        console.log(nowIso(), "Failed to start live threshold timers (non-fatal)", e && e.message ? e.message : e);
+      }
+    }
+
+    startOpenAIRealtime();
+    return;
+  }
+
+  if (msg.event === "media") {
+    if (!turnDetectionEnabled) return;
+    if (suppressCallerAudioToOpenAI) return;
+    if (Date.now() < listenBlockUntilMs) return;
+
+    if (aiSpeaking) {
+      return;
+    }
+
+    if (openaiReady && msg.media && msg.media.payload) {
+
+      openaiSend({
+        type: "input_audio_buffer.append",
+        audio: msg.media.payload,
+      });
+    }
+    return;
+  }
+
+  if (msg.event === "stop") {
+    console.log(nowIso(), "Twilio stream stop");
+    try {
+      persistUsageSummaryOnce("twilio_stop");
+    } catch { }
+
+    if (callSid) {
+      const endedReason = endRedirectRequested ? "redirected_to_end" : "hangup_or_stream_stop";
+      fireAndForgetCallEndLog(callSid, endedReason);
+    }
+
+    clearEndFallbackTimer();
+
+
+    closeAll("Twilio stop");
+    return;
+  }
+});
+
+twilioWs.on("close", () => {
+  console.log(nowIso(), "Twilio WS closed");
+  closeAll("Twilio WS closed");
+});
+
+twilioWs.on("error", (err) => {
+  console.log(nowIso(), "Twilio WS error:", err && err.message ? err.message : err);
+  closeAll("Twilio WS error");
+});
 });
 
 server.listen(PORT, () => {
