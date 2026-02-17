@@ -20,6 +20,9 @@ app.get("/media", (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
+// Debug visibility: last known callState (set when a call/session starts)
+let LAST_CALL_STATE = null;
+let LAST_OPENAI_SEND = null;
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const PUBLIC_WSS_URL = process.env.PUBLIC_WSS_URL;
@@ -2265,6 +2268,8 @@ wss.on("connection", (twilioWs) => {
     turnIndex: 0                 // increments each time we ask OpenAI to speak
   };
 
+  LAST_CALL_STATE = callState;
+
   function setPhase(nextPhase, why) {
     var prev = String(callState.phase || "unknown").trim();
     var next = String(nextPhase || "").trim();
@@ -2665,6 +2670,8 @@ wss.on("connection", (twilioWs) => {
       console.log(nowIso(), "openaiSend failed:", e && e.message ? e.message : e);
     }
   }
+
+  LAST_OPENAI_SEND = openaiSend;
 
   function cancelOpenAIResponseIfAnyOnce(reason) {
     const now = Date.now();
@@ -3838,29 +3845,31 @@ wss.on("connection", (twilioWs) => {
 
 app.post("/debug/test-turnlock", (req, res) => {
   try {
-    if (typeof callState !== "object" || !callState) {
-      return res.status(500).json({ ok: false, error: "callState is not in scope here" });
+    if (!LAST_CALL_STATE) {
+      return res.status(500).json({ ok: false, error: "No LAST_CALL_STATE yet. Start a call first." });
     }
 
-    if (typeof openaiSend !== "function") {
-      return res.status(500).json({ ok: false, error: "openaiSend is not in scope here" });
+    if (typeof LAST_OPENAI_SEND !== "function") {
+      return res.status(500).json({ ok: false, error: "No LAST_OPENAI_SEND yet. Start a call far enough to initialize OpenAI." });
     }
 
     // Force the guard to think a response is already active
-    callState.openaiResponseActive = true;
-    callState.pendingResponseCreate = null;
+    LAST_CALL_STATE.openaiResponseActive = true;
+    LAST_CALL_STATE.pendingResponseCreate = null;
 
     // These should NOT send. The second should overwrite the pending queue.
-    openaiSend({ type: "response.create", response: { modalities: ["text"], instructions: "FIRST" } });
-    openaiSend({ type: "response.create", response: { modalities: ["text"], instructions: "SECOND" } });
+    LAST_OPENAI_SEND({ type: "response.create", response: { modalities: ["text"], instructions: "FIRST" } });
+    LAST_OPENAI_SEND({ type: "response.create", response: { modalities: ["text"], instructions: "SECOND" } });
 
     return res.json({
       ok: true,
-      openaiResponseActive: !!callState.openaiResponseActive,
-      queued: !!callState.pendingResponseCreate,
-      pendingInstructions: callState.pendingResponseCreate && callState.pendingResponseCreate.response
-        ? callState.pendingResponseCreate.response.instructions
-        : null
+      openaiResponseActive: !!LAST_CALL_STATE.openaiResponseActive,
+      queued: !!LAST_CALL_STATE.pendingResponseCreate,
+      pendingInstructions:
+        LAST_CALL_STATE.pendingResponseCreate &&
+        LAST_CALL_STATE.pendingResponseCreate.response
+          ? LAST_CALL_STATE.pendingResponseCreate.response.instructions
+          : null
     });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e && e.message ? e.message : String(e) });
