@@ -1703,6 +1703,28 @@ app.get("/subscribe/cancel", (req, res) => {
 
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
 
+app.post("/stream", (req, res) => {
+  try {
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    if (!PUBLIC_WSS_URL) {
+      vr.say("Server is missing PUBLIC W S S U R L.");
+      vr.hangup();
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    const connect = vr.connect();
+    connect.stream({ url: PUBLIC_WSS_URL });
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("Error building /stream TwiML:", err);
+    res.status(500).send("Error");
+  }
+});
+
 app.post("/voice", async (req, res) => {
   if (String(process.env.CALLREADY_UNAVAILABLE || "") === "1") {
     const VoiceResponse = twilio.twiml.VoiceResponse;
