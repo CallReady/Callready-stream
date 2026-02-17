@@ -3845,36 +3845,21 @@ wss.on("connection", (twilioWs) => {
 
 app.post("/debug/test-turnlock", (req, res) => {
   try {
-    if (!LAST_CALL_STATE) {
-      return res.status(500).json({ ok: false, error: "No LAST_CALL_STATE yet. Start a call first." });
-    }
-
-    if (typeof LAST_OPENAI_SEND !== "function") {
-      return res.status(500).json({ ok: false, error: "No LAST_OPENAI_SEND yet. Start a call far enough to initialize OpenAI." });
-    }
-
-    // Force the guard to think a response is already active
-    LAST_CALL_STATE.openaiResponseActive = true;
-    LAST_CALL_STATE.pendingResponseCreate = null;
-
-    // These should NOT send. The second should overwrite the pending queue.
-    LAST_OPENAI_SEND({ type: "response.create", response: { modalities: ["text"], instructions: "FIRST" } });
-    LAST_OPENAI_SEND({ type: "response.create", response: { modalities: ["text"], instructions: "SECOND" } });
-
     return res.json({
       ok: true,
-      openaiResponseActive: !!LAST_CALL_STATE.openaiResponseActive,
-      queued: !!LAST_CALL_STATE.pendingResponseCreate,
-      pendingInstructions:
-        LAST_CALL_STATE.pendingResponseCreate &&
-        LAST_CALL_STATE.pendingResponseCreate.response
-          ? LAST_CALL_STATE.pendingResponseCreate.response.instructions
-          : null
+      hasLastCallState: !!LAST_CALL_STATE,
+      sameObjectReference: typeof callState !== "undefined"
+        ? (LAST_CALL_STATE === callState)
+        : "callState not visible here"
     });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: e && e.message ? e.message : String(e) });
+    return res.status(500).json({
+      ok: false,
+      error: e && e.message ? e.message : String(e)
+    });
   }
 });
+
 
 server.listen(PORT, () => {
   console.log(nowIso(), `Server listening on ${PORT}`, "version:", CALLREADY_VERSION);
