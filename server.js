@@ -2697,32 +2697,48 @@ wss.on("connection", (twilioWs) => {
 
   }
 
-function buildRoleplayStartInstructions() {
-  if (!callState.callType) {
-    return "Ask one short question to clarify whether this is an incoming or outgoing call.";
+  function buildRoleplayStartInstructions() {
+    if (!callState.callType) {
+      return "Ask one short question to clarify whether this is an incoming or outgoing call.";
+    }
+
+    if (callState.callType === "outgoing") {
+      return (
+        "We are now entering roleplay.\n" +
+        "This is an OUTGOING call.\n" +
+        "You are the ANSWERER.\n" +
+        "Begin immediately with a realistic greeting as the person answering the phone.\n" +
+        "After your greeting, ask one short, natural question.\n"
+      );
+    }
+
+    if (callState.callType === "incoming") {
+      return (
+        "We are now entering roleplay.\n" +
+        "This is an INCOMING call.\n" +
+        "You are the CALLER.\n" +
+        "First say exactly: Go ahead and say hello to start the call.\n" +
+        "Then stop speaking completely and wait.\n"
+      );
+    }
+
+    return "Begin roleplay naturally.";
   }
 
-  if (callState.callType === "outgoing") {
+  function buildScenarioIntro() {
+  if (!callState.scenarioTag) {
+    return "We are practicing a phone call scenario.";
+  }
+
+  if (callState.scenarioTag === "doctor_appointment_scheduling") {
     return (
-      "We are now entering roleplay.\n" +
-      "This is an OUTGOING call.\n" +
-      "You are the ANSWERER.\n" +
-      "Begin immediately with a realistic greeting as the person answering the phone.\n" +
-      "After your greeting, ask one short, natural question.\n"
+      "We are practicing this scenario:\n" +
+      "Scheduling a doctor appointment.\n" +
+      "Goal: schedule an appointment time."
     );
   }
 
-  if (callState.callType === "incoming") {
-    return (
-      "We are now entering roleplay.\n" +
-      "This is an INCOMING call.\n" +
-      "You are the CALLER.\n" +
-      "First say exactly: Go ahead and say hello to start the call.\n" +
-      "Then stop speaking completely and wait.\n"
-    );
-  }
-
-  return "Begin roleplay naturally.";
+  return "We are practicing a realistic phone call scenario.";
 }
 
   function sendOpenerOnce(label) {
@@ -3417,10 +3433,8 @@ function buildRoleplayStartInstructions() {
               response: {
                 modalities: ["audio", "text"],
                 instructions:
-                  "We are practicing this scenario:\n" +
-                  "Scheduling a doctor appointment.\n" +
-                  "Goal: schedule an appointment time.\n\n" +
-                  buildRoleplayStartInstructions()
+                  buildScenarioIntro() + "\n\n" + buildRoleplayStartInstructions()
+
               }
             });
 
