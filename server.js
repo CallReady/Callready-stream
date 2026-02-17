@@ -3466,7 +3466,7 @@ wss.on("connection", (twilioWs) => {
             callState.scenarioChosen = true;
 
             // Pick a default, common scenario for now.
-            setScenarioTag("doctor_appointment_scheduling", "default_pick");
+            setScenarioTag("doctor_default", "default_pick");
             try {
               if (callSid) setScenarioTagOnce(callSid, "doctor_appointment_scheduling");
             } catch (e) { }
