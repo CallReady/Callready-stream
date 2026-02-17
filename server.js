@@ -2707,7 +2707,8 @@ wss.on("connection", (twilioWs) => {
         "We are now entering roleplay.\n" +
         "This is an OUTGOING call.\n" +
         "You are the ANSWERER.\n" +
-        "Begin immediately with a realistic greeting as the person answering the phone.\n" +
+        "First say exactly: Ring ring.\n" +
+        "Then immediately continue with a realistic greeting as the person answering the phone.\n" +
         "After your greeting, ask one short, natural question.\n"
       );
     }
