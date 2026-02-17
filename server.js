@@ -3836,6 +3836,37 @@ wss.on("connection", (twilioWs) => {
   });
 });
 
+app.post("/debug/test-turnlock", (req, res) => {
+  try {
+    if (typeof callState !== "object" || !callState) {
+      return res.status(500).json({ ok: false, error: "callState is not in scope here" });
+    }
+
+    if (typeof openaiSend !== "function") {
+      return res.status(500).json({ ok: false, error: "openaiSend is not in scope here" });
+    }
+
+    // Force the guard to think a response is already active
+    callState.openaiResponseActive = true;
+    callState.pendingResponseCreate = null;
+
+    // These should NOT send. The second should overwrite the pending queue.
+    openaiSend({ type: "response.create", response: { modalities: ["text"], instructions: "FIRST" } });
+    openaiSend({ type: "response.create", response: { modalities: ["text"], instructions: "SECOND" } });
+
+    return res.json({
+      ok: true,
+      openaiResponseActive: !!callState.openaiResponseActive,
+      queued: !!callState.pendingResponseCreate,
+      pendingInstructions: callState.pendingResponseCreate && callState.pendingResponseCreate.response
+        ? callState.pendingResponseCreate.response.instructions
+        : null
+    });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e && e.message ? e.message : String(e) });
+  }
+});
+
 server.listen(PORT, () => {
   console.log(nowIso(), `Server listening on ${PORT}`, "version:", CALLREADY_VERSION);
   console.log(nowIso(), "POST /voice, POST /stream, WS /media");
