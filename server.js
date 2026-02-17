@@ -3427,25 +3427,10 @@ wss.on("connection", (twilioWs) => {
             },
           });
 
-          // Immediately start roleplay using server-owned call type and role rules
-          setPhase("roleplay", "starting_roleplay_after_call_type");
+          // Next phase is choosing the scenario (do not start roleplay yet)
+          setPhase("choose_scenario", "after_call_type_confirm");
+          callState.scenarioChosen = false;
           callState.turnIndex += 1;
-
-          if (callState.openaiResponseActive) {
-            console.log(nowIso(), "Guard: not starting roleplay, OpenAI response already active");
-            return;
-          }
-          callState.openaiResponseActive = true;
-
-          openaiSend({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions: buildRoleplayStartInstructions(),
-            },
-          });
-
-          return;
         }
 
         if (openerSent && !turnDetectionEnabled) {
