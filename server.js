@@ -9,6 +9,9 @@ const { Pool } = require("pg");
 const Stripe = require("stripe");
 
 const app = express();
+const path = require("path");
+// Serve audio-fixed folder publicly (for ring sounds and other static audio)
+app.use("/audio-fixed", express.static(path.join(process.cwd(), "audio-fixed")));
 // Serve static files (so Twilio can fetch the ring MP3)
 app.use(express.static(__dirname));
 app.set("strict routing", true);
