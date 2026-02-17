@@ -3498,6 +3498,7 @@ wss.on("connection", (twilioWs) => {
             } catch (e) { }
 
             setPhase("roleplay", "scenario_picked_default");
+            callState.turnIndex = 0;
 
             openaiSend({
               type: "response.create",
@@ -3528,51 +3529,6 @@ wss.on("connection", (twilioWs) => {
 
             return;
           }
-
-          // If the model output was not yes or no, ask again.
-          callState.scenarioChosen = false;
-          setPhase("choose_scenario", "scenario_pick_unclear_retry");
-
-          openaiSend({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions:
-                "Ask exactly one question and nothing else:\n" +
-                "Do you already have a call in mind, or would you like me to pick one for you?",
-            },
-          });
-
-          return;
-
-          if (v === "no") {
-            callState.scenarioChosen = false;
-
-            openaiSend({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "Ask exactly one question and nothing else:\n" +
-                  "What kind of call do you want to practice?\n"
-              }
-            });
-
-            return;
-          }
-
-          // If unclear, ask again.
-          openaiSend({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions:
-                "Ask exactly one question and nothing else:\n" +
-                "Do you already have a call in mind, or would you like me to pick one for you?\n"
-            }
-          });
-
-          return;
         }
 
         if (openerSent && !turnDetectionEnabled) {
