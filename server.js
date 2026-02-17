@@ -2651,19 +2651,17 @@ wss.on("connection", (twilioWs) => {
       return "Ask one short question to clarify whether this is an incoming or outgoing call.";
     }
 
-    if (callState.callType === "outgoing") {
-      return (
-        "We are now entering roleplay.\n" +
-        "This is an OUTGOING call.\n" +
-        "You are the ANSWERER.\n" +
-        "Follow the ring protocol exactly.\n" +
-        "Produce one continuous spoken response with two parts:\n" +
-        "Part 1: say exactly: Ring ring.\n" +
-        "Part 2: immediately continue as the ANSWERER with a realistic greeting.\n" +
-        "Do not wait between Part 1 and Part 2.\n" +
-        "After your greeting, ask one short, natural question.\n"
-      );
-    }
+  if (callState.callType === "outgoing") {
+    return (
+      "We are now entering roleplay.\n" +
+      "This is an OUTGOING call.\n" +
+      "You are the ANSWERER.\n" +
+      "The phone ringing sound has already played.\n" +
+      "Do not say ring ring.\n" +
+      "Begin immediately with a realistic greeting as the person answering the phone.\n" +
+      "After your greeting, ask one short, natural question.\n"
+    );
+  }
 
     if (callState.callType === "incoming") {
       return (
