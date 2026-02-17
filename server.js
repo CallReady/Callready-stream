@@ -2726,20 +2726,20 @@ wss.on("connection", (twilioWs) => {
   }
 
   function buildScenarioIntro() {
-  if (!callState.scenarioTag) {
-    return "We are practicing a phone call scenario.";
-  }
+    if (!callState.scenarioTag) {
+      return "We are practicing a phone call scenario.";
+    }
 
-  if (callState.scenarioTag === "doctor_appointment_scheduling") {
-    return (
-      "We are practicing this scenario:\n" +
-      "Scheduling a doctor appointment.\n" +
-      "Goal: schedule an appointment time."
-    );
-  }
+    if (callState.scenarioTag === "doctor_appointment_scheduling") {
+      return (
+        "We are practicing this scenario:\n" +
+        "Scheduling a doctor appointment.\n" +
+        "Goal: schedule an appointment time."
+      );
+    }
 
-  return "We are practicing a realistic phone call scenario.";
-}
+    return "We are practicing a realistic phone call scenario.";
+  }
 
   function sendOpenerOnce(label) {
     console.log(nowIso(), "Sending opener", label ? "(" + label + ")" : "");
@@ -3379,27 +3379,47 @@ wss.on("connection", (twilioWs) => {
 
         if (callTypeCaptureInFlight && awaitingCallTypeChoice) {
           const ct = extractTokenLineValue(text, "CALL_TYPE");
-          if (ct) {
-            const v = String(ct).trim().toLowerCase();
-            if (v === "outgoing" || v === "incoming") lockedCallType = v;
-            setCallType(v, "parsed_call_type");
+          const v = ct ? String(ct).trim().toLowerCase() : "";
+
+          // Always clear the capture flag first so we can retry if needed.
+          callTypeCaptureInFlight = false;
+
+          // If the model couldn't determine it, ask the call type question again and stay in choose_call_type.
+          if (v !== "outgoing" && v !== "incoming") {
+            lockedCallType = null;
+            awaitingCallTypeChoice = true;
+            setPhase("choose_call_type", "call_type_unclear_retry");
+
+            openaiSend({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "Say nothing before the question.\n" +
+                  "Do not say okay, sure, of course, or any other lead-in.\n" +
+                  "Ask exactly one question and nothing else:\n" +
+                  "Do you want to practice making a call, or answering a call?",
+              },
+            });
+
+            return;
           }
 
-          callTypeCaptureInFlight = false;
+          // Valid call type.
+          if (!lockedCallType) lockedCallType = v;
+          setCallType(v, "parsed_call_type");
           awaitingCallTypeChoice = false;
-
-          if (!lockedCallType) lockedCallType = "outgoing";
 
           openaiSend({
             type: "response.create",
             response: {
               modalities: ["audio", "text"],
               instructions:
-                "Say one short sentence confirming the call type in plain language. \n" +
-                "Then ask exactly one question, using this wording: \n" +
-                "Do you already have a call in mind, or would you like me to pick one for you? \n" +
-                "Do not use the words scenario or goal. \n" +
-                "Do not ask follow-up questions yet. \n",
+                "Say one short sentence confirming the call type in plain language.\n" +
+                "Then ask exactly one question, using this wording:\n" +
+                "Do you already have a call in mind, or would you like me to pick one for you?\n" +
+                "Do not use the words scenario or goal.\n" +
+                "Do not ask follow-up questions yet.\n",
             },
           });
 
@@ -3407,6 +3427,8 @@ wss.on("connection", (twilioWs) => {
           setPhase("choose_scenario", "after_call_type_confirm");
           callState.scenarioChosen = false;
           callState.turnIndex += 1;
+
+          return;
         }
 
         if (callState.scenarioCaptureInFlight && callState.phase === "choose_scenario") {
