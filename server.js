@@ -2697,35 +2697,33 @@ wss.on("connection", (twilioWs) => {
 
   }
 
-  function buildRoleplayStartInstructions() {
-    if (!callState.callType) {
-      return "Ask one short question to clarify whether this is an incoming or outgoing call.";
-    }
-
-    if (callState.callType === "outgoing") {
-      return (
-        "We are now entering roleplay.\n" +
-        "This is an OUTGOING call.\n" +
-        "You are the ANSWERER.\n" +
-        "The phone ringing sound has already played.\n" +
-        "Do not say ring ring.\n" +
-        "Begin immediately with a realistic greeting as the person answering the phone.\n" +
-        "After your greeting, ask one short, natural question.\n"
-      );
-    }
-
-    if (callState.callType === "incoming") {
-      return (
-        "We are now entering roleplay.\n" +
-        "This is an INCOMING call.\n" +
-        "You are the CALLER.\n" +
-        "First say exactly: Go ahead and say hello to start the call.\n" +
-        "Then stop speaking completely and wait.\n"
-      );
-    }
-
-    return "Begin roleplay naturally.";
+function buildRoleplayStartInstructions() {
+  if (!callState.callType) {
+    return "Ask one short question to clarify whether this is an incoming or outgoing call.";
   }
+
+  if (callState.callType === "outgoing") {
+    return (
+      "We are now entering roleplay.\n" +
+      "This is an OUTGOING call.\n" +
+      "You are the ANSWERER.\n" +
+      "Begin immediately with a realistic greeting as the person answering the phone.\n" +
+      "After your greeting, ask one short, natural question.\n"
+    );
+  }
+
+  if (callState.callType === "incoming") {
+    return (
+      "We are now entering roleplay.\n" +
+      "This is an INCOMING call.\n" +
+      "You are the CALLER.\n" +
+      "First say exactly: Go ahead and say hello to start the call.\n" +
+      "Then stop speaking completely and wait.\n"
+    );
+  }
+
+  return "Begin roleplay naturally.";
+}
 
   function sendOpenerOnce(label) {
     console.log(nowIso(), "Sending opener", label ? "(" + label + ")" : "");
@@ -3106,9 +3104,9 @@ wss.on("connection", (twilioWs) => {
             "\n" +
             "TOP PRIORITIES. These override all other rules, including speaking style:\n" +
             "1) Stay in your ROLE. Do not switch roles mid-scenario.\n" +
-            "2) Follow the RING PROTOCOL section exactly. \n" +
-            "3) Never explain, announce, describe, or preview the ring protocol. When roleplay begins, perform it immediately. \n" +
-            "4) When told to wait, stop speaking completely.\n" +
+            "2) When told to wait, stop speaking completely.\n" +
+            "3) Do not describe rules, protocols, or internal logic to the HUMAN.\n" +
+            "4) Keep turns short and realistic, then wait for the HUMAN.\n" +
             "\n" +
             "DEFINITIONS:\n" +
             "HUMAN: the person using CallReady on the phone.\n" +
