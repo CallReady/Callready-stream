@@ -3352,6 +3352,24 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
+                if (turnDetectionEnabled && callState.phase === "choose_scenario" && !callState.scenarioChosen && !callState.scenarioCaptureInFlight) {
+          callState.scenarioCaptureInFlight = true;
+
+          openaiSend({
+            type: "response.create",
+            response: {
+              modalities: ["text"],
+              instructions:
+                "Output exactly one line and nothing else.\n" +
+                "If the HUMAN wants you to pick, output: SCENARIO_PICK: yes\n" +
+                "If the HUMAN already has a call in mind, output: SCENARIO_PICK: no\n" +
+                "If unclear, output: SCENARIO_PICK: unknown\n",
+            },
+          });
+
+          return;
+        }
+
         // Ask OpenAI to respond now, but ALWAYS include phase instructions.
         openaiSend({
           type: "response.create",
