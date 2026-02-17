@@ -2524,15 +2524,16 @@ wss.on("connection", (twilioWs) => {
       // Global guard: only allow one active response.create at a time.
       // If one is active, queue the latest response.create and send it after response.done.
       if (obj && obj.type === "response.create") {
-        if (responseActive) {
+        if (callState.openaiResponseActive) {
           callState.pendingResponseCreate = obj;
           console.log(nowIso(), "Guard: queued response.create because a response is already active");
           return;
         }
 
-        responseActive = true;
+        callState.openaiResponseActive = true;
         callState.pendingResponseCreate = null;
       }
+
 
       openaiWs.send(JSON.stringify(obj));
     } catch (e) {
@@ -3273,7 +3274,7 @@ wss.on("connection", (twilioWs) => {
         const text = extractTextFromResponseDone(msg);
         responseActive = false;
         callState.openaiResponseActive = false;
-          if (callState.pendingResponseCreate) {
+        if (callState.pendingResponseCreate) {
           const queued = callState.pendingResponseCreate;
           callState.pendingResponseCreate = null;
           console.log(nowIso(), "Guard: flushing queued response.create after response.done");
