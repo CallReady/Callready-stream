@@ -1868,7 +1868,7 @@ app.post("/debug/openai-realtime-check", async (req, res) => {
           voice: voiceName,
           modalities: ["text"],
           turn_detection: null,
-          temperature: 0.2,
+          temperature: 0.7,
           instructions:
             "Output exactly one line and nothing else.\n" +
             "The line must be: OK_VOICE_MODEL: " + voiceName + " | " + modelName + "\n"
