@@ -2418,6 +2418,38 @@ function buildDynamicOpenerSpeech() {
 
 }
 
+function buildRoleplayStartInstructions() {
+  if (!callState.callType) {
+    return "Ask one short question to clarify whether this is an incoming or outgoing call.";
+  }
+
+  if (callState.callType === "outgoing") {
+    return (
+      "We are now entering roleplay.\n" +
+      "This is an OUTGOING call.\n" +
+      "You are the ANSWERER.\n" +
+      "Follow the ring protocol exactly.\n" +
+      "Produce one continuous spoken response with two parts:\n" +
+      "Part 1: say exactly: Ring ring.\n" +
+      "Part 2: immediately continue as the ANSWERER with a realistic greeting.\n" +
+      "Do not wait between Part 1 and Part 2.\n" +
+      "After your greeting, ask one short, natural question.\n"
+    );
+  }
+
+  if (callState.callType === "incoming") {
+    return (
+      "We are now entering roleplay.\n" +
+      "This is an INCOMING call.\n" +
+      "You are the CALLER.\n" +
+      "First say exactly: Go ahead and say hello to start the call.\n" +
+      "Then stop speaking completely and wait.\n"
+    );
+  }
+
+  return "Begin roleplay naturally.";
+}
+
   function sendOpenerOnce(label) {
     console.log(nowIso(), "Sending opener", label ? "(" + label + ")" : "");
     setPhase("opener", "sendOpenerOnce");
