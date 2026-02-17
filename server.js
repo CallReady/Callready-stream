@@ -2266,6 +2266,7 @@ wss.on("connection", (twilioWs) => {
     role: null,                  // answerer or caller (derived from callType when roleplay starts)
     scenarioTag: null,           // snake_case tag once known
     goal: null,                  // short goal text once known
+    scenarioChosen: false,
     lastUserUtterance: null,     // last transcript snippet we captured
     summary: null,               // short rolling summary (we will add later)
     turnIndex: 0                 // increments each time we ask OpenAI to speak
@@ -2299,7 +2300,7 @@ wss.on("connection", (twilioWs) => {
     }
   }
 
-    function buildPhaseInstructions(why) {
+  function buildPhaseInstructions(why) {
     var phase = String(callState.phase || "").trim();
 
     // A small header we can reuse for every turn.
@@ -2709,17 +2710,17 @@ wss.on("connection", (twilioWs) => {
       return "Ask one short question to clarify whether this is an incoming or outgoing call.";
     }
 
-  if (callState.callType === "outgoing") {
-    return (
-      "We are now entering roleplay.\n" +
-      "This is an OUTGOING call.\n" +
-      "You are the ANSWERER.\n" +
-      "The phone ringing sound has already played.\n" +
-      "Do not say ring ring.\n" +
-      "Begin immediately with a realistic greeting as the person answering the phone.\n" +
-      "After your greeting, ask one short, natural question.\n"
-    );
-  }
+    if (callState.callType === "outgoing") {
+      return (
+        "We are now entering roleplay.\n" +
+        "This is an OUTGOING call.\n" +
+        "You are the ANSWERER.\n" +
+        "The phone ringing sound has already played.\n" +
+        "Do not say ring ring.\n" +
+        "Begin immediately with a realistic greeting as the person answering the phone.\n" +
+        "After your greeting, ask one short, natural question.\n"
+      );
+    }
 
     if (callState.callType === "incoming") {
       return (
@@ -3362,7 +3363,6 @@ wss.on("connection", (twilioWs) => {
 
         return;
       }
-
 
       if (msg.type === "response.created") {
         responseActive = true;
