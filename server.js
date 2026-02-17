@@ -2521,27 +2521,17 @@ wss.on("connection", (twilioWs) => {
     try {
       if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
 
-      // Tiny cooldown to prevent "conversation_already_has_active_response"
+      // Global guard: only allow one active response.create at a time.
+      // If one is active, queue the latest response.create and send it after response.done.
       if (obj && obj.type === "response.create") {
-        const now = Date.now();
-        const allowAt = callState.nextResponseCreateAtMs || 0;
-
-        if (now < allowAt) {
-          const delayMs = Math.max(0, allowAt - now);
-          console.log(nowIso(), "Cooldown: delaying response.create by", delayMs, "ms");
-          setTimeout(() => {
-            try {
-              if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
-              openaiWs.send(JSON.stringify(obj));
-            } catch (e) {
-              console.log(nowIso(), "openaiSend delayed send failed:", e && e.message ? e.message : e);
-            }
-          }, delayMs);
+        if (responseActive) {
+          callState.pendingResponseCreate = obj;
+          console.log(nowIso(), "Guard: queued response.create because a response is already active");
           return;
         }
 
-        // After we send a response.create, block any new one for a brief moment
-        callState.nextResponseCreateAtMs = now + 350;
+        responseActive = true;
+        callState.pendingResponseCreate = null;
       }
 
       openaiWs.send(JSON.stringify(obj));
@@ -3283,6 +3273,12 @@ wss.on("connection", (twilioWs) => {
         const text = extractTextFromResponseDone(msg);
         responseActive = false;
         callState.openaiResponseActive = false;
+          if (callState.pendingResponseCreate) {
+          const queued = callState.pendingResponseCreate;
+          callState.pendingResponseCreate = null;
+          console.log(nowIso(), "Guard: flushing queued response.create after response.done");
+          openaiSend(queued);
+        }
 
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
 
