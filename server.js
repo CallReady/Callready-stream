@@ -1,5 +1,3 @@
-Final script while working toward Making and Receiving calls - abandoned 2/7/26
-
 //Best version yet! Definite quality fallback
 "use strict";
 
