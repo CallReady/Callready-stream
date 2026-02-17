@@ -2215,6 +2215,7 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: "/media" });
 
 wss.on("connection", (twilioWs) => {
+  console.log(nowIso(), "WS CONNECT /media", "version:", CALLREADY_VERSION);
   let streamSid = null;
   let callSid = null;
 
@@ -3352,7 +3353,7 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-                if (turnDetectionEnabled && callState.phase === "choose_scenario" && !callState.scenarioChosen && !callState.scenarioCaptureInFlight) {
+        if (turnDetectionEnabled && callState.phase === "choose_scenario" && !callState.scenarioChosen && !callState.scenarioCaptureInFlight) {
           callState.scenarioCaptureInFlight = true;
 
           openaiSend({
@@ -3451,7 +3452,7 @@ wss.on("connection", (twilioWs) => {
           callState.turnIndex += 1;
         }
 
-                if (callState.scenarioCaptureInFlight && callState.phase === "choose_scenario") {
+        if (callState.scenarioCaptureInFlight && callState.phase === "choose_scenario") {
           const pick = extractTokenLineValue(text, "SCENARIO_PICK");
           const v = pick ? String(pick).trim().toLowerCase() : "unknown";
 
