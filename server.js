@@ -77,26 +77,26 @@ function nowIso() {
   return new Date().toISOString();
 }
 process.on("uncaughtException", (err) => {
-console.log(nowIso(), "FATAL uncaughtException:", err && err.stack ? err.stack : err);
+  console.log(nowIso(), "FATAL uncaughtException:", err && err.stack ? err.stack : err);
 });
 
 process.on("unhandledRejection", (err) => {
-console.log(nowIso(), "FATAL unhandledRejection:", err && err.stack ? err.stack : err);
+  console.log(nowIso(), "FATAL unhandledRejection:", err && err.stack ? err.stack : err);
 });
 
 if (!DATABASE_URL) {
   console.log(nowIso(), "Warning: DATABASE_URL is not set, DB features disabled");
 }
 process.on("SIGTERM", () => {
-console.log(nowIso(), "FATAL received SIGTERM, process is being terminated");
+  console.log(nowIso(), "FATAL received SIGTERM, process is being terminated");
 });
 
 process.on("SIGINT", () => {
-console.log(nowIso(), "FATAL received SIGINT, process is being interrupted");
+  console.log(nowIso(), "FATAL received SIGINT, process is being interrupted");
 });
 
 process.on("exit", (code) => {
-console.log(nowIso(), "FATAL process exit", { code });
+  console.log(nowIso(), "FATAL process exit", { code });
 });
 
 const OPENAI_REALTIME_MODEL =
@@ -115,7 +115,7 @@ const TWILIO_SMS_FROM =
   process.env.TWILIO_PHONE_NUMBER ||
   process.env.TWILIO_FROM_NUMBER;
 
-  const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID;
+const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID;
 
 const AI_END_CALL_TRIGGER = "END_CALL_NOW";
 
@@ -178,7 +178,7 @@ const TWILIO_NO_SESSIONS_LEFT =
   "Thanks for calling, and we hope you will practice again soon!";
 
 const TWILIO_SERVICE_UNAVAILABLE =
-"CallReady dot live is temporarily unavailable right now. Please try again in a little bit. Goodbye.";
+  "CallReady dot live is temporarily unavailable right now. Please try again in a little bit. Goodbye.";
 
 function safeJsonParse(str) {
   try {
@@ -222,15 +222,15 @@ async function sendSms(toPhoneE164, bodyText, eventType) {
     const msg = await client.messages.create(payload);
     console.log(nowIso(), "Sent SMS", { to: payload.to, sid: msg && msg.sid ? msg.sid : null });
     try {
-  if (pool) {
-    await pool.query(
-      "insert into sms_events (phone_e164, event_type, message_sid, body_text) values ($1, $2, $3, $4)",
-      [payload.to, (eventType ? String(eventType) : "sms_sent"), (msg && msg.sid ? String(msg.sid) : null), payload.body]
-    );
-  }
-} catch (e) {
-  console.log(nowIso(), "DB insert failed for sms_events:", e && e.message ? e.message : e);
-}
+      if (pool) {
+        await pool.query(
+          "insert into sms_events (phone_e164, event_type, message_sid, body_text) values ($1, $2, $3, $4)",
+          [payload.to, (eventType ? String(eventType) : "sms_sent"), (msg && msg.sid ? String(msg.sid) : null), payload.body]
+        );
+      }
+    } catch (e) {
+      console.log(nowIso(), "DB insert failed for sms_events:", e && e.message ? e.message : e);
+    }
 
     return { ok: true, sid: msg && msg.sid ? msg.sid : null };
   } catch (e) {
@@ -253,8 +253,8 @@ async function hasRecentSmsEvent(phoneE164, eventType, withinDays) {
   try {
     const r = await pool.query(
       "select 1 from sms_events " +
-        "where phone_e164 = $1 and event_type = $2 and sent_at >= (now() - ($3::int * interval '1 day')) " +
-        "limit 1",
+      "where phone_e164 = $1 and event_type = $2 and sent_at >= (now() - ($3::int * interval '1 day')) " +
+      "limit 1",
       [String(phoneE164), String(eventType), safeDays]
     );
 
@@ -272,8 +272,8 @@ async function getNextPostCallMessage(phoneE164) {
   try {
     const r = await pool.query(
       "select body_text from sms_events " +
-        "where phone_e164 = $1 and event_type = 'post_call_followup' " +
-        "order by sent_at desc limit 1",
+      "where phone_e164 = $1 and event_type = 'post_call_followup' " +
+      "order by sent_at desc limit 1",
       [String(phoneE164)]
     );
 
@@ -298,9 +298,9 @@ async function hasLongBreakSinceLastCall(phoneE164, days) {
   try {
     const r = await pool.query(
       "select 1 from calls " +
-        "where phone_e164 = $1 and should_count = true " +
-        "and ended_at >= (now() - ($2::int * interval '1 day')) " +
-        "limit 1",
+      "where phone_e164 = $1 and should_count = true " +
+      "and ended_at >= (now() - ($2::int * interval '1 day')) " +
+      "limit 1",
       [String(phoneE164), safeDays]
     );
 
@@ -318,8 +318,8 @@ async function getNextReengageMessage(phoneE164) {
   try {
     const r = await pool.query(
       "select body_text from sms_events " +
-        "where phone_e164 = $1 and event_type = 'reengage' " +
-        "order by sent_at desc limit 1",
+      "where phone_e164 = $1 and event_type = 'reengage' " +
+      "order by sent_at desc limit 1",
       [String(phoneE164)]
     );
 
@@ -374,16 +374,16 @@ function tierMonthlyAllowanceSeconds(tier) {
 }
 
 function tierPerCallCapSeconds(tier) {
-const t = String(tier || "free").toLowerCase();
+  const t = String(tier || "free").toLowerCase();
 
-// If MEMBER_PER_CALL_SECONDS or POWER_PER_CALL_SECONDS is 0, treat that as "no per-call cap".
-if (t === "power" || t === "power_user" || t === "poweruser") {
-return POWER_PER_CALL_SECONDS > 0 ? POWER_PER_CALL_SECONDS : null;
-}
-if (t === "member") {
-return MEMBER_PER_CALL_SECONDS > 0 ? MEMBER_PER_CALL_SECONDS : null;
-}
-return FREE_PER_CALL_SECONDS;
+  // If MEMBER_PER_CALL_SECONDS or POWER_PER_CALL_SECONDS is 0, treat that as "no per-call cap".
+  if (t === "power" || t === "power_user" || t === "poweruser") {
+    return POWER_PER_CALL_SECONDS > 0 ? POWER_PER_CALL_SECONDS : null;
+  }
+  if (t === "member") {
+    return MEMBER_PER_CALL_SECONDS > 0 ? MEMBER_PER_CALL_SECONDS : null;
+  }
+  return FREE_PER_CALL_SECONDS;
 }
 
 async function getThresholdsForPhone(phoneE164) {
@@ -446,7 +446,7 @@ function startLiveSessionThresholdTimers(opts) {
           callSid: callState.callSid || null,
           softThresholdSeconds: softSeconds
         });
-      } catch (e) {}
+      } catch (e) { }
     }, softSeconds * 1000);
   }
 
@@ -457,13 +457,13 @@ function startLiveSessionThresholdTimers(opts) {
           callSid: callState.callSid || null,
           hardCeilingSeconds: hardSeconds
         });
-      } catch (e) {}
+      } catch (e) { }
 
       if (typeof opts.onHardCeiling === "function") {
         opts.onHardCeiling();
       }
     }, hardSeconds * 1000);
-}
+  }
 }
 
 function clearLiveSessionThresholdTimers(callState) {
@@ -489,23 +489,23 @@ async function upsertCallerOnCallStart(fromPhoneE164, callSid) {
   try {
     await pool.query(
       "insert into callers (" +
-        "phone_e164, first_call_at, last_call_at, total_calls, tier, " +
-        "month_bucket, monthly_seconds_used, per_call_seconds_cap, last_call_sid, " +
-        "cycle_anchor_at, cycle_ends_at, cycle_seconds_used" +
-        ") values (" +
-        "$1, now(), now(), 1, 'free', " +
-        "$2::date, 0, $3, $4, " +
-        "now(), (now() + interval '1 month'), 0" +
-        ") on conflict (phone_e164) do update set " +
-        "last_call_at = now(), " +
-        "total_calls = callers.total_calls + 1, " +
-        "last_call_sid = $4, " +
-        "first_call_at = coalesce(callers.first_call_at, now()), " +
-        "month_bucket = $2::date, " +
-        "monthly_seconds_used = case when callers.month_bucket is distinct from $2::date then 0 else callers.monthly_seconds_used end, " +
-        "cycle_anchor_at = coalesce(callers.cycle_anchor_at, callers.first_call_at, callers.created_at, now()), " +
-        "cycle_ends_at = coalesce(callers.cycle_ends_at, (coalesce(callers.cycle_anchor_at, callers.first_call_at, callers.created_at, now()) + interval '1 month')), " +
-        "cycle_seconds_used = coalesce(callers.cycle_seconds_used, 0)",
+      "phone_e164, first_call_at, last_call_at, total_calls, tier, " +
+      "month_bucket, monthly_seconds_used, per_call_seconds_cap, last_call_sid, " +
+      "cycle_anchor_at, cycle_ends_at, cycle_seconds_used" +
+      ") values (" +
+      "$1, now(), now(), 1, 'free', " +
+      "$2::date, 0, $3, $4, " +
+      "now(), (now() + interval '1 month'), 0" +
+      ") on conflict (phone_e164) do update set " +
+      "last_call_at = now(), " +
+      "total_calls = callers.total_calls + 1, " +
+      "last_call_sid = $4, " +
+      "first_call_at = coalesce(callers.first_call_at, now()), " +
+      "month_bucket = $2::date, " +
+      "monthly_seconds_used = case when callers.month_bucket is distinct from $2::date then 0 else callers.monthly_seconds_used end, " +
+      "cycle_anchor_at = coalesce(callers.cycle_anchor_at, callers.first_call_at, callers.created_at, now()), " +
+      "cycle_ends_at = coalesce(callers.cycle_ends_at, (coalesce(callers.cycle_anchor_at, callers.first_call_at, callers.created_at, now()) + interval '1 month')), " +
+      "cycle_seconds_used = coalesce(callers.cycle_seconds_used, 0)",
       [fromPhoneE164, bucket, FREE_PER_CALL_SECONDS, callSid || null]
     );
 
@@ -550,7 +550,7 @@ async function logCallStartToDb(callSid, fromPhoneE164) {
   try {
     await pool.query(
       "insert into calls (call_sid, phone_e164, started_at, minutes_cap_applied) values ($1, $2, now(), $3) " +
-        "on conflict (call_sid) do update set phone_e164 = coalesce(calls.phone_e164, excluded.phone_e164)",
+      "on conflict (call_sid) do update set phone_e164 = coalesce(calls.phone_e164, excluded.phone_e164)",
       [callSid, fromPhoneE164 || null, Math.ceil(FREE_PER_CALL_SECONDS / 60)]
     );
 
@@ -565,7 +565,7 @@ async function logCallStartToDb(callSid, fromPhoneE164) {
 
   try {
     await upsertCallerOnCallStart(fromPhoneE164, callSid);
-  } catch {}
+  } catch { }
 }
 
 async function applyTierForIncomingCall(fromPhoneE164, callSid) {
@@ -594,12 +594,12 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
 
   try {
     const r = await pool.query(
-    "select tier, total_calls, per_call_seconds_cap, " +
-    "cycle_anchor_at, cycle_ends_at, cycle_seconds_used, " +
-    "cycle_sessions_used, cycle_sessions_cap " +
-    "from callers where phone_e164 = $1 limit 1",
-  [fromPhoneE164]
-);
+      "select tier, total_calls, per_call_seconds_cap, " +
+      "cycle_anchor_at, cycle_ends_at, cycle_seconds_used, " +
+      "cycle_sessions_used, cycle_sessions_cap " +
+      "from callers where phone_e164 = $1 limit 1",
+      [fromPhoneE164]
+    );
 
 
     const row = r && r.rows && r.rows[0] ? r.rows[0] : null;
@@ -611,13 +611,13 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
 
     if (!cycleEndsMs || nowMs >= cycleEndsMs) {
       try {
-                await pool.query(
+        await pool.query(
           "update callers set " +
-            "cycle_anchor_at = now(), " +
-            "cycle_ends_at = (now() + interval '1 month'), " +
-            "cycle_seconds_used = 0, " +
-            "cycle_sessions_used = 0 " +
-            "where phone_e164 = $1",
+          "cycle_anchor_at = now(), " +
+          "cycle_ends_at = (now() + interval '1 month'), " +
+          "cycle_seconds_used = 0, " +
+          "cycle_sessions_used = 0 " +
+          "where phone_e164 = $1",
           [fromPhoneE164]
         );
 
@@ -632,10 +632,10 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
     }
 
     const r2 = await pool.query(
-        "select tier, total_calls, per_call_seconds_cap, " +
-        "cycle_anchor_at, cycle_ends_at, cycle_seconds_used, " +
-        "cycle_sessions_used, cycle_sessions_cap " +
-        "from callers where phone_e164 = $1 limit 1",
+      "select tier, total_calls, per_call_seconds_cap, " +
+      "cycle_anchor_at, cycle_ends_at, cycle_seconds_used, " +
+      "cycle_sessions_used, cycle_sessions_cap " +
+      "from callers where phone_e164 = $1 limit 1",
       [fromPhoneE164]
     );
 
@@ -663,23 +663,23 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
     const perCallCapSeconds = 0;
 
     if (perCallCapSeconds > 0) {
-  try {
-    const tWrite = String(tier2 || "free").toLowerCase();
-    const shouldWriteCap = tWrite === "free";
+      try {
+        const tWrite = String(tier2 || "free").toLowerCase();
+        const shouldWriteCap = tWrite === "free";
 
-    if (shouldWriteCap) {
-      await pool.query(
-        "update callers set per_call_seconds_cap = $2, month_bucket = $3::date, monthly_seconds_used = case when month_bucket is distinct from $3::date then 0 else monthly_seconds_used end where phone_e164 = $1",
-        [fromPhoneE164, perCallCapSeconds, bucket]
-      );
-    } else {
-                await pool.query(
+        if (shouldWriteCap) {
+          await pool.query(
+            "update callers set per_call_seconds_cap = $2, month_bucket = $3::date, monthly_seconds_used = case when month_bucket is distinct from $3::date then 0 else monthly_seconds_used end where phone_e164 = $1",
+            [fromPhoneE164, perCallCapSeconds, bucket]
+          );
+        } else {
+          await pool.query(
             "update callers set per_call_seconds_cap = null, month_bucket = $2::date, monthly_seconds_used = case when month_bucket is distinct from $2::date then 0 else monthly_seconds_used end where phone_e164 = $1",
             [fromPhoneE164, bucket]
           );
+        }
+      } catch { }
     }
-  } catch {}
-}
 
 
     try {
@@ -689,7 +689,7 @@ async function applyTierForIncomingCall(fromPhoneE164, callSid) {
           [callSid, Math.ceil(perCallCapSeconds / 60)]
         );
       }
-    } catch {}
+    } catch { }
 
     const allowed = sessionsRemaining > 0;
 
@@ -746,39 +746,39 @@ async function logAiUsageToDb(callSid, usageSummary) {
         const r2 = await pool.query("select tier from callers where phone_e164 = $1 limit 1", [phone]);
         tier = r2 && r2.rows && r2.rows[0] && r2.rows[0].tier ? String(r2.rows[0].tier) : null;
       }
-    } catch {}
+    } catch { }
 
     const endedAtIso = usageSummary.endedAtIso ? String(usageSummary.endedAtIso) : nowIso();
     const startedAtIso = usageSummary.startedAtIso ? String(usageSummary.startedAtIso) : null;
 
     await pool.query(
       "insert into call_ai_usage (" +
-        "call_sid, phone_e164, tier, model, openai_session_id, started_at, ended_at, duration_seconds, turns, " +
-        "total_tokens, input_tokens, output_tokens, " +
-        "input_text_tokens, input_audio_tokens, output_text_tokens, output_audio_tokens, " +
-        "estimated_cost_usd" +
+      "call_sid, phone_e164, tier, model, openai_session_id, started_at, ended_at, duration_seconds, turns, " +
+      "total_tokens, input_tokens, output_tokens, " +
+      "input_text_tokens, input_audio_tokens, output_text_tokens, output_audio_tokens, " +
+      "estimated_cost_usd" +
       ") values (" +
-        "$1, $2, $3, $4, $5, " +
-        "coalesce($6::timestamptz, now()), $7::timestamptz, $8, $9, " +
-        "$10, $11, $12, " +
-        "$13, $14, $15, $16, " +
-        "$17" +
+      "$1, $2, $3, $4, $5, " +
+      "coalesce($6::timestamptz, now()), $7::timestamptz, $8, $9, " +
+      "$10, $11, $12, " +
+      "$13, $14, $15, $16, " +
+      "$17" +
       ") on conflict (call_sid) do update set " +
-        "tier = excluded.tier, " +
-        "model = excluded.model, " +
-        "openai_session_id = excluded.openai_session_id, " +
-        "started_at = excluded.started_at, " +
-        "ended_at = excluded.ended_at, " +
-        "duration_seconds = excluded.duration_seconds, " +
-        "turns = excluded.turns, " +
-        "total_tokens = excluded.total_tokens, " +
-        "input_tokens = excluded.input_tokens, " +
-        "output_tokens = excluded.output_tokens, " +
-        "input_text_tokens = excluded.input_text_tokens, " +
-        "input_audio_tokens = excluded.input_audio_tokens, " +
-        "output_text_tokens = excluded.output_text_tokens, " +
-        "output_audio_tokens = excluded.output_audio_tokens, " +
-        "estimated_cost_usd = excluded.estimated_cost_usd",
+      "tier = excluded.tier, " +
+      "model = excluded.model, " +
+      "openai_session_id = excluded.openai_session_id, " +
+      "started_at = excluded.started_at, " +
+      "ended_at = excluded.ended_at, " +
+      "duration_seconds = excluded.duration_seconds, " +
+      "turns = excluded.turns, " +
+      "total_tokens = excluded.total_tokens, " +
+      "input_tokens = excluded.input_tokens, " +
+      "output_tokens = excluded.output_tokens, " +
+      "input_text_tokens = excluded.input_text_tokens, " +
+      "input_audio_tokens = excluded.input_audio_tokens, " +
+      "output_text_tokens = excluded.output_text_tokens, " +
+      "output_audio_tokens = excluded.output_audio_tokens, " +
+      "estimated_cost_usd = excluded.estimated_cost_usd",
       [
         callSid,
         phone,
@@ -813,11 +813,11 @@ async function logCallEndToDb(callSid, endedReason) {
   try {
     const upd = await pool.query(
       "with u as ( " +
-        "update calls set ended_at = now(), ended_reason = $2, duration_seconds = extract(epoch from (now() - started_at))::int " +
-        "where call_sid = $1 and ended_at is null " +
-        "returning phone_e164, duration_seconds " +
-        ") " +
-        "select phone_e164, duration_seconds from u",
+      "update calls set ended_at = now(), ended_reason = $2, duration_seconds = extract(epoch from (now() - started_at))::int " +
+      "where call_sid = $1 and ended_at is null " +
+      "returning phone_e164, duration_seconds " +
+      ") " +
+      "select phone_e164, duration_seconds from u",
       [callSid, endedReason || null]
     );
 
@@ -844,12 +844,12 @@ async function logCallEndToDb(callSid, endedReason) {
     try {
       await pool.query(
         "update calls set " +
-          "soft_threshold_seconds = $2, " +
-          "hard_ceiling_seconds = $3, " +
-          "over_soft_threshold = $4, " +
-          "hit_hard_ceiling = $5, " +
-          "should_count = $6 " +
-          "where call_sid = $1",
+        "soft_threshold_seconds = $2, " +
+        "hard_ceiling_seconds = $3, " +
+        "over_soft_threshold = $4, " +
+        "hit_hard_ceiling = $5, " +
+        "should_count = $6 " +
+        "where call_sid = $1",
         [callSid, thresholds.soft, thresholds.hard, overSoft, hitHard, shouldCount]
       );
 
@@ -864,25 +864,25 @@ async function logCallEndToDb(callSid, endedReason) {
         should_count: shouldCount,
       });
       if (shouldCount && row.phone_e164) {
-      const recentlyMessaged = await hasRecentSmsEvent(
-        row.phone_e164,
-        "post_call_followup",
-        7
-      );
+        const recentlyMessaged = await hasRecentSmsEvent(
+          row.phone_e164,
+          "post_call_followup",
+          7
+        );
 
-      if (!recentlyMessaged) {
-        try {
-          const nextMsg = await getNextPostCallMessage(row.phone_e164);
-        await sendSms(row.phone_e164, nextMsg, "post_call_followup");
+        if (!recentlyMessaged) {
+          try {
+            const nextMsg = await getNextPostCallMessage(row.phone_e164);
+            await sendSms(row.phone_e164, nextMsg, "post_call_followup");
 
-          console.log(nowIso(), "Post-call follow-up SMS sent", { phone_e164: row.phone_e164 });
-        } catch (e) {
-          console.log(nowIso(), "Post-call follow-up SMS failed", e && e.message ? e.message : e);
+            console.log(nowIso(), "Post-call follow-up SMS sent", { phone_e164: row.phone_e164 });
+          } catch (e) {
+            console.log(nowIso(), "Post-call follow-up SMS failed", e && e.message ? e.message : e);
+          }
+        } else {
+          console.log(nowIso(), "Skipping post-call SMS due to weekly cap", { phone_e164: row.phone_e164 });
         }
-      } else {
-        console.log(nowIso(), "Skipping post-call SMS due to weekly cap", { phone_e164: row.phone_e164 });
       }
-    }
 
     } catch (e) {
       console.log(
@@ -896,10 +896,10 @@ async function logCallEndToDb(callSid, endedReason) {
       try {
         await pool.query(
           "update callers set " +
-            "cycle_seconds_used = coalesce(cycle_seconds_used, 0) + $2, " +
-            "cycle_sessions_used = coalesce(cycle_sessions_used, 0) + 1, " +
-            "last_call_sid = $3 " +
-            "where phone_e164 = $1",
+          "cycle_seconds_used = coalesce(cycle_seconds_used, 0) + $2, " +
+          "cycle_sessions_used = coalesce(cycle_sessions_used, 0) + 1, " +
+          "last_call_sid = $3 " +
+          "where phone_e164 = $1",
           [row.phone_e164, dur, callSid]
         );
 
@@ -927,7 +927,7 @@ function fireAndForgetCallEndLog(callSid, endedReason) {
     logCallEndToDb(callSid, endedReason).catch((e) => {
       console.log(nowIso(), "DB update failed for calls end (async):", e && e.message ? e.message : e);
     });
-  } catch {}
+  } catch { }
 }
 
 async function fetchPriorCallContextByCallSid(callSid) {
@@ -965,13 +965,13 @@ async function fetchCallerRuntimeContextByCallSid(callSid) {
 
   try {
     const r = await pool.query(
-    "select c.phone_e164, cl.tier, cl.total_calls, cl.per_call_seconds_cap, cl.sms_opted_in, " +
-    "cl.cycle_anchor_at, cl.cycle_ends_at, cl.cycle_seconds_used, " +
-    "cl.cycle_sessions_used, cl.cycle_sessions_cap " +
-    "from calls c join callers cl on cl.phone_e164 = c.phone_e164 " +
-    "where c.call_sid = $1 limit 1",
-  [callSid]
-);
+      "select c.phone_e164, cl.tier, cl.total_calls, cl.per_call_seconds_cap, cl.sms_opted_in, " +
+      "cl.cycle_anchor_at, cl.cycle_ends_at, cl.cycle_seconds_used, " +
+      "cl.cycle_sessions_used, cl.cycle_sessions_cap " +
+      "from calls c join callers cl on cl.phone_e164 = c.phone_e164 " +
+      "where c.call_sid = $1 limit 1",
+      [callSid]
+    );
 
     const row = r && r.rows && r.rows[0] ? r.rows[0] : null;
     if (!row) return null;
@@ -980,7 +980,7 @@ async function fetchCallerRuntimeContextByCallSid(callSid) {
     const used = toInt(row.cycle_seconds_used, 0);
     const remaining = 0;
 
-        let perCallCapSeconds = 0;
+    let perCallCapSeconds = 0;
     const tierLower = String(tier || "free").toLowerCase();
 
     if (tierLower === "free") {
@@ -1036,12 +1036,12 @@ async function appendScenarioSummaryToCall(callSid, summaryText) {
   try {
     await pool.query(
       "update calls set last_focus_skill = " +
-        "case " +
-        "when last_focus_skill is null or last_focus_skill = '' then $2 " +
-        "when position($2 in last_focus_skill) > 0 then last_focus_skill " +
-        "else (last_focus_skill || ' | ' || $2) " +
-        "end " +
-        "where call_sid = $1",
+      "case " +
+      "when last_focus_skill is null or last_focus_skill = '' then $2 " +
+      "when position($2 in last_focus_skill) > 0 then last_focus_skill " +
+      "else (last_focus_skill || ' | ' || $2) " +
+      "end " +
+      "where call_sid = $1",
       [callSid, clean]
     );
 
@@ -1152,8 +1152,8 @@ app.get("/cron/reengage", async (req, res) => {
       // Extra safety: confirm long break using the helper
       const longBreak = await hasLongBreakSinceLastCall(phone, lookbackDays);
       if (!longBreak) {
-      continue;
-    }
+        continue;
+      }
 
       try {
         const msgText = await getNextReengageMessage(phone);
@@ -1175,315 +1175,315 @@ app.get("/stripe-webhook", (req, res) => {
   res.status(200).send("stripe-webhook-ok");
 });
 app.post("/stripe-webhook", express.raw({ type: "application/json" }), async (req, res) => {
-try {
-if (!stripe) {
-console.log(nowIso(), "stripe-webhook: Stripe not configured");
-res.status(500).send("Stripe not configured");
-return;
-}
+  try {
+    if (!stripe) {
+      console.log(nowIso(), "stripe-webhook: Stripe not configured");
+      res.status(500).send("Stripe not configured");
+      return;
+    }
 
-if (!STRIPE_WEBHOOK_SECRET) {
-console.log(nowIso(), "stripe-webhook: Missing STRIPE_WEBHOOK_SECRET");
-res.status(500).send("Missing webhook secret");
-return;
-}
+    if (!STRIPE_WEBHOOK_SECRET) {
+      console.log(nowIso(), "stripe-webhook: Missing STRIPE_WEBHOOK_SECRET");
+      res.status(500).send("Missing webhook secret");
+      return;
+    }
 
-const sig = req.headers && req.headers["stripe-signature"] ? String(req.headers["stripe-signature"]) : "";
+    const sig = req.headers && req.headers["stripe-signature"] ? String(req.headers["stripe-signature"]) : "";
 
-if (!sig) {
-console.log(nowIso(), "stripe-webhook: Missing stripe-signature header");
-res.status(400).send("Missing signature");
-return;
-}
+    if (!sig) {
+      console.log(nowIso(), "stripe-webhook: Missing stripe-signature header");
+      res.status(400).send("Missing signature");
+      return;
+    }
 
-const event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
-if (event && event.type === "checkout.session.completed") {
-const session = event.data && event.data.object ? event.data.object : null;
-const md = session && session.metadata ? session.metadata : null;
+    const event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+    if (event && event.type === "checkout.session.completed") {
+      const session = event.data && event.data.object ? event.data.object : null;
+      const md = session && session.metadata ? session.metadata : null;
 
-console.log(nowIso(), "checkout.session.completed metadata", {
-practice_phone: md && md.practice_phone ? String(md.practice_phone) : null,
-tier: md && md.tier ? String(md.tier) : null,
-customer: session && session.customer ? String(session.customer) : null,
-subscription: session && session.subscription ? String(session.subscription) : null,
-});
-if (pool && md && md.practice_phone && md.tier) {
-const phone = String(md.practice_phone).trim();
-const tier = String(md.tier).toLowerCase();
+      console.log(nowIso(), "checkout.session.completed metadata", {
+        practice_phone: md && md.practice_phone ? String(md.practice_phone) : null,
+        tier: md && md.tier ? String(md.tier) : null,
+        customer: session && session.customer ? String(session.customer) : null,
+        subscription: session && session.subscription ? String(session.subscription) : null,
+      });
+      if (pool && md && md.practice_phone && md.tier) {
+        const phone = String(md.practice_phone).trim();
+        const tier = String(md.tier).toLowerCase();
 
-try {
-const newSessionsCap =
-  tier === "power" || tier === "power_user" || tier === "poweruser"
-    ? 30
-    : tier === "member"
-    ? 12
-    : 4;
+        try {
+          const newSessionsCap =
+            tier === "power" || tier === "power_user" || tier === "poweruser"
+              ? 30
+              : tier === "member"
+                ? 12
+                : 4;
 
-await pool.query(
-"insert into callers (phone_e164, tier, cycle_anchor_at, cycle_ends_at, cycle_seconds_used, cycle_sessions_used, cycle_sessions_cap) " +
-"values ($1, $2, now(), (now() + interval '1 month'), 0, 0, $3) " +
-"on conflict (phone_e164) do update set " +
-"tier = excluded.tier, " +
-"cycle_anchor_at = now(), " +
-"cycle_ends_at = (now() + interval '1 month'), " +
-"cycle_seconds_used = 0, " +
-"cycle_sessions_used = 0, " +
-"cycle_sessions_cap = $3",
-[phone, tier, newSessionsCap]
-);
-
-
-console.log(nowIso(), "Upgraded caller tier from checkout", {
-phone_e164: phone,
-tier: tier,
-});
-
-const customerId = session && session.customer ? String(session.customer) : "";
-const subscriptionId = session && session.subscription ? String(session.subscription) : "";
-
-if (customerId && subscriptionId) {
-try {
-await pool.query(
-"insert into billing_subscriptions (phone_e164, stripe_customer_id, stripe_subscription_id, stripe_status, created_at, updated_at) " +
-"values ($1, $2, $3, $4, now(), now()) " +
-"on conflict (phone_e164) do update set " +
-"stripe_customer_id = excluded.stripe_customer_id, " +
-"stripe_subscription_id = excluded.stripe_subscription_id, " +
-"stripe_status = excluded.stripe_status, " +
-"updated_at = now()",
-[phone, customerId, subscriptionId, "active"]
-);
-
-console.log(nowIso(), "Upserted billing_subscriptions from checkout", {
-  phone_e164: phone,
-  stripe_customer_id: customerId,
-  stripe_subscription_id: subscriptionId,
-  stripe_status: "active",
-});
+          await pool.query(
+            "insert into callers (phone_e164, tier, cycle_anchor_at, cycle_ends_at, cycle_seconds_used, cycle_sessions_used, cycle_sessions_cap) " +
+            "values ($1, $2, now(), (now() + interval '1 month'), 0, 0, $3) " +
+            "on conflict (phone_e164) do update set " +
+            "tier = excluded.tier, " +
+            "cycle_anchor_at = now(), " +
+            "cycle_ends_at = (now() + interval '1 month'), " +
+            "cycle_seconds_used = 0, " +
+            "cycle_sessions_used = 0, " +
+            "cycle_sessions_cap = $3",
+            [phone, tier, newSessionsCap]
+          );
 
 
-} catch (e) {
-console.log(nowIso(), "Failed to upsert billing_subscriptions:", e && e.message ? e.message : e);
-}
-} else {
-console.log(nowIso(), "checkout.session.completed missing customer or subscription id");
-}
+          console.log(nowIso(), "Upgraded caller tier from checkout", {
+            phone_e164: phone,
+            tier: tier,
+          });
 
-} catch (e) {
-console.log(nowIso(), "Failed to upgrade caller tier:", e && e.message ? e.message : e);
-}
-} else {
-console.log(nowIso(), "checkout.session.completed missing metadata or DB not configured");
-}
-}
+          const customerId = session && session.customer ? String(session.customer) : "";
+          const subscriptionId = session && session.subscription ? String(session.subscription) : "";
 
-if (event && (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated")) {
-const sub = event.data && event.data.object ? event.data.object : null;
+          if (customerId && subscriptionId) {
+            try {
+              await pool.query(
+                "insert into billing_subscriptions (phone_e164, stripe_customer_id, stripe_subscription_id, stripe_status, created_at, updated_at) " +
+                "values ($1, $2, $3, $4, now(), now()) " +
+                "on conflict (phone_e164) do update set " +
+                "stripe_customer_id = excluded.stripe_customer_id, " +
+                "stripe_subscription_id = excluded.stripe_subscription_id, " +
+                "stripe_status = excluded.stripe_status, " +
+                "updated_at = now()",
+                [phone, customerId, subscriptionId, "active"]
+              );
 
-const customerId = sub && sub.customer ? String(sub.customer) : "";
-const subscriptionId = sub && sub.id ? String(sub.id) : "";
-const status = sub && sub.status ? String(sub.status) : "";
-const cancelAtPeriodEnd = sub && typeof sub.cancel_at_period_end !== "undefined" ? !!sub.cancel_at_period_end : null;
+              console.log(nowIso(), "Upserted billing_subscriptions from checkout", {
+                phone_e164: phone,
+                stripe_customer_id: customerId,
+                stripe_subscription_id: subscriptionId,
+                stripe_status: "active",
+              });
 
-const periodEndSec = sub && sub.current_period_end ? parseInt(String(sub.current_period_end), 10) : null;
-const periodEndIso = periodEndSec && Number.isFinite(periodEndSec) ? new Date(periodEndSec * 1000).toISOString() : null;
 
-console.log(nowIso(), "subscription event details", {
-type: event.type,
-stripe_customer_id: customerId || null,
-stripe_subscription_id: subscriptionId || null,
-stripe_status: status || null,
-cancel_at_period_end: cancelAtPeriodEnd,
-current_period_end: periodEndIso,
-});
+            } catch (e) {
+              console.log(nowIso(), "Failed to upsert billing_subscriptions:", e && e.message ? e.message : e);
+            }
+          } else {
+            console.log(nowIso(), "checkout.session.completed missing customer or subscription id");
+          }
 
-if (pool && customerId) {
-try {
-await pool.query(
-"update billing_subscriptions set " +
-"stripe_subscription_id = coalesce($2, stripe_subscription_id), " +
-"stripe_status = coalesce($3, stripe_status), " +
-"cancel_at_period_end = $4, " +
-"current_period_end = $5, " +
-"updated_at = now() " +
-"where stripe_customer_id = $1",
-[customerId, subscriptionId || null, status || null, cancelAtPeriodEnd, periodEndIso]
-);
+        } catch (e) {
+          console.log(nowIso(), "Failed to upgrade caller tier:", e && e.message ? e.message : e);
+        }
+      } else {
+        console.log(nowIso(), "checkout.session.completed missing metadata or DB not configured");
+      }
+    }
 
-console.log(nowIso(), "Updated billing_subscriptions from subscription event", {
-stripe_customer_id: customerId,
-stripe_subscription_id: subscriptionId || null,
-stripe_status: status || null,
-cancel_at_period_end: cancelAtPeriodEnd,
-current_period_end: periodEndIso,
-});
-} catch (e) {
-console.log(nowIso(), "Failed to update billing_subscriptions from subscription event:", e && e.message ? e.message : e);
-}
-} else {
-console.log(nowIso(), "subscription event missing customer id or DB not configured");
-}
-}
+    if (event && (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated")) {
+      const sub = event.data && event.data.object ? event.data.object : null;
 
-if (event && event.type === "customer.subscription.deleted") {
-const sub = event.data && event.data.object ? event.data.object : null;
+      const customerId = sub && sub.customer ? String(sub.customer) : "";
+      const subscriptionId = sub && sub.id ? String(sub.id) : "";
+      const status = sub && sub.status ? String(sub.status) : "";
+      const cancelAtPeriodEnd = sub && typeof sub.cancel_at_period_end !== "undefined" ? !!sub.cancel_at_period_end : null;
 
-const customerId = sub && sub.customer ? String(sub.customer) : "";
-const subscriptionId = sub && sub.id ? String(sub.id) : "";
-const status = sub && sub.status ? String(sub.status) : "";
+      const periodEndSec = sub && sub.current_period_end ? parseInt(String(sub.current_period_end), 10) : null;
+      const periodEndIso = periodEndSec && Number.isFinite(periodEndSec) ? new Date(periodEndSec * 1000).toISOString() : null;
 
-const periodEndSec = sub && sub.current_period_end ? parseInt(String(sub.current_period_end), 10) : null;
-const periodEndIso = periodEndSec && Number.isFinite(periodEndSec) ? new Date(periodEndSec * 1000).toISOString() : null;
+      console.log(nowIso(), "subscription event details", {
+        type: event.type,
+        stripe_customer_id: customerId || null,
+        stripe_subscription_id: subscriptionId || null,
+        stripe_status: status || null,
+        cancel_at_period_end: cancelAtPeriodEnd,
+        current_period_end: periodEndIso,
+      });
 
-console.log(nowIso(), "customer.subscription.deleted details", {
-stripe_customer_id: customerId || null,
-stripe_subscription_id: subscriptionId || null,
-stripe_status: status || null,
-current_period_end: periodEndIso,
-});
+      if (pool && customerId) {
+        try {
+          await pool.query(
+            "update billing_subscriptions set " +
+            "stripe_subscription_id = coalesce($2, stripe_subscription_id), " +
+            "stripe_status = coalesce($3, stripe_status), " +
+            "cancel_at_period_end = $4, " +
+            "current_period_end = $5, " +
+            "updated_at = now() " +
+            "where stripe_customer_id = $1",
+            [customerId, subscriptionId || null, status || null, cancelAtPeriodEnd, periodEndIso]
+          );
 
-if (pool && customerId) {
-try {
-const r = await pool.query(
-"select phone_e164 from billing_subscriptions where stripe_customer_id = $1 limit 1",
-[customerId]
-);
+          console.log(nowIso(), "Updated billing_subscriptions from subscription event", {
+            stripe_customer_id: customerId,
+            stripe_subscription_id: subscriptionId || null,
+            stripe_status: status || null,
+            cancel_at_period_end: cancelAtPeriodEnd,
+            current_period_end: periodEndIso,
+          });
+        } catch (e) {
+          console.log(nowIso(), "Failed to update billing_subscriptions from subscription event:", e && e.message ? e.message : e);
+        }
+      } else {
+        console.log(nowIso(), "subscription event missing customer id or DB not configured");
+      }
+    }
 
-const phone = r && r.rows && r.rows[0] && r.rows[0].phone_e164 ? String(r.rows[0].phone_e164) : "";
+    if (event && event.type === "customer.subscription.deleted") {
+      const sub = event.data && event.data.object ? event.data.object : null;
 
-if (phone) {
-try {
-await pool.query(
-"update callers set tier = 'free' where phone_e164 = $1",
-[phone]
-);
+      const customerId = sub && sub.customer ? String(sub.customer) : "";
+      const subscriptionId = sub && sub.id ? String(sub.id) : "";
+      const status = sub && sub.status ? String(sub.status) : "";
 
-console.log(nowIso(), "Downgraded caller tier due to subscription.deleted", {
-phone_e164: phone,
-});
-} catch (e) {
-console.log(nowIso(), "Failed to downgrade caller tier on subscription.deleted:", e && e.message ? e.message : e);
-}
-} else {
-console.log(nowIso(), "customer.subscription.deleted: could not find phone for customer", { stripe_customer_id: customerId });
-}
+      const periodEndSec = sub && sub.current_period_end ? parseInt(String(sub.current_period_end), 10) : null;
+      const periodEndIso = periodEndSec && Number.isFinite(periodEndSec) ? new Date(periodEndSec * 1000).toISOString() : null;
 
-try {
-await pool.query(
-"update billing_subscriptions set " +
-"stripe_subscription_id = coalesce($2, stripe_subscription_id), " +
-"stripe_status = $3, " +
-"cancel_at_period_end = $4, " +
-"current_period_end = $5, " +
-"updated_at = now() " +
-"where stripe_customer_id = $1",
-[customerId, subscriptionId || null, (status || "canceled"), false, periodEndIso]
-);
+      console.log(nowIso(), "customer.subscription.deleted details", {
+        stripe_customer_id: customerId || null,
+        stripe_subscription_id: subscriptionId || null,
+        stripe_status: status || null,
+        current_period_end: periodEndIso,
+      });
 
-console.log(nowIso(), "Updated billing_subscriptions on subscription.deleted", {
-stripe_customer_id: customerId,
-stripe_subscription_id: subscriptionId || null,
-stripe_status: (status || "canceled"),
-cancel_at_period_end: false,
-current_period_end: periodEndIso,
-});
-} catch (e) {
-console.log(nowIso(), "Failed to update billing_subscriptions on subscription.deleted:", e && e.message ? e.message : e);
-}
+      if (pool && customerId) {
+        try {
+          const r = await pool.query(
+            "select phone_e164 from billing_subscriptions where stripe_customer_id = $1 limit 1",
+            [customerId]
+          );
 
-} catch (e) {
-console.log(nowIso(), "customer.subscription.deleted handler DB error:", e && e.message ? e.message : e);
-}
-} else {
-console.log(nowIso(), "customer.subscription.deleted missing customer id or DB not configured");
-}
-}
+          const phone = r && r.rows && r.rows[0] && r.rows[0].phone_e164 ? String(r.rows[0].phone_e164) : "";
 
-if (event && event.type === "invoice.payment_failed") {
-const inv = event.data && event.data.object ? event.data.object : null;
+          if (phone) {
+            try {
+              await pool.query(
+                "update callers set tier = 'free' where phone_e164 = $1",
+                [phone]
+              );
 
-const customerId = inv && inv.customer ? String(inv.customer) : "";
-const subscriptionId = inv && inv.subscription ? String(inv.subscription) : "";
-const status = inv && inv.status ? String(inv.status) : "";
+              console.log(nowIso(), "Downgraded caller tier due to subscription.deleted", {
+                phone_e164: phone,
+              });
+            } catch (e) {
+              console.log(nowIso(), "Failed to downgrade caller tier on subscription.deleted:", e && e.message ? e.message : e);
+            }
+          } else {
+            console.log(nowIso(), "customer.subscription.deleted: could not find phone for customer", { stripe_customer_id: customerId });
+          }
 
-console.log(nowIso(), "invoice.payment_failed details", {
-stripe_customer_id: customerId || null,
-stripe_subscription_id: subscriptionId || null,
-invoice_status: status || null,
-});
+          try {
+            await pool.query(
+              "update billing_subscriptions set " +
+              "stripe_subscription_id = coalesce($2, stripe_subscription_id), " +
+              "stripe_status = $3, " +
+              "cancel_at_period_end = $4, " +
+              "current_period_end = $5, " +
+              "updated_at = now() " +
+              "where stripe_customer_id = $1",
+              [customerId, subscriptionId || null, (status || "canceled"), false, periodEndIso]
+            );
 
-if (pool && customerId) {
-try {
-const r = await pool.query(
-"select phone_e164 from billing_subscriptions where stripe_customer_id = $1 limit 1",
-[customerId]
-);
+            console.log(nowIso(), "Updated billing_subscriptions on subscription.deleted", {
+              stripe_customer_id: customerId,
+              stripe_subscription_id: subscriptionId || null,
+              stripe_status: (status || "canceled"),
+              cancel_at_period_end: false,
+              current_period_end: periodEndIso,
+            });
+          } catch (e) {
+            console.log(nowIso(), "Failed to update billing_subscriptions on subscription.deleted:", e && e.message ? e.message : e);
+          }
 
-const phone = r && r.rows && r.rows[0] && r.rows[0].phone_e164 ? String(r.rows[0].phone_e164) : "";
+        } catch (e) {
+          console.log(nowIso(), "customer.subscription.deleted handler DB error:", e && e.message ? e.message : e);
+        }
+      } else {
+        console.log(nowIso(), "customer.subscription.deleted missing customer id or DB not configured");
+      }
+    }
 
-if (phone) {
-try {
-await pool.query(
-"update callers set tier = 'free' where phone_e164 = $1",
-[phone]
-);
+    if (event && event.type === "invoice.payment_failed") {
+      const inv = event.data && event.data.object ? event.data.object : null;
 
-console.log(nowIso(), "Downgraded caller tier due to payment_failed", {
-phone_e164: phone,
-});
-} catch (e) {
-console.log(nowIso(), "Failed to downgrade caller tier on payment_failed:", e && e.message ? e.message : e);
-}
-} else {
-console.log(nowIso(), "invoice.payment_failed: could not find phone for customer", { stripe_customer_id: customerId });
-}
+      const customerId = inv && inv.customer ? String(inv.customer) : "";
+      const subscriptionId = inv && inv.subscription ? String(inv.subscription) : "";
+      const status = inv && inv.status ? String(inv.status) : "";
 
-try {
-await pool.query(
-"update billing_subscriptions set " +
-"stripe_subscription_id = coalesce($2, stripe_subscription_id), " +
-"stripe_status = $3, " +
-"updated_at = now() " +
-"where stripe_customer_id = $1",
-[customerId, subscriptionId || null, "payment_failed"]
-);
+      console.log(nowIso(), "invoice.payment_failed details", {
+        stripe_customer_id: customerId || null,
+        stripe_subscription_id: subscriptionId || null,
+        invoice_status: status || null,
+      });
 
-console.log(nowIso(), "Updated billing_subscriptions on payment_failed", {
-stripe_customer_id: customerId,
-stripe_subscription_id: subscriptionId || null,
-stripe_status: "payment_failed",
-});
-} catch (e) {
-console.log(nowIso(), "Failed to update billing_subscriptions on payment_failed:", e && e.message ? e.message : e);
-}
+      if (pool && customerId) {
+        try {
+          const r = await pool.query(
+            "select phone_e164 from billing_subscriptions where stripe_customer_id = $1 limit 1",
+            [customerId]
+          );
 
-} catch (e) {
-console.log(nowIso(), "invoice.payment_failed handler DB error:", e && e.message ? e.message : e);
-}
-} else {
-console.log(nowIso(), "invoice.payment_failed missing customer id or DB not configured");
-}
-}
+          const phone = r && r.rows && r.rows[0] && r.rows[0].phone_e164 ? String(r.rows[0].phone_e164) : "";
 
-console.log(nowIso(), "stripe-webhook event received", {
-type: event.type,
-id: event.id,
-});
+          if (phone) {
+            try {
+              await pool.query(
+                "update callers set tier = 'free' where phone_e164 = $1",
+                [phone]
+              );
 
-res.status(200).json({ received: true });
+              console.log(nowIso(), "Downgraded caller tier due to payment_failed", {
+                phone_e164: phone,
+              });
+            } catch (e) {
+              console.log(nowIso(), "Failed to downgrade caller tier on payment_failed:", e && e.message ? e.message : e);
+            }
+          } else {
+            console.log(nowIso(), "invoice.payment_failed: could not find phone for customer", { stripe_customer_id: customerId });
+          }
 
-} catch (e) {
-console.log(nowIso(), "stripe-webhook signature verification failed:", e && e.message ? e.message : e);
-res.status(400).send("Webhook Error");
-}
+          try {
+            await pool.query(
+              "update billing_subscriptions set " +
+              "stripe_subscription_id = coalesce($2, stripe_subscription_id), " +
+              "stripe_status = $3, " +
+              "updated_at = now() " +
+              "where stripe_customer_id = $1",
+              [customerId, subscriptionId || null, "payment_failed"]
+            );
+
+            console.log(nowIso(), "Updated billing_subscriptions on payment_failed", {
+              stripe_customer_id: customerId,
+              stripe_subscription_id: subscriptionId || null,
+              stripe_status: "payment_failed",
+            });
+          } catch (e) {
+            console.log(nowIso(), "Failed to update billing_subscriptions on payment_failed:", e && e.message ? e.message : e);
+          }
+
+        } catch (e) {
+          console.log(nowIso(), "invoice.payment_failed handler DB error:", e && e.message ? e.message : e);
+        }
+      } else {
+        console.log(nowIso(), "invoice.payment_failed missing customer id or DB not configured");
+      }
+    }
+
+    console.log(nowIso(), "stripe-webhook event received", {
+      type: event.type,
+      id: event.id,
+    });
+
+    res.status(200).json({ received: true });
+
+  } catch (e) {
+    console.log(nowIso(), "stripe-webhook signature verification failed:", e && e.message ? e.message : e);
+    res.status(400).send("Webhook Error");
+  }
 });
 app.get("/stripe-health", (req, res) => {
-if (!stripe) {
-res.status(500).json({ ok: false, error: "Stripe not configured" });
-return;
-}
+  if (!stripe) {
+    res.status(500).json({ ok: false, error: "Stripe not configured" });
+    return;
+  }
 
-res.status(200).json({ ok: true });
+  res.status(200).json({ ok: true });
 });
 
 app.get("/subscribe", (req, res) => {
@@ -1699,7 +1699,7 @@ app.get("/subscribe/cancel", (req, res) => {
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
 
 app.post("/voice", async (req, res) => {
-    if (String(process.env.CALLREADY_UNAVAILABLE || "") === "1") {
+  if (String(process.env.CALLREADY_UNAVAILABLE || "") === "1") {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
@@ -1711,17 +1711,17 @@ app.post("/voice", async (req, res) => {
 
   try {
     const forceUnavailable =
-    req.query &&
-    String(req.query.force_unavailable || "") === "1";
+      req.query &&
+      String(req.query.force_unavailable || "") === "1";
 
     if (forceUnavailable) {
-    const VoiceResponse = twilio.twiml.VoiceResponse;
-    const vr = new VoiceResponse();
+      const VoiceResponse = twilio.twiml.VoiceResponse;
+      const vr = new VoiceResponse();
 
-    vr.redirect({ method: "POST" }, "/unavailable");
+      vr.redirect({ method: "POST" }, "/unavailable");
 
-    res.type("text/xml").send(vr.toString());
-    return;
+      res.type("text/xml").send(vr.toString());
+      return;
     }
     const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
     const from = req.body && req.body.From ? String(req.body.From) : "";
@@ -1773,90 +1773,90 @@ app.post("/voice", async (req, res) => {
 });
 
 app.post("/create-checkout", async (req, res) => {
-try {
-if (!stripe) {
-res.status(500).send("Stripe not configured.");
-return;
-}
+  try {
+    if (!stripe) {
+      res.status(500).send("Stripe not configured.");
+      return;
+    }
 
-if (!STRIPE_PRICE_MEMBER) {
-  res.status(500).send("Missing STRIPE_PRICE_MEMBER.");
-  return;
-}
+    if (!STRIPE_PRICE_MEMBER) {
+      res.status(500).send("Missing STRIPE_PRICE_MEMBER.");
+      return;
+    }
 
-if (!PUBLIC_BASE_URL) {
-  res.status(500).send("Missing PUBLIC_BASE_URL.");
-  return;
-}
+    if (!PUBLIC_BASE_URL) {
+      res.status(500).send("Missing PUBLIC_BASE_URL.");
+      return;
+    }
 
-const phoneRaw = req.body && req.body.phone ? String(req.body.phone) : "";
-const trimmed = phoneRaw.trim();
-const digitsOnly = trimmed.replace(/\D/g, "");
+    const phoneRaw = req.body && req.body.phone ? String(req.body.phone) : "";
+    const trimmed = phoneRaw.trim();
+    const digitsOnly = trimmed.replace(/\D/g, "");
 
-let phone = "";
-if (digitsOnly.length === 10) {
-  phone = "+1" + digitsOnly;
-} else if (digitsOnly.length === 11 && digitsOnly.startsWith("1")) {
-  phone = "+" + digitsOnly;
-} else {
-  phone = "";
-}
+    let phone = "";
+    if (digitsOnly.length === 10) {
+      phone = "+1" + digitsOnly;
+    } else if (digitsOnly.length === 11 && digitsOnly.startsWith("1")) {
+      phone = "+" + digitsOnly;
+    } else {
+      phone = "";
+    }
 
-if (!phone) {
-res.redirect(303, "/subscribe?error=phone");
-return;
-}
+    if (!phone) {
+      res.redirect(303, "/subscribe?error=phone");
+      return;
+    }
 
-const planRaw = req.body && req.body.plan ? String(req.body.plan) : "member";
-const plan = planRaw.trim().toLowerCase();
+    const planRaw = req.body && req.body.plan ? String(req.body.plan) : "member";
+    const plan = planRaw.trim().toLowerCase();
 
-let priceId = STRIPE_PRICE_MEMBER;
-if (plan === "power") {
-  if (!STRIPE_PRICE_POWER) {
-    res.status(500).send("Missing STRIPE_PRICE_POWER.");
-    return;
+    let priceId = STRIPE_PRICE_MEMBER;
+    if (plan === "power") {
+      if (!STRIPE_PRICE_POWER) {
+        res.status(500).send("Missing STRIPE_PRICE_POWER.");
+        return;
+      }
+      priceId = STRIPE_PRICE_POWER;
+    }
+
+    const base = String(PUBLIC_BASE_URL).replace(/\/+$/, "");
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: base + "/subscribe/success",
+      cancel_url: base + "/subscribe/cancel",
+      metadata: { practice_phone: phone, tier: plan },
+    });
+
+    if (!session || !session.url) {
+      res.status(500).send("Could not create checkout session.");
+      return;
+    }
+
+    res.redirect(303, session.url);
+
+
+  } catch (e) {
+    console.log(nowIso(), "create-checkout error:", e && e.message ? e.message : e);
+    res.status(500).send("Checkout error.");
   }
-  priceId = STRIPE_PRICE_POWER;
-}
-
-const base = String(PUBLIC_BASE_URL).replace(/\/+$/, "");
-
-const session = await stripe.checkout.sessions.create({
-  mode: "subscription",
-  line_items: [{ price: priceId, quantity: 1 }],
-  success_url: base + "/subscribe/success",
-  cancel_url: base + "/subscribe/cancel",
-  metadata: { practice_phone: phone, tier: plan },
-});
-
-if (!session || !session.url) {
-  res.status(500).send("Could not create checkout session.");
-  return;
-}
-
-res.redirect(303, session.url);
-
-
-} catch (e) {
-console.log(nowIso(), "create-checkout error:", e && e.message ? e.message : e);
-res.status(500).send("Checkout error.");
-}
 });
 
 // /end supports:
 // - retry=1 for the retry prompt
 // - skip_transition=1 to go straight to opt-in language (used when AI ends the call)
 app.post("/unavailable", async (req, res) => {
-try {
-const VoiceResponse = twilio.twiml.VoiceResponse;
-const vr = new VoiceResponse();
-vr.say(TWILIO_SERVICE_UNAVAILABLE);
-vr.hangup();
-res.type("text/xml").send(vr.toString());
-} catch (err) {
-console.error("Error building /unavailable TwiML:", err);
-res.status(500).send("Error");
-}
+  try {
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+    vr.say(TWILIO_SERVICE_UNAVAILABLE);
+    vr.hangup();
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("Error building /unavailable TwiML:", err);
+    res.status(500).send("Error");
+  }
 });
 app.post("/end", async (req, res) => {
   try {
@@ -1894,7 +1894,7 @@ app.post("/end", async (req, res) => {
           fireAndForgetCallEndLog(callSid, "completed_already_opted_in");
         }
 
-                if (!skipTransition && !hardEnd) {
+        if (!skipTransition && !hardEnd) {
           vr.say(TWILIO_END_TRANSITION);
         }
 
@@ -1905,7 +1905,7 @@ app.post("/end", async (req, res) => {
       }
     }
 
-        if (!isRetry && !skipTransition && !hardEnd) {
+    if (!isRetry && !skipTransition && !hardEnd) {
       vr.say(TWILIO_END_TRANSITION);
     }
 
@@ -1972,27 +1972,27 @@ app.post("/gather-result", async (req, res) => {
       if (pool && from) {
         await setCallerSmsOptInState(from, pressed1);
       }
-    } catch {}
+    } catch { }
 
     if (pressed1) {
-  try {
-    const smsResult = await sendSms(from, OPTIN_CONFIRM_SMS, "optin_confirm");
-    console.log(nowIso(), "Opt-in confirmation SMS result", {
-      from: from,
-      ok: !!(smsResult && smsResult.ok),
-      sid: smsResult && smsResult.sid ? smsResult.sid : null,
-      error: smsResult && smsResult.error ? smsResult.error : null
-    });
-  } catch (e) {
-    console.log(nowIso(), "Opt-in confirmation SMS threw", e && e.message ? e.message : e);
-  }
+      try {
+        const smsResult = await sendSms(from, OPTIN_CONFIRM_SMS, "optin_confirm");
+        console.log(nowIso(), "Opt-in confirmation SMS result", {
+          from: from,
+          ok: !!(smsResult && smsResult.ok),
+          sid: smsResult && smsResult.sid ? smsResult.sid : null,
+          error: smsResult && smsResult.error ? smsResult.error : null
+        });
+      } catch (e) {
+        console.log(nowIso(), "Opt-in confirmation SMS threw", e && e.message ? e.message : e);
+      }
 
-  vr.say(IN_CALL_CONFIRM_YES);
-  vr.hangup();
-} else {
-  vr.say(IN_CALL_CONFIRM_NO);
-  vr.hangup();
-}
+      vr.say(IN_CALL_CONFIRM_YES);
+      vr.hangup();
+    } else {
+      vr.say(IN_CALL_CONFIRM_NO);
+      vr.hangup();
+    }
 
 
     res.type("text/xml").send(vr.toString());
@@ -2066,7 +2066,7 @@ wss.on("connection", (twilioWs) => {
     callState.phase = String(nextPhase || "").trim() || callState.phase;
     try {
       console.log(nowIso(), "callState.phase ->", callState.phase, "why:", why || "");
-    } catch (e) {}
+    } catch (e) { }
   }
 
   function setCallType(nextCallType, why) {
@@ -2076,7 +2076,7 @@ wss.on("connection", (twilioWs) => {
       callState.role = (v === "outgoing") ? "answerer" : "caller";
       try {
         console.log(nowIso(), "callState.callType ->", callState.callType, "role ->", callState.role, "why:", why || "");
-      } catch (e) {}
+      } catch (e) { }
     }
   }
 
@@ -2086,7 +2086,7 @@ wss.on("connection", (twilioWs) => {
       callState.scenarioTag = v;
       try {
         console.log(nowIso(), "callState.scenarioTag ->", callState.scenarioTag, "why:", why || "");
-      } catch (e) {}
+      } catch (e) { }
     }
   }
 
@@ -2103,7 +2103,7 @@ wss.on("connection", (twilioWs) => {
 
   console.log(nowIso(), "Twilio WS connected", "version:", CALLREADY_VERSION);
 
-    // Realtime usage logging for cost measurement
+  // Realtime usage logging for cost measurement
   const usageLog = {
     callSid: null,
     streamSid: null,
@@ -2171,64 +2171,64 @@ wss.on("connection", (twilioWs) => {
     }
   }
 
-function estimateRealtimeCostUSD(modelName, totals) {
-  // Pricing reference:
-  // https://openai.com/api/pricing/
-  //
-  // We estimate using non-cached token rates.
-  // Audio tokens:
-  // - gpt-realtime-mini and gpt-4o-mini-realtime-preview: in $10 / 1M, out $20 / 1M
-  // - gpt-realtime: in $32 / 1M, out $64 / 1M
-  // - gpt-4o-realtime-preview: in $40 / 1M, out $80 / 1M
-  //
-  // Text tokens:
-  // - gpt-realtime-mini and gpt-4o-mini-realtime-preview: in $0.60 / 1M, out $2.40 / 1M
-  // - gpt-realtime: in $4 / 1M, out $16 / 1M
-  // - gpt-4o-realtime-preview: in $5 / 1M, out $20 / 1M
+  function estimateRealtimeCostUSD(modelName, totals) {
+    // Pricing reference:
+    // https://openai.com/api/pricing/
+    //
+    // We estimate using non-cached token rates.
+    // Audio tokens:
+    // - gpt-realtime-mini and gpt-4o-mini-realtime-preview: in $10 / 1M, out $20 / 1M
+    // - gpt-realtime: in $32 / 1M, out $64 / 1M
+    // - gpt-4o-realtime-preview: in $40 / 1M, out $80 / 1M
+    //
+    // Text tokens:
+    // - gpt-realtime-mini and gpt-4o-mini-realtime-preview: in $0.60 / 1M, out $2.40 / 1M
+    // - gpt-realtime: in $4 / 1M, out $16 / 1M
+    // - gpt-4o-realtime-preview: in $5 / 1M, out $20 / 1M
 
-  const m = String(modelName || "").toLowerCase().trim();
+    const m = String(modelName || "").toLowerCase().trim();
 
-  let inAudioPerM = 0;
-  let outAudioPerM = 0;
-  let inTextPerM = 0;
-  let outTextPerM = 0;
+    let inAudioPerM = 0;
+    let outAudioPerM = 0;
+    let inTextPerM = 0;
+    let outTextPerM = 0;
 
-  if (m === "gpt-4o-realtime-preview") {
-    inAudioPerM = 40.0;
-    outAudioPerM = 80.0;
-    inTextPerM = 5.0;
-    outTextPerM = 20.0;
-  } else if (m === "gpt-realtime") {
-    inAudioPerM = 32.0;
-    outAudioPerM = 64.0;
-    inTextPerM = 4.0;
-    outTextPerM = 16.0;
-  } else {
-    // Default bucket covers:
-    // - gpt-realtime-mini
-    // - gpt-4o-mini-realtime-preview
-    inAudioPerM = 10.0;
-    outAudioPerM = 20.0;
-    inTextPerM = 0.60;
-    outTextPerM = 2.40;
+    if (m === "gpt-4o-realtime-preview") {
+      inAudioPerM = 40.0;
+      outAudioPerM = 80.0;
+      inTextPerM = 5.0;
+      outTextPerM = 20.0;
+    } else if (m === "gpt-realtime") {
+      inAudioPerM = 32.0;
+      outAudioPerM = 64.0;
+      inTextPerM = 4.0;
+      outTextPerM = 16.0;
+    } else {
+      // Default bucket covers:
+      // - gpt-realtime-mini
+      // - gpt-4o-mini-realtime-preview
+      inAudioPerM = 10.0;
+      outAudioPerM = 20.0;
+      inTextPerM = 0.60;
+      outTextPerM = 2.40;
+    }
+
+    const t = totals || {};
+
+    const inAudioTokens = Number(t.input_audio_tokens || 0);
+    const outAudioTokens = Number(t.output_audio_tokens || 0);
+    const inTextTokens = Number(t.input_text_tokens || 0);
+    const outTextTokens = Number(t.output_text_tokens || 0);
+
+    const inAudio = (inAudioTokens / 1000000.0) * inAudioPerM;
+    const outAudio = (outAudioTokens / 1000000.0) * outAudioPerM;
+    const inText = (inTextTokens / 1000000.0) * inTextPerM;
+    const outText = (outTextTokens / 1000000.0) * outTextPerM;
+
+    return inAudio + outAudio + inText + outText;
   }
 
-  const t = totals || {};
-
-  const inAudioTokens = Number(t.input_audio_tokens || 0);
-  const outAudioTokens = Number(t.output_audio_tokens || 0);
-  const inTextTokens = Number(t.input_text_tokens || 0);
-  const outTextTokens = Number(t.output_text_tokens || 0);
-
-  const inAudio = (inAudioTokens / 1000000.0) * inAudioPerM;
-  const outAudio = (outAudioTokens / 1000000.0) * outAudioPerM;
-  const inText = (inTextTokens / 1000000.0) * inTextPerM;
-  const outText = (outTextTokens / 1000000.0) * outTextPerM;
-
-  return inAudio + outAudio + inText + outText;
-}
-
-    function finalizeRealtimeUsageSummary(reason) {
+  function finalizeRealtimeUsageSummary(reason) {
     if (usageLog.endedAtMs) return null;
 
     usageLog.endedAtMs = Date.now();
@@ -2271,9 +2271,9 @@ function estimateRealtimeCostUSD(modelName, totals) {
     try {
       const sid = s.callSid || callSid || null;
       if (sid) {
-        logAiUsageToDb(sid, s).catch(() => {});
+        logAiUsageToDb(sid, s).catch(() => { });
       }
-    } catch {}
+    } catch { }
 
     return s;
   }
@@ -2288,9 +2288,9 @@ function estimateRealtimeCostUSD(modelName, totals) {
     try {
       const sid = s.callSid || callSid || null;
       if (sid) {
-        logAiUsageToDb(sid, s).catch(() => {});
+        logAiUsageToDb(sid, s).catch(() => { });
       }
-    } catch {}
+    } catch { }
 
     return s;
   }
@@ -2301,45 +2301,45 @@ function estimateRealtimeCostUSD(modelName, totals) {
     console.log(nowIso(), "Closing:", reason);
     try {
       finalizeRealtimeUsageSummary(String(reason || "closeAll"));
-    } catch {}
+    } catch { }
 
 
     try {
       if (sessionTimer) clearTimeout(sessionTimer);
-    } catch {}
+    } catch { }
 
     try {
       if (liveThresholdState) clearLiveSessionThresholdTimers(liveThresholdState);
-    } catch {}
+    } catch { }
     liveThresholdState = null;
-    
+
     try {
       if (endFallbackTimer) clearTimeout(endFallbackTimer);
-    } catch {}
+    } catch { }
     endFallbackTimer = null;
 
 
     try {
       if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
-    } catch {}
+    } catch { }
 
     try {
       if (openerRetryTimer) clearTimeout(openerRetryTimer);
-    } catch {}
+    } catch { }
 
     try {
       if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
-    } catch {}
+    } catch { }
     try {
       if (twilioWs && twilioWs.readyState === WebSocket.OPEN) twilioWs.close();
-    } catch {}
+    } catch { }
   }
 
   function closeOpenAIOnly(reason) {
     try {
       console.log(nowIso(), "Closing OpenAI only:", reason);
       if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
-    } catch {}
+    } catch { }
     openaiReady = false;
   }
 
@@ -2360,7 +2360,7 @@ function estimateRealtimeCostUSD(modelName, totals) {
     try {
       console.log(nowIso(), "Cancelling response due to:", reason);
       openaiSend({ type: "response.cancel" });
-    } catch {}
+    } catch { }
   }
 
   function formatMinutesApprox(seconds) {
@@ -2369,98 +2369,98 @@ function estimateRealtimeCostUSD(modelName, totals) {
     return String(m);
   }
 
-function buildDynamicOpenerSpeech() {
-  const base =
-    "Hi, this is CallReady dot live. " +
-    "We can practice a phone call together, no pressure. " +
-    "If you want a quick prompt, just say help me. " +
-    "When you're ready, we can start. ";
+  function buildDynamicOpenerSpeech() {
+    const base =
+      "Hi, this is CallReady dot live. " +
+      "We can practice a phone call together, no pressure. " +
+      "If you want a quick prompt, just say help me. " +
+      "When you're ready, we can start. ";
 
-  if (!callerRuntime) {
-    return base;
-  }
+    if (!callerRuntime) {
+      return base;
+    }
 
-  const totalCalls = callerRuntime.totalCalls || 1;
-  const tier = String(callerRuntime.tier || "free");
-  const remainingMinutes = formatMinutesApprox(callerRuntime.remainingSeconds);
-  const capMinutes = formatMinutesApprox(perCallCapSeconds);
+    const totalCalls = callerRuntime.totalCalls || 1;
+    const tier = String(callerRuntime.tier || "free");
+    const remainingMinutes = formatMinutesApprox(callerRuntime.remainingSeconds);
+    const capMinutes = formatMinutesApprox(perCallCapSeconds);
 
-  if (totalCalls <= 1) {
-  if (String(tier).toLowerCase() === "free") {
-    return base + "It looks like this is your first time here, you're on the free membership connected to this number. ";
+    if (totalCalls <= 1) {
+      if (String(tier).toLowerCase() === "free") {
+        return base + "It looks like this is your first time here, you're on the free membership connected to this number. ";
+      }
+
+      return (
+        "Welcome to CallReady dot live, a place to practice phone calls until they feel familiar. " +
+        "Your free membership is active for this number. " +
+        "When you're ready, we can start."
+      );
+    }
+
+
+    if (String(tier).toLowerCase() === "free") {
+      return (
+        "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. " +
+        "You have " +
+        String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
+        " practice sessions left this month on the free membership. " +
+        "If you want more sessions, you can check memberships at CallReady dot live. "
+      );
+
     }
 
     return (
-      "Welcome to CallReady dot live, a place to practice phone calls until they feel familiar. " +
-      "Your free membership is active for this number. " +
-      "When you're ready, we can start."
+      "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. " +
+      "You have " +
+      String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
+      " practice sessions left this month. "
     );
-  }
-
-
-  if (String(tier).toLowerCase() === "free") {
-  return (
-    "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. " +
-    "You have " +
-    String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
-    " practice sessions left this month on the free membership. " +
-    "If you want more sessions, you can check memberships at CallReady dot live. "
-  );
 
   }
 
-  return (
-    "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. " +
-    "You have " +
-    String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
-    " practice sessions left this month. "
-  );
+  function buildRoleplayStartInstructions() {
+    if (!callState.callType) {
+      return "Ask one short question to clarify whether this is an incoming or outgoing call.";
+    }
 
-}
+    if (callState.callType === "outgoing") {
+      return (
+        "We are now entering roleplay.\n" +
+        "This is an OUTGOING call.\n" +
+        "You are the ANSWERER.\n" +
+        "Follow the ring protocol exactly.\n" +
+        "Produce one continuous spoken response with two parts:\n" +
+        "Part 1: say exactly: Ring ring.\n" +
+        "Part 2: immediately continue as the ANSWERER with a realistic greeting.\n" +
+        "Do not wait between Part 1 and Part 2.\n" +
+        "After your greeting, ask one short, natural question.\n"
+      );
+    }
 
-function buildRoleplayStartInstructions() {
-  if (!callState.callType) {
-    return "Ask one short question to clarify whether this is an incoming or outgoing call.";
+    if (callState.callType === "incoming") {
+      return (
+        "We are now entering roleplay.\n" +
+        "This is an INCOMING call.\n" +
+        "You are the CALLER.\n" +
+        "First say exactly: Go ahead and say hello to start the call.\n" +
+        "Then stop speaking completely and wait.\n"
+      );
+    }
+
+    return "Begin roleplay naturally.";
   }
-
-  if (callState.callType === "outgoing") {
-    return (
-      "We are now entering roleplay.\n" +
-      "This is an OUTGOING call.\n" +
-      "You are the ANSWERER.\n" +
-      "Follow the ring protocol exactly.\n" +
-      "Produce one continuous spoken response with two parts:\n" +
-      "Part 1: say exactly: Ring ring.\n" +
-      "Part 2: immediately continue as the ANSWERER with a realistic greeting.\n" +
-      "Do not wait between Part 1 and Part 2.\n" +
-      "After your greeting, ask one short, natural question.\n"
-    );
-  }
-
-  if (callState.callType === "incoming") {
-    return (
-      "We are now entering roleplay.\n" +
-      "This is an INCOMING call.\n" +
-      "You are the CALLER.\n" +
-      "First say exactly: Go ahead and say hello to start the call.\n" +
-      "Then stop speaking completely and wait.\n"
-    );
-  }
-
-  return "Begin roleplay naturally.";
-}
 
   function sendOpenerOnce(label) {
     console.log(nowIso(), "Sending opener", label ? "(" + label + ")" : "");
     setPhase("opener", "sendOpenerOnce");
     const openerSpeech = buildDynamicOpenerSpeech();
     if (openerNoAudioTimer) {
-clearTimeout(openerNoAudioTimer);
-}
-openerNoAudioTimer = setTimeout(() => {
-console.log(nowIso(), "No opener audio received, redirecting to /unavailable");
-redirectCallToUnavailable("opener_no_audio");
-}, 3000);
+      clearTimeout(openerNoAudioTimer);
+    }
+    openerNoAudioTimer = setTimeout(() => {
+      console.log(nowIso(), "No opener audio received, redirecting to /unavailable");
+      redirectCallToUnavailable("opener_no_audio");
+    }, 3000);
 
     openaiSend({
       type: "response.create",
@@ -2470,25 +2470,25 @@ redirectCallToUnavailable("opener_no_audio");
       },
     });
   }
-    function sendScenarioStartOnce(label) {
-      console.log(nowIso(),"Asking scenario start question",label ? "(" + label + ")" : "");
-      setPhase("choose_call_type", "sendScenarioStartOnce");
-      awaitingCallTypeChoice = true;
-      lockedCallType = null;
-      callTypeCaptureInFlight = false;
+  function sendScenarioStartOnce(label) {
+    console.log(nowIso(), "Asking scenario start question", label ? "(" + label + ")" : "");
+    setPhase("choose_call_type", "sendScenarioStartOnce");
+    awaitingCallTypeChoice = true;
+    lockedCallType = null;
+    callTypeCaptureInFlight = false;
 
-      openaiSend({
+    openaiSend({
       type: "response.create",
       response: {
-      modalities: ["audio", "text"],
-      instructions:
-      "Say nothing before the question.\n" +
-      "Do not say okay, sure, of course, or any other lead-in.\n" +
-      "Ask exactly one question and nothing else:\n" +
-      "Do you want to practice making a call, or answering a call?",
+        modalities: ["audio", "text"],
+        instructions:
+          "Say nothing before the question.\n" +
+          "Do not say okay, sure, of course, or any other lead-in.\n" +
+          "Ask exactly one question and nothing else:\n" +
+          "Do you want to practice making a call, or answering a call?",
       },
-      });
-      }
+    });
+  }
 
   function armOpenerRetryTimer() {
     if (openerRetryTimer) return;
@@ -2503,7 +2503,7 @@ redirectCallToUnavailable("opener_no_audio");
         console.log(nowIso(), "Opener retry waiting, OpenAI response still active");
         try {
           openerRetryTimer = null;
-        } catch {}
+        } catch { }
         armOpenerRetryTimer();
         return;
       }
@@ -2554,13 +2554,13 @@ redirectCallToUnavailable("opener_no_audio");
       response: {
         modalities: ["text"],
         instructions:
-        "Output exactly one line and nothing else.\n" +
-        "The line must start with SCENARIO_TAG: followed by one short snake_case tag.\n" +
-        "Example: SCENARIO_TAG: pharmacy_refill_outgoing\n" +
-        "If you are unsure, output exactly: SCENARIO_TAG: unknown\n" +
-        "Do not output JSON.\n" +
-        "Do not include quotes.\n" +
-        "Do not include any extra words before or after the line.",
+          "Output exactly one line and nothing else.\n" +
+          "The line must start with SCENARIO_TAG: followed by one short snake_case tag.\n" +
+          "Example: SCENARIO_TAG: pharmacy_refill_outgoing\n" +
+          "If you are unsure, output exactly: SCENARIO_TAG: unknown\n" +
+          "Do not output JSON.\n" +
+          "Do not include quotes.\n" +
+          "Do not include any extra words before or after the line.",
       },
     });
 
@@ -2568,83 +2568,83 @@ redirectCallToUnavailable("opener_no_audio");
     scenarioTagCaptureInFlight = false;
   }
 
-    function clearEndFallbackTimer() {
-      try {
-        if (endFallbackTimer) clearTimeout(endFallbackTimer);
-      } catch {}
-      endFallbackTimer = null;
+  function clearEndFallbackTimer() {
+    try {
+      if (endFallbackTimer) clearTimeout(endFallbackTimer);
+    } catch { }
+    endFallbackTimer = null;
+  }
+
+  async function hardHangupViaTwilio(reason) {
+    if (!callSid) return;
+    if (!hasTwilioRest()) return;
+
+    try {
+      const client = twilioClient();
+      console.log(nowIso(), "Hard hangup via Twilio REST", callSid, "reason:", reason);
+      await client.calls(callSid).update({ status: "completed" });
+    } catch (e) {
+      console.log(nowIso(), "Hard hangup failed:", e && e.message ? e.message : e);
     }
+  }
 
-    async function hardHangupViaTwilio(reason) {
-      if (!callSid) return;
-      if (!hasTwilioRest()) return;
+  async function redirectToEndWithRetry(reason, opts) {
+    const maxAttempts = 3;
 
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
-        const client = twilioClient();
-        console.log(nowIso(), "Hard hangup via Twilio REST", callSid, "reason:", reason);
-        await client.calls(callSid).update({ status: "completed" });
+        await redirectCallToEnd(reason, opts);
+        return true;
       } catch (e) {
-        console.log(nowIso(), "Hard hangup failed:", e && e.message ? e.message : e);
-      }
-    }
+        console.log(nowIso(), "Redirect to /end attempt failed", { attempt, reason });
 
-    async function redirectToEndWithRetry(reason, opts) {
-      const maxAttempts = 3;
-
-      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
-          await redirectCallToEnd(reason, opts);
-          return true;
-        } catch (e) {
-          console.log(nowIso(), "Redirect to /end attempt failed", { attempt, reason });
-
-          try {
-            await new Promise((r) => setTimeout(r, 250 * attempt));
-          } catch {}
-        }
-      }
-
-      return false;
-    }
-
-    async function requestEnd(reason, opts) {
-      if (endingRequested) return;
-      endingRequested = true;
-
-      console.log(nowIso(), "Ending requested:", reason);
-
-      suppressCallerAudioToOpenAI = true;
-
-      try {
-        cancelOpenAIResponseIfAnyOnce("ending");
-      } catch {}
-
-      try {
-        openaiSend({ type: "input_audio_buffer.clear" });
-      } catch {}
-
-      try {
-        openaiSend({ type: "session.update", session: { turn_detection: null } });
-      } catch {}
-
-      clearEndFallbackTimer();
-      endFallbackTimer = setTimeout(() => {
-        (async () => {
-          if (endRedirectRequested) return;
-
-          console.log(nowIso(), "End fallback timer fired, forcing hangup");
-          await hardHangupViaTwilio("end_fallback_timer");
-          closeAll("End fallback hangup");
-        })().catch(() => {});
-      }, 4000);
-
-      const ok = await redirectToEndWithRetry(reason, opts);
-
-      if (!ok && !endRedirectRequested) {
-        await hardHangupViaTwilio("redirect_failed");
-        closeAll("Redirect failed, hung up");
+          await new Promise((r) => setTimeout(r, 250 * attempt));
+        } catch { }
       }
     }
+
+    return false;
+  }
+
+  async function requestEnd(reason, opts) {
+    if (endingRequested) return;
+    endingRequested = true;
+
+    console.log(nowIso(), "Ending requested:", reason);
+
+    suppressCallerAudioToOpenAI = true;
+
+    try {
+      cancelOpenAIResponseIfAnyOnce("ending");
+    } catch { }
+
+    try {
+      openaiSend({ type: "input_audio_buffer.clear" });
+    } catch { }
+
+    try {
+      openaiSend({ type: "session.update", session: { turn_detection: null } });
+    } catch { }
+
+    clearEndFallbackTimer();
+    endFallbackTimer = setTimeout(() => {
+      (async () => {
+        if (endRedirectRequested) return;
+
+        console.log(nowIso(), "End fallback timer fired, forcing hangup");
+        await hardHangupViaTwilio("end_fallback_timer");
+        closeAll("End fallback hangup");
+      })().catch(() => { });
+    }, 4000);
+
+    const ok = await redirectToEndWithRetry(reason, opts);
+
+    if (!ok && !endRedirectRequested) {
+      await hardHangupViaTwilio("redirect_failed");
+      closeAll("Redirect failed, hung up");
+    }
+  }
 
 
   async function redirectCallToEnd(reason, opts) {
@@ -2699,47 +2699,47 @@ redirectCallToUnavailable("opener_no_audio");
       closeAll("Redirect to /end failed");
     }
   }
-async function redirectCallToUnavailable(reason) {
-if (endRedirectRequested) return;
-endRedirectRequested = true;
+  async function redirectCallToUnavailable(reason) {
+    if (endRedirectRequested) return;
+    endRedirectRequested = true;
 
-if (!callSid) {
-console.log(nowIso(), "Cannot redirect to /unavailable, missing callSid", reason);
-closeAll("Missing callSid for unavailable redirect");
-return;
-}
+    if (!callSid) {
+      console.log(nowIso(), "Cannot redirect to /unavailable, missing callSid", reason);
+      closeAll("Missing callSid for unavailable redirect");
+      return;
+    }
 
-if (!hasTwilioRest()) {
-console.log(nowIso(), "Cannot redirect to /unavailable, missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN", reason);
-closeAll("Missing Twilio REST creds for unavailable redirect");
-return;
-}
+    if (!hasTwilioRest()) {
+      console.log(nowIso(), "Cannot redirect to /unavailable, missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN", reason);
+      closeAll("Missing Twilio REST creds for unavailable redirect");
+      return;
+    }
 
-if (!PUBLIC_BASE_URL) {
-console.log(nowIso(), "Cannot redirect to /unavailable, missing PUBLIC_BASE_URL", reason);
-closeAll("Missing PUBLIC_BASE_URL for unavailable redirect");
-return;
-}
+    if (!PUBLIC_BASE_URL) {
+      console.log(nowIso(), "Cannot redirect to /unavailable, missing PUBLIC_BASE_URL", reason);
+      closeAll("Missing PUBLIC_BASE_URL for unavailable redirect");
+      return;
+    }
 
-try {
-const client = twilioClient();
-const base = PUBLIC_BASE_URL.replace(/\/+$/, "");
-const url = base + "/unavailable";
+    try {
+      const client = twilioClient();
+      const base = PUBLIC_BASE_URL.replace(/\/+$/, "");
+      const url = base + "/unavailable";
 
-console.log(nowIso(), "Redirecting call to /unavailable now", callSid, "reason:", reason);
+      console.log(nowIso(), "Redirecting call to /unavailable now", callSid, "reason:", reason);
 
-await client.calls(callSid).update({ url: url, method: "POST" });
+      await client.calls(callSid).update({ url: url, method: "POST" });
 
-console.log(nowIso(), "Redirected call to /unavailable via Twilio REST", callSid);
+      console.log(nowIso(), "Redirected call to /unavailable via Twilio REST", callSid);
 
-closeOpenAIOnly("Redirected to /unavailable");
+      closeOpenAIOnly("Redirected to /unavailable");
 
-} catch (err) {
-console.log(nowIso(), "Twilio REST redirect to /unavailable error:", err && err.message ? err.message : err);
-closeAll("Redirect to /unavailable failed");
-}
-}
-   function maybeStartSessionTimer() {
+    } catch (err) {
+      console.log(nowIso(), "Twilio REST redirect to /unavailable error:", err && err.message ? err.message : err);
+      closeAll("Redirect to /unavailable failed");
+    }
+  }
+  function maybeStartSessionTimer() {
     return;
   }
 
@@ -2777,7 +2777,7 @@ closeAll("Redirect to /unavailable failed");
     if (String(text).toUpperCase().includes(AI_END_CALL_TRIGGER)) return true;
 
     return false;
-    }
+  }
 
   function buildReturnCallerInstructions(ctx) {
     if (!ctx || !ctx.scenario_tag) return "";
@@ -2824,132 +2824,132 @@ closeAll("Redirect to /unavailable failed");
           modalities: ["audio", "text"],
           input_audio_transcription: { model: "whisper-1" },
           instructions:
-"You are CallReady. You help people practice phone calls in a calm, supportive way when real calls feel overwhelming.\n" +
-"The practice should feel realistic, including awkward moments and unexpected questions.\n" +
-"\n" +
-"TOP PRIORITIES. These override all other rules, including speaking style:\n" +
-"1) Stay in your ROLE. Do not switch roles mid-scenario.\n" +
-"2) Follow the RING PROTOCOL section exactly. \n" +
-"3) Never explain, announce, describe, or preview the ring protocol. When roleplay begins, perform it immediately. \n" +
-"4) When told to wait, stop speaking completely.\n" +
-"\n" +
-"DEFINITIONS:\n" +
-"HUMAN: the person using CallReady on the phone.\n" +
-"AI: you, CallReady.\n" +
-"CALLER: initiates the call and drives the purpose.\n" +
-"ANSWERER: answers and responds.\n" +
-"INCOMING CALL: HUMAN is ANSWERER, AI is CALLER.\n" +
-"OUTGOING CALL: HUMAN is CALLER, AI is ANSWERER.\n" +
-"ROLEPLAY MODE: you speak as the other person in the scenario.\n" +
-"COACHING MODE: you speak as CallReady to help the HUMAN.\n" +
-"SCENARIO: the real-world reason for the call.\n" +
-"GOAL: the specific outcome needed for the scenario to be complete.\n" +
-"\n" +
-"PHASE RULES:\n" +
-"phase=choose_call_type: you are asking whether HUMAN wants to practice making a call or answering a call.\n" +
-"phase=choose_scenario: you are clarifying what scenario and goal to practice.\n" +
-"phase=pre_ring: final step before roleplay starts.\n" +
-"phase=ring_wait: you are waiting silently until HUMAN speaks.\n" +
-"phase=roleplay: you are acting as CALLER or ANSWERER in the scenario.\n" +
-"phase=coaching: you are giving brief help as CallReady for one response only.\n" +
-"phase=wrap: the scenario goal is complete and you are wrapping up.\n" +
-"phase=ending: the HUMAN wants to end the call.\n" +
-"\n" +
-"ROLE LOCK RULE:\n" +
-"Once a scenario enters phase=roleplay, your role is locked.\n" +
-"If call_type=incoming, role=caller.\n" +
-"If call_type=outgoing, role=answerer.\n" +
-"The call_type is already determined before roleplay begins. Do not reinterpret the call based on greetings, silence, or conversation flow. \n" +
-"You may briefly switch to phase=coaching for one response only when HUMAN asks for help, then immediately return to phase=roleplay with the same role.\n" +
-"If you are genuinely unsure of call_type or role, ask ONE short question to confirm, then continue.\n" +
-"\n" +
-"SCENARIO SWITCH OVERRIDE (HUMAN CONTROLLED):\n" +
-"The HUMAN is allowed to switch to a different scenario or different call type at any time.\n" +
-"Only the HUMAN can trigger this.\n" +
-"If the HUMAN says any of the following (or clear equivalents), immediately stop roleplay and switch phases:\n" +
-"switch scenario, new scenario, different scenario, change scenario, start over, restart, switch roles, change roles, different kind of call, different call, practice something else\n" +
-"Do not continue the current scenario after this request.\n" +
-"Do not ask follow-up questions while still in roleplay.\n" +
-"Immediately exit roleplay and do one of the following:\n" +
-"- If the HUMAN clearly wants a new call type (incoming vs outgoing), set phase=choose_call_type and ask exactly: Do you want to practice making a call, or answering a call?\n" +
-"- Otherwise, set phase=choose_scenario and ask exactly one question: What scenario do you want to practice next?\n" +
-"If the HUMAN request is ambiguous, ask exactly one short question to confirm which they want (new scenario, switch call type, or end the call), then continue.\n" +
-"\n" +
-"RING PROTOCOL. This must be followed exactly.\n" +
-"A) OUTGOING CALL START (HUMAN makes a call, AI answers).\n" +
-"Only when roleplay begins for an OUTGOING CALL, produce one continuous spoken response with two parts:\n" +
-"Part 1: say exactly: Ring ring.\n" +
-"Part 2: immediately continue as the ANSWERER with a realistic greeting for the scenario.\n" +
-"Do not wait for HUMAN between Part 1 and Part 2.\n" +
-"Do not ask a question before you speak as the ANSWERER.\n" +
-"After your greeting, you may ask one short question that an answerer would naturally ask.\n" +
-"\n" +
-"B) INCOMING CALL START (HUMAN answers, AI is calling).\n" +
-"First, only when AI is CALLER and HUMAN is ANSWERER, say exactly: Go ahead and say hello to start the call.\n" +
-"Then stop speaking completely and wait.\n" +
-"During phase=ring_wait, wait=yes. Do not speak again until HUMAN says anything.\n" +
-"When HUMAN speaks, immediately begin roleplay as the CALLER and state the purpose of the call yourself.\n" +
-"Do not ask HUMAN what the purpose is.\n" +
-"\n" +
-"WAITING RULE:\n" +
-"If wait=yes, you must not add any extra words. No check-ins. No commentary. Silence.\n" +
-"If you need to reprompt because of long silence, you may do ONE short check-in question, then wait again.\n" +
-"\n" +
-"CALL FLOW:\n" +
-"At the start of a new scenario, ask exactly one question to determine call type:\n" +
-"Do you want to practice making a call, or answering a call?\n" +
-"Then ask whether HUMAN has a scenario in mind or wants you to pick.\n" +
-"If HUMAN wants you to pick, choose a common, realistic, non-emergency scenario.\n" +
-"Clarify the scenario and the goal in a simple way.\n" +
-"Then begin roleplay using the correct ring protocol.\n" +
-"\n" +
-"COACHING RULES:\n" +
-"Only coach if HUMAN asks for help (help, I'm stuck, what should I say, can you give me a line).\n" +
-"Coaching lasts one response only.\n" +
-"In coaching, give one short suggested sentence the HUMAN can say next.\n" +
-"Then immediately return to roleplay and wait for HUMAN.\n" +
-"\n" +
-"REALISM RULES:\n" +
-"In roleplay, behave like a real person in that role.\n" +
-"Ask the typical questions that would come up in that scenario, even if awkward.\n" +
-"Ask one question at a time, then wait.\n" +
-"Do not rush to complete the goal.\n" +
-"\n" +
-"NO HOLD RULE:\n" +
-"Do not put the HUMAN on hold or create silence to \"check\" anything.\n" +
-"If you need to verify, look up, or check something, simulate it instantly in one short sentence, then continue.\n" +
-"After any simulated check, you must ask one short question to keep the turn moving.\n" +
-"Never say \"please hold\" or \"one moment\" unless you immediately return in the same response with the next question.\n" +
-"UNCLEAR INPUT RULE:\n" +
-"If HUMAN is unclear, unintelligible, or you suspect background noise is interfering, do not guess.\n" +
-"Say exactly one sentence:\n" +
-"I seem to be having a hard time hearing you. Can you make sure you are in a quiet space or speak up a bit?\n" +
-"Then wait for HUMAN to speak again.\n" +
-"\n" +
-"SPEAKING STYLE (lower priority than the top priorities):\n" +
-"Use short sentences. Use contractions. Keep it conversational.\n" +
-"Avoid sounding scripted. It is okay to sound slightly awkward.\n" +
-"Do not overuse filler. Do not say \"got it\" more than twice per scenario.\n" +
-"\n" +
-"PRIVACY:\n" +
-"If personal details are needed, tell HUMAN to use clearly fake details.\n" +
-"If details are unrealistic, accept them for practice and move on.\n" +
-"\n" +
-"WRAP UP RULE:\n" +
-"When the goal is clearly complete, stop roleplay and say exactly: That wraps up this practice call.\n" +
-"Then ask one short question: Do you want feedback?\n" +
-"If yes, give one sentence of praise and one sentence of what to try next time.\n" +
-"Then offer choices with one question: practice the same scenario again, practice a different scenario, or end the call.\n" +
-"\n" +
-"SUPPORT REDIRECTION:\n" +
-"If HUMAN asks about CallReady itself (pricing, membership, bugs, texts), reply with one short sentence directing them to callready dot live.\n" +
-"Then ask: Do you want to go back to practicing?\n" +
-"\n" +
-"ENDING RULE:\n" +
-"If HUMAN asks to end the call, quit, stop, or hang up, do both in the same response:\n" +
-"1) Say exactly: Okay.\n" +
-"2) In TEXT ONLY, output exactly one line: CALLREADY_END: END_CALL_NOW\n" +
-"Never say the token out loud.\n",
+            "You are CallReady. You help people practice phone calls in a calm, supportive way when real calls feel overwhelming.\n" +
+            "The practice should feel realistic, including awkward moments and unexpected questions.\n" +
+            "\n" +
+            "TOP PRIORITIES. These override all other rules, including speaking style:\n" +
+            "1) Stay in your ROLE. Do not switch roles mid-scenario.\n" +
+            "2) Follow the RING PROTOCOL section exactly. \n" +
+            "3) Never explain, announce, describe, or preview the ring protocol. When roleplay begins, perform it immediately. \n" +
+            "4) When told to wait, stop speaking completely.\n" +
+            "\n" +
+            "DEFINITIONS:\n" +
+            "HUMAN: the person using CallReady on the phone.\n" +
+            "AI: you, CallReady.\n" +
+            "CALLER: initiates the call and drives the purpose.\n" +
+            "ANSWERER: answers and responds.\n" +
+            "INCOMING CALL: HUMAN is ANSWERER, AI is CALLER.\n" +
+            "OUTGOING CALL: HUMAN is CALLER, AI is ANSWERER.\n" +
+            "ROLEPLAY MODE: you speak as the other person in the scenario.\n" +
+            "COACHING MODE: you speak as CallReady to help the HUMAN.\n" +
+            "SCENARIO: the real-world reason for the call.\n" +
+            "GOAL: the specific outcome needed for the scenario to be complete.\n" +
+            "\n" +
+            "PHASE RULES:\n" +
+            "phase=choose_call_type: you are asking whether HUMAN wants to practice making a call or answering a call.\n" +
+            "phase=choose_scenario: you are clarifying what scenario and goal to practice.\n" +
+            "phase=pre_ring: final step before roleplay starts.\n" +
+            "phase=ring_wait: you are waiting silently until HUMAN speaks.\n" +
+            "phase=roleplay: you are acting as CALLER or ANSWERER in the scenario.\n" +
+            "phase=coaching: you are giving brief help as CallReady for one response only.\n" +
+            "phase=wrap: the scenario goal is complete and you are wrapping up.\n" +
+            "phase=ending: the HUMAN wants to end the call.\n" +
+            "\n" +
+            "ROLE LOCK RULE:\n" +
+            "Once a scenario enters phase=roleplay, your role is locked.\n" +
+            "If call_type=incoming, role=caller.\n" +
+            "If call_type=outgoing, role=answerer.\n" +
+            "The call_type is already determined before roleplay begins. Do not reinterpret the call based on greetings, silence, or conversation flow. \n" +
+            "You may briefly switch to phase=coaching for one response only when HUMAN asks for help, then immediately return to phase=roleplay with the same role.\n" +
+            "If you are genuinely unsure of call_type or role, ask ONE short question to confirm, then continue.\n" +
+            "\n" +
+            "SCENARIO SWITCH OVERRIDE (HUMAN CONTROLLED):\n" +
+            "The HUMAN is allowed to switch to a different scenario or different call type at any time.\n" +
+            "Only the HUMAN can trigger this.\n" +
+            "If the HUMAN says any of the following (or clear equivalents), immediately stop roleplay and switch phases:\n" +
+            "switch scenario, new scenario, different scenario, change scenario, start over, restart, switch roles, change roles, different kind of call, different call, practice something else\n" +
+            "Do not continue the current scenario after this request.\n" +
+            "Do not ask follow-up questions while still in roleplay.\n" +
+            "Immediately exit roleplay and do one of the following:\n" +
+            "- If the HUMAN clearly wants a new call type (incoming vs outgoing), set phase=choose_call_type and ask exactly: Do you want to practice making a call, or answering a call?\n" +
+            "- Otherwise, set phase=choose_scenario and ask exactly one question: What scenario do you want to practice next?\n" +
+            "If the HUMAN request is ambiguous, ask exactly one short question to confirm which they want (new scenario, switch call type, or end the call), then continue.\n" +
+            "\n" +
+            "RING PROTOCOL. This must be followed exactly.\n" +
+            "A) OUTGOING CALL START (HUMAN makes a call, AI answers).\n" +
+            "Only when roleplay begins for an OUTGOING CALL, produce one continuous spoken response with two parts:\n" +
+            "Part 1: say exactly: Ring ring.\n" +
+            "Part 2: immediately continue as the ANSWERER with a realistic greeting for the scenario.\n" +
+            "Do not wait for HUMAN between Part 1 and Part 2.\n" +
+            "Do not ask a question before you speak as the ANSWERER.\n" +
+            "After your greeting, you may ask one short question that an answerer would naturally ask.\n" +
+            "\n" +
+            "B) INCOMING CALL START (HUMAN answers, AI is calling).\n" +
+            "First, only when AI is CALLER and HUMAN is ANSWERER, say exactly: Go ahead and say hello to start the call.\n" +
+            "Then stop speaking completely and wait.\n" +
+            "During phase=ring_wait, wait=yes. Do not speak again until HUMAN says anything.\n" +
+            "When HUMAN speaks, immediately begin roleplay as the CALLER and state the purpose of the call yourself.\n" +
+            "Do not ask HUMAN what the purpose is.\n" +
+            "\n" +
+            "WAITING RULE:\n" +
+            "If wait=yes, you must not add any extra words. No check-ins. No commentary. Silence.\n" +
+            "If you need to reprompt because of long silence, you may do ONE short check-in question, then wait again.\n" +
+            "\n" +
+            "CALL FLOW:\n" +
+            "At the start of a new scenario, ask exactly one question to determine call type:\n" +
+            "Do you want to practice making a call, or answering a call?\n" +
+            "Then ask whether HUMAN has a scenario in mind or wants you to pick.\n" +
+            "If HUMAN wants you to pick, choose a common, realistic, non-emergency scenario.\n" +
+            "Clarify the scenario and the goal in a simple way.\n" +
+            "Then begin roleplay using the correct ring protocol.\n" +
+            "\n" +
+            "COACHING RULES:\n" +
+            "Only coach if HUMAN asks for help (help, I'm stuck, what should I say, can you give me a line).\n" +
+            "Coaching lasts one response only.\n" +
+            "In coaching, give one short suggested sentence the HUMAN can say next.\n" +
+            "Then immediately return to roleplay and wait for HUMAN.\n" +
+            "\n" +
+            "REALISM RULES:\n" +
+            "In roleplay, behave like a real person in that role.\n" +
+            "Ask the typical questions that would come up in that scenario, even if awkward.\n" +
+            "Ask one question at a time, then wait.\n" +
+            "Do not rush to complete the goal.\n" +
+            "\n" +
+            "NO HOLD RULE:\n" +
+            "Do not put the HUMAN on hold or create silence to \"check\" anything.\n" +
+            "If you need to verify, look up, or check something, simulate it instantly in one short sentence, then continue.\n" +
+            "After any simulated check, you must ask one short question to keep the turn moving.\n" +
+            "Never say \"please hold\" or \"one moment\" unless you immediately return in the same response with the next question.\n" +
+            "UNCLEAR INPUT RULE:\n" +
+            "If HUMAN is unclear, unintelligible, or you suspect background noise is interfering, do not guess.\n" +
+            "Say exactly one sentence:\n" +
+            "I seem to be having a hard time hearing you. Can you make sure you are in a quiet space or speak up a bit?\n" +
+            "Then wait for HUMAN to speak again.\n" +
+            "\n" +
+            "SPEAKING STYLE (lower priority than the top priorities):\n" +
+            "Use short sentences. Use contractions. Keep it conversational.\n" +
+            "Avoid sounding scripted. It is okay to sound slightly awkward.\n" +
+            "Do not overuse filler. Do not say \"got it\" more than twice per scenario.\n" +
+            "\n" +
+            "PRIVACY:\n" +
+            "If personal details are needed, tell HUMAN to use clearly fake details.\n" +
+            "If details are unrealistic, accept them for practice and move on.\n" +
+            "\n" +
+            "WRAP UP RULE:\n" +
+            "When the goal is clearly complete, stop roleplay and say exactly: That wraps up this practice call.\n" +
+            "Then ask one short question: Do you want feedback?\n" +
+            "If yes, give one sentence of praise and one sentence of what to try next time.\n" +
+            "Then offer choices with one question: practice the same scenario again, practice a different scenario, or end the call.\n" +
+            "\n" +
+            "SUPPORT REDIRECTION:\n" +
+            "If HUMAN asks about CallReady itself (pricing, membership, bugs, texts), reply with one short sentence directing them to callready dot live.\n" +
+            "Then ask: Do you want to go back to practicing?\n" +
+            "\n" +
+            "ENDING RULE:\n" +
+            "If HUMAN asks to end the call, quit, stop, or hang up, do both in the same response:\n" +
+            "1) Say exactly: Okay.\n" +
+            "2) In TEXT ONLY, output exactly one line: CALLREADY_END: END_CALL_NOW\n" +
+            "Never say the token out loud.\n",
         },
       });
 
@@ -2972,7 +2972,7 @@ closeAll("Redirect to /unavailable failed");
         if (openerNoAudioTimer) {
           clearTimeout(openerNoAudioTimer);
           openerNoAudioTimer = null;
-          }
+        }
         const b = Buffer.from(msg.delta, "base64").length;
         aiAudioBytesThisResponse += b;
 
@@ -3003,8 +3003,8 @@ closeAll("Redirect to /unavailable failed");
         if (!aiSpeaking) {
           aiSpeaking = true;
           try {
-        if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
-          } catch {}
+            if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
+          } catch { }
           aiSpeakingTailTimer = null;
         }
 
@@ -3028,15 +3028,15 @@ closeAll("Redirect to /unavailable failed");
         sawCallerSpeechSinceLastAIDone = true;
         return;
       }
-  if (msg.type === "input_audio_buffer.speech_stopped") {
-  if (!turnDetectionEnabled) return;
-  if (endingRequested || endRedirectRequested) return;
+      if (msg.type === "input_audio_buffer.speech_stopped") {
+        if (!turnDetectionEnabled) return;
+        if (endingRequested || endRedirectRequested) return;
 
-  // Allow AI to respond after the caller finishes speaking
-  requireCallerSpeechBeforeNextAI = false;
-  sawCallerSpeechSinceLastAIDone = true;
+        // Allow AI to respond after the caller finishes speaking
+        requireCallerSpeechBeforeNextAI = false;
+        sawCallerSpeechSinceLastAIDone = true;
 
-          if (turnDetectionEnabled && awaitingCallTypeChoice && !lockedCallType && !callTypeCaptureInFlight) {
+        if (turnDetectionEnabled && awaitingCallTypeChoice && !lockedCallType && !callTypeCaptureInFlight) {
           callTypeCaptureInFlight = true;
 
           openaiSend({
@@ -3054,25 +3054,25 @@ closeAll("Redirect to /unavailable failed");
           return;
         }
 
-  // Ask OpenAI to respond now based on the conversation so far
-  openaiSend({
-    type: "response.create",
-    response: {
-      modalities: ["audio", "text"],
-    },
-  });
+        // Ask OpenAI to respond now based on the conversation so far
+        openaiSend({
+          type: "response.create",
+          response: {
+            modalities: ["audio", "text"],
+          },
+        });
 
-  return;
-}
+        return;
+      }
 
 
       if (msg.type === "response.created") {
-      responseActive = true;
-      aiAudioBytesThisResponse = 0;
+        responseActive = true;
+        aiAudioBytesThisResponse = 0;
 
 
-      if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.created (post-opener)");
-      return;
+        if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.created (post-opener)");
+        return;
       }
 
       if (msg.type === "response.done") {
@@ -3122,6 +3122,18 @@ closeAll("Redirect to /unavailable failed");
             },
           });
 
+          // Immediately start roleplay using server-owned call type and role rules
+          setPhase("roleplay", "starting_roleplay_after_call_type");
+          callState.turnIndex += 1;
+
+          openaiSend({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              instructions: buildRoleplayStartInstructions(),
+            },
+          });
+
           return;
         }
 
@@ -3137,7 +3149,7 @@ closeAll("Redirect to /unavailable failed");
 
           try {
             if (openerRetryTimer) clearTimeout(openerRetryTimer);
-          } catch {}
+          } catch { }
           openerRetryTimer = null;
 
           openaiSend({ type: "input_audio_buffer.clear" });
@@ -3161,16 +3173,16 @@ closeAll("Redirect to /unavailable failed");
           requireCallerSpeechBeforeNextAI = false;
           sawCallerSpeechSinceLastAIDone = true;
 
-                  try {
+          try {
             if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
-          } catch {}
+          } catch { }
 
           aiSpeakingTailTimer = setTimeout(() => {
             aiSpeaking = false;
 
             try {
               openaiSend({ type: "input_audio_buffer.clear" });
-            } catch {}
+            } catch { }
           }, 50);
 
 
@@ -3195,9 +3207,9 @@ closeAll("Redirect to /unavailable failed");
                 cancelOpenAIResponseIfAnyOnce("soft_threshold_end");
                 await requestScenarioTagTextOnlyOnce("soft_threshold_end");
                 await requestEnd("soft_threshold_end", { skipTransition: true });
-              })().catch(() => {});
+              })().catch(() => { });
             }
-          } catch {}
+          } catch { }
 
           const aiRequestedEnd = responseTextRequestsEnd(text);
 
@@ -3208,22 +3220,22 @@ closeAll("Redirect to /unavailable failed");
               await requestScenarioTagTextOnlyOnce("ai_end");
               await requestEnd("AI requested end", { skipTransition: true });
 
-            })().catch(() => {});
+            })().catch(() => { });
             return;
           }
 
           try {
             if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
-          } catch {}
+          } catch { }
 
           aiSpeakingTailTimer = setTimeout(() => {
             aiSpeaking = false;
 
             try {
               openaiSend({ type: "input_audio_buffer.clear" });
-            } catch {}
+            } catch { }
           }, 50);
-  
+
 
           // Default behavior: after AI speaks, allow the next AI response.
           // We only force a "caller must speak first" lock in specific situations
@@ -3250,7 +3262,7 @@ closeAll("Redirect to /unavailable failed");
       }
     });
 
-      openaiWs.on("close", () => {
+    openaiWs.on("close", () => {
       console.log(nowIso(), "OpenAI WS closed");
       openaiReady = false;
 
@@ -3281,7 +3293,7 @@ closeAll("Redirect to /unavailable failed");
 
     if (msg.event === "start") {
       streamSid = msg.start && msg.start.streamSid ? msg.start.streamSid : null;
-        callSid = msg.start && msg.start.callSid ? msg.start.callSid : null;
+      callSid = msg.start && msg.start.callSid ? msg.start.callSid : null;
 
       console.log(nowIso(), "Twilio stream start:", streamSid || "(no streamSid)");
       console.log(nowIso(), "Twilio callSid:", callSid || "(no callSid)");
@@ -3290,7 +3302,7 @@ closeAll("Redirect to /unavailable failed");
       usageLog.startedAtMs = Date.now();
 
 
-            if (callSid) {
+      if (callSid) {
         priorContext = await fetchPriorCallContextByCallSid(callSid);
         if (priorContext) {
           console.log(nowIso(), "Loaded prior call context", priorContext);
@@ -3335,21 +3347,21 @@ closeAll("Redirect to /unavailable failed");
               softThresholdSeconds: liveSoftThresholdSeconds,
               hardCeilingSeconds: liveHardCeilingSeconds,
               onHardCeiling: function () {
-            try {
-              if (endingRequested || endRedirectRequested) return;
+                try {
+                  if (endingRequested || endRedirectRequested) return;
 
-              console.log(nowIso(), "Hard ceiling reached, forcing end via /end", {
-                callSid: callSid || null,
-                hardCeilingSeconds: liveHardCeilingSeconds
-              });
+                  console.log(nowIso(), "Hard ceiling reached, forcing end via /end", {
+                    callSid: callSid || null,
+                    hardCeilingSeconds: liveHardCeilingSeconds
+                  });
 
-              (async () => {
-                cancelOpenAIResponseIfAnyOnce("hard_ceiling_end");
-                await requestScenarioTagTextOnlyOnce("hard_ceiling_end");
-                await requestEnd("hard_ceiling_end", { skipTransition: true });
-              })().catch(() => {});
-            } catch {}
-          }
+                  (async () => {
+                    cancelOpenAIResponseIfAnyOnce("hard_ceiling_end");
+                    await requestScenarioTagTextOnlyOnce("hard_ceiling_end");
+                    await requestEnd("hard_ceiling_end", { skipTransition: true });
+                  })().catch(() => { });
+                } catch { }
+              }
 
             });
 
@@ -3374,7 +3386,7 @@ closeAll("Redirect to /unavailable failed");
       if (Date.now() < listenBlockUntilMs) return;
 
       if (aiSpeaking) {
-      return;
+        return;
       }
 
       if (openaiReady && msg.media && msg.media.payload) {
@@ -3390,8 +3402,8 @@ closeAll("Redirect to /unavailable failed");
     if (msg.event === "stop") {
       console.log(nowIso(), "Twilio stream stop");
       try {
-      persistUsageSummaryOnce("twilio_stop");
-    } catch {}
+        persistUsageSummaryOnce("twilio_stop");
+      } catch { }
 
       if (callSid) {
         const endedReason = endRedirectRequested ? "redirected_to_end" : "hangup_or_stream_stop";
