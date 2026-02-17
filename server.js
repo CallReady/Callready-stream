@@ -2633,9 +2633,11 @@ wss.on("connection", (twilioWs) => {
     try {
       if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
 
+      const isResponseCreate = !!(obj && obj.type === "response.create");
+
       // Global guard: only allow one active response.create at a time.
       // If one is active, queue the latest response.create and send it after response.done.
-      if (obj && obj.type === "response.create") {
+      if (isResponseCreate) {
         if (callState.openaiResponseActive) {
           callState.pendingResponseCreate = obj;
           console.log(nowIso(), "Guard: queued response.create because a response is already active");
@@ -2644,8 +2646,19 @@ wss.on("connection", (twilioWs) => {
 
         callState.openaiResponseActive = true;
         callState.pendingResponseCreate = null;
-      }
 
+        // Centralized turn counting: only increment when we are actually sending
+        // an AUDIO response.create during ROLEPLAY.
+        try {
+          const mods = obj && obj.response && Array.isArray(obj.response.modalities) ? obj.response.modalities : [];
+          const hasAudio = mods.indexOf("audio") !== -1;
+
+          if (hasAudio && callState && String(callState.phase || "") === "roleplay") {
+            callState.turnIndex = (typeof callState.turnIndex === "number" ? callState.turnIndex : 0) + 1;
+            console.log(nowIso(), "turnIndex++ (roleplay audio)", { turnIndex: callState.turnIndex });
+          }
+        } catch { }
+      }
 
       openaiWs.send(JSON.stringify(obj));
     } catch (e) {
@@ -3510,8 +3523,6 @@ wss.on("connection", (twilioWs) => {
               }
             });
 
-            callState.turnIndex += 1;
-            
             return;
           }
 
