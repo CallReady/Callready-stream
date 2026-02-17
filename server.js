@@ -3451,6 +3451,70 @@ wss.on("connection", (twilioWs) => {
           callState.turnIndex += 1;
         }
 
+                if (callState.scenarioCaptureInFlight && callState.phase === "choose_scenario") {
+          const pick = extractTokenLineValue(text, "SCENARIO_PICK");
+          const v = pick ? String(pick).trim().toLowerCase() : "unknown";
+
+          console.log(nowIso(), "Parsed SCENARIO_PICK", { value: v });
+
+          callState.scenarioCaptureInFlight = false;
+
+          if (v === "yes") {
+            callState.scenarioChosen = true;
+
+            // Pick a default, common scenario for now.
+            setScenarioTag("doctor_appointment_scheduling", "default_pick");
+            try {
+              if (callSid) setScenarioTagOnce(callSid, "doctor_appointment_scheduling");
+            } catch (e) { }
+
+            setPhase("roleplay", "scenario_picked_default");
+
+            openaiSend({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "We are practicing this scenario:\n" +
+                  "Scheduling a doctor appointment.\n" +
+                  "Goal: schedule an appointment time.\n\n" +
+                  buildRoleplayStartInstructions()
+              }
+            });
+
+            return;
+          }
+
+          if (v === "no") {
+            callState.scenarioChosen = false;
+
+            openaiSend({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "Ask exactly one question and nothing else:\n" +
+                  "What kind of call do you want to practice?\n"
+              }
+            });
+
+            return;
+          }
+
+          // If unclear, ask again.
+          openaiSend({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              instructions:
+                "Ask exactly one question and nothing else:\n" +
+                "Do you already have a call in mind, or would you like me to pick one for you?\n"
+            }
+          });
+
+          return;
+        }
+
         if (openerSent && !turnDetectionEnabled) {
           turnDetectionEnabled = true;
           waitingForFirstCallerSpeech = true;
