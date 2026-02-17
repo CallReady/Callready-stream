@@ -1778,6 +1778,27 @@ app.post("/voice", async (req, res) => {
   }
 });
 
+app.post("/debug/sim-start", async (req, res) => {
+  try {
+    const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "CA_SIM_START";
+    const from = req.body && req.body.From ? String(req.body.From) : "+15035550123";
+
+    if (callSid) {
+      await logCallStartToDb(callSid, from);
+    }
+
+    res.status(200).json({
+      ok: true,
+      message: "Simulated call start logged. This does not open a Twilio WebSocket. Use it to confirm DB + tier + boot behavior.",
+      callSid: callSid,
+      from: from
+    });
+  } catch (e) {
+    console.log(nowIso(), "debug/sim-start error:", e && e.message ? e.message : e);
+    res.status(500).json({ ok: false, error: "server_error" });
+  }
+});
+
 app.post("/create-checkout", async (req, res) => {
   try {
     if (!stripe) {
