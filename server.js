@@ -1795,11 +1795,6 @@ app.post("/voice", async (req, res) => {
       return;
     }
 
-    const ringUrl = String(process.env.CALLREADY_RING_MP3_URL || "").trim();
-    if (ringUrl) {
-      vr.play(ringUrl);
-    }
-
     const connect = vr.connect();
     connect.stream({ url: PUBLIC_WSS_URL });
 
