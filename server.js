@@ -2726,22 +2726,26 @@ wss.on("connection", (twilioWs) => {
     return "Begin roleplay naturally.";
   }
 
-  function buildScenarioIntro() {
-    if (!callState.scenarioTag) {
-      return "We are practicing a phone call scenario.";
+function buildScenarioIntro() {
+  const scenarios = {
+    doctor_default: {
+      title: "A simple appointment scheduling call.",
+      goal: "Successfully schedule a time."
     }
+  };
 
-    if (callState.scenarioTag === "doctor_default") {
-      return (
-        "We are practicing this scenario:\n" +
-        "A simple appointment scheduling call.\n" +
-        "Goal: successfully schedule a time.\n\n"
+  const s = scenarios[callState.scenarioTag];
 
-      );
-    }
-
+  if (!s) {
     return "We are practicing a realistic phone call scenario.";
   }
+
+  return (
+    "We are practicing this scenario:\n" +
+    s.title + "\n" +
+    "Goal: " + s.goal
+  );
+}
 
   function sendOpenerOnce(label) {
     console.log(nowIso(), "Sending opener", label ? "(" + label + ")" : "");
