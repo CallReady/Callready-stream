@@ -3510,6 +3510,8 @@ wss.on("connection", (twilioWs) => {
               }
             });
 
+            callState.turnIndex += 1;
+            
             return;
           }
 
