@@ -2259,25 +2259,46 @@ wss.on("connection", (twilioWs) => {
     scenarioTag: null,           // snake_case tag once known
     goal: null,                  // short goal text once known
     scenarioChosen: false,
+    scenarioCaptureInFlight: false,
     lastUserUtterance: null,     // last transcript snippet we captured
     summary: null,               // short rolling summary (we will add later)
     turnIndex: 0                 // increments each time we ask OpenAI to speak
   };
 
   function setPhase(nextPhase, why) {
-    callState.phase = String(nextPhase || "").trim() || callState.phase;
+    var prev = String(callState.phase || "unknown").trim();
+    var next = String(nextPhase || "").trim();
+
+    if (!next) return;
+
+    callState.phase = next;
+
     try {
-      console.log(nowIso(), "callState.phase ->", callState.phase, "why:", why || "");
+      console.log(
+        nowIso(),
+        "PHASE_TRANSITION",
+        "prev=" + prev,
+        "next=" + next,
+        "why=" + String(why || "")
+      );
     } catch (e) { }
   }
 
   function setCallType(nextCallType, why) {
-    const v = String(nextCallType || "").trim().toLowerCase();
+    var v = String(nextCallType || "").trim().toLowerCase();
     if (v === "outgoing" || v === "incoming") {
       callState.callType = v;
       callState.role = (v === "outgoing") ? "answerer" : "caller";
       try {
-        console.log(nowIso(), "callState.callType ->", callState.callType, "role ->", callState.role, "why:", why || "");
+        console.log(
+          nowIso(),
+          "callState.callType ->",
+          callState.callType,
+          "role ->",
+          callState.role,
+          "why:",
+          why || ""
+        );
       } catch (e) { }
     }
   }
@@ -2726,26 +2747,26 @@ wss.on("connection", (twilioWs) => {
     return "Begin roleplay naturally.";
   }
 
-function buildScenarioIntro() {
-  const scenarios = {
-    doctor_default: {
-      title: "A simple appointment scheduling call.",
-      goal: "Successfully schedule a time."
+  function buildScenarioIntro() {
+    const scenarios = {
+      doctor_default: {
+        title: "A simple appointment scheduling call.",
+        goal: "Successfully schedule a time."
+      }
+    };
+
+    const s = scenarios[callState.scenarioTag];
+
+    if (!s) {
+      return "We are practicing a realistic phone call scenario.";
     }
-  };
 
-  const s = scenarios[callState.scenarioTag];
-
-  if (!s) {
-    return "We are practicing a realistic phone call scenario.";
+    return (
+      "We are practicing this scenario:\n" +
+      s.title + "\n" +
+      "Goal: " + s.goal
+    );
   }
-
-  return (
-    "We are practicing this scenario:\n" +
-    s.title + "\n" +
-    "Goal: " + s.goal
-  );
-}
 
   function sendOpenerOnce(label) {
     console.log(nowIso(), "Sending opener", label ? "(" + label + ")" : "");
