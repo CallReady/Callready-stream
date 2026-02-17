@@ -2518,8 +2518,36 @@ wss.on("connection", (twilioWs) => {
   }
 
   function openaiSend(obj) {
-    if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
-    openaiWs.send(JSON.stringify(obj));
+    try {
+      if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
+
+      // Tiny cooldown to prevent "conversation_already_has_active_response"
+      if (obj && obj.type === "response.create") {
+        const now = Date.now();
+        const allowAt = callState.nextResponseCreateAtMs || 0;
+
+        if (now < allowAt) {
+          const delayMs = Math.max(0, allowAt - now);
+          console.log(nowIso(), "Cooldown: delaying response.create by", delayMs, "ms");
+          setTimeout(() => {
+            try {
+              if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
+              openaiWs.send(JSON.stringify(obj));
+            } catch (e) {
+              console.log(nowIso(), "openaiSend delayed send failed:", e && e.message ? e.message : e);
+            }
+          }, delayMs);
+          return;
+        }
+
+        // After we send a response.create, block any new one for a brief moment
+        callState.nextResponseCreateAtMs = now + 350;
+      }
+
+      openaiWs.send(JSON.stringify(obj));
+    } catch (e) {
+      console.log(nowIso(), "openaiSend failed:", e && e.message ? e.message : e);
+    }
   }
 
   function cancelOpenAIResponseIfAnyOnce(reason) {
