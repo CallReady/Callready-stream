@@ -3481,6 +3481,23 @@ wss.on("connection", (twilioWs) => {
             return;
           }
 
+                    if (v === "no") {
+            callState.scenarioChosen = false;
+            setPhase("choose_scenario", "scenario_user_has_one");
+
+            openaiSend({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "Ask exactly one question and nothing else:\n" +
+                  "What kind of call do you want to practice?",
+              },
+            });
+
+            return;
+          }
+
           if (v === "no") {
             callState.scenarioChosen = false;
 
