@@ -2731,11 +2731,12 @@ wss.on("connection", (twilioWs) => {
       return "We are practicing a phone call scenario.";
     }
 
-    if (callState.scenarioTag === "doctor_appointment_scheduling") {
+    if (callState.scenarioTag === "doctor_default") {
       return (
         "We are practicing this scenario:\n" +
-        "Scheduling a doctor appointment.\n" +
-        "Goal: schedule an appointment time."
+        "A simple appointment scheduling call.\n" +
+        "Goal: successfully schedule a time.\n\n"
+
       );
     }
 
