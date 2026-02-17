@@ -1715,23 +1715,6 @@ app.post("/stream", (req, res) => {
       return;
     }
 
-    const ringUrl = String(process.env.CALLREADY_RING_MP3_URL || "").trim();
-
-    if (ringUrl) {
-      vr.play(ringUrl);
-    }
-
-    // After the ring sound finishes, Twilio will POST to /stream
-    vr.redirect({ method: "POST" }, "/stream");
-
-    res.type("text/xml").send(vr.toString());
-
-  } catch (err) {
-    console.error("Error building /stream TwiML:", err);
-    res.status(500).send("Error");
-  }
-});
-
 app.post("/voice", async (req, res) => {
   if (String(process.env.CALLREADY_UNAVAILABLE || "") === "1") {
     const VoiceResponse = twilio.twiml.VoiceResponse;
