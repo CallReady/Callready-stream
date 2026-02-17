@@ -3439,7 +3439,7 @@ wss.on("connection", (twilioWs) => {
 
           callState.scenarioCaptureInFlight = false;
 
-                    // If the model couldn't decide, ask again and stay in choose_scenario.
+          // If the model couldn't decide, ask again and stay in choose_scenario.
           if (v !== "yes" && v !== "no") {
             callState.scenarioCaptureInFlight = false;
             setPhase("choose_scenario", "scenario_pick_unclear_retry");
@@ -3481,7 +3481,7 @@ wss.on("connection", (twilioWs) => {
             return;
           }
 
-                    if (v === "no") {
+          if (v === "no") {
             callState.scenarioChosen = false;
             setPhase("choose_scenario", "scenario_user_has_one");
 
@@ -3497,6 +3497,22 @@ wss.on("connection", (twilioWs) => {
 
             return;
           }
+
+          // If the model output was not yes or no, ask again.
+          callState.scenarioChosen = false;
+          setPhase("choose_scenario", "scenario_pick_unclear_retry");
+
+          openaiSend({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              instructions:
+                "Ask exactly one question and nothing else:\n" +
+                "Do you already have a call in mind, or would you like me to pick one for you?",
+            },
+          });
+
+          return;
 
           if (v === "no") {
             callState.scenarioChosen = false;
