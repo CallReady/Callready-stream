@@ -15,6 +15,9 @@ app.use("/audio-fixed", express.static(path.join(process.cwd(), "audio-fixed")))
 // Serve static files (so Twilio can fetch the ring MP3)
 app.use(express.static(__dirname));
 app.set("strict routing", true);
+app.get("/media", (req, res) => {
+  res.status(426).send("This endpoint is WebSocket-only. Twilio connects via wss://.../media");
+});
 
 const PORT = process.env.PORT || 10000;
 
