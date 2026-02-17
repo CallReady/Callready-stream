@@ -3468,7 +3468,7 @@ wss.on("connection", (twilioWs) => {
             // Pick a default, common scenario for now.
             setScenarioTag("doctor_default", "default_pick");
             try {
-              if (callSid) setScenarioTagOnce(callSid, "doctor_appointment_scheduling");
+              if (callSid) setScenarioTagOnce(callSid, "doctor_default");
             } catch (e) { }
 
             setPhase("roleplay", "scenario_picked_default");
