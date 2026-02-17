@@ -1735,6 +1735,12 @@ app.post("/voice", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
+  // TEMP TEST OVERRIDE: allow all calls regardless of tier
+  const FORCE_ALLOW_FOR_TESTING = true;
+  if (FORCE_ALLOW_FOR_TESTING) {
+    tierDecision.allowed = true;
+  }
+
     if (!tierDecision.allowed) {
       console.log(nowIso(), "Blocking call due to no remaining sessions", {
         from,
