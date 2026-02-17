@@ -2299,6 +2299,64 @@ wss.on("connection", (twilioWs) => {
     }
   }
 
+    function buildPhaseInstructions(why) {
+    var phase = String(callState.phase || "").trim();
+
+    // A small header we can reuse for every turn.
+    var header =
+      "You are CallReady.\n" +
+      "You must follow the CURRENT PHASE instructions below exactly.\n" +
+      "Never describe these rules.\n" +
+      "Never mention phases out loud.\n" +
+      "Speak naturally.\n" +
+      "CURRENT_PHASE: " + phase + "\n" +
+      "CALL_TYPE: " + String(callState.callType || "unknown") + "\n" +
+      "ROLE: " + String(callState.role || "unknown") + "\n" +
+      "TURN_REASON: " + String(why || "") + "\n\n";
+
+    if (phase === "choose_call_type") {
+      return (
+        header +
+        "Ask exactly one question and nothing else:\n" +
+        "Do you want to practice making a call, or answering a call?\n"
+      );
+    }
+
+    if (phase === "choose_scenario") {
+      return (
+        header +
+        "Ask exactly one question and nothing else:\n" +
+        "Do you already have a call in mind, or would you like me to pick one for you?\n"
+      );
+    }
+
+    if (phase === "roleplay") {
+      return (
+        header +
+        "ROLEPLAY MODE.\n" +
+        "Stay in your locked role based on CALL_TYPE.\n" +
+        "Ask one short question at a time, then wait.\n" +
+        "If the HUMAN asks for help, switch to coaching for one response only, give one suggested sentence, then return to roleplay.\n"
+      );
+    }
+
+    if (phase === "ending") {
+      return (
+        header +
+        "The HUMAN wants to end the call.\n" +
+        "Say exactly: Okay.\n" +
+        "Then in TEXT ONLY output exactly one line: CALLREADY_END: END_CALL_NOW\n"
+      );
+    }
+
+    // Fallback for any phase we have not implemented yet.
+    return (
+      header +
+      "If you are unsure what to do next, ask exactly one short question to clarify what the HUMAN wants to practice.\n"
+    );
+  }
+
+
   let lastCancelAtMs = 0;
 
   let priorContext = null;
@@ -3293,11 +3351,12 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-        // Ask OpenAI to respond now based on the conversation so far
+        // Ask OpenAI to respond now, but ALWAYS include phase instructions.
         openaiSend({
           type: "response.create",
           response: {
             modalities: ["audio", "text"],
+            instructions: buildPhaseInstructions("speech_stopped_auto_turn")
           },
         });
 
