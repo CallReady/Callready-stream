@@ -2292,6 +2292,28 @@ app.post("/end", async (req, res) => {
   try {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
+    // RING MODE: if Twilio is redirected here to play the ring sound and then reconnect to /media
+    const resume = req.query && req.query.resume ? String(req.query.resume) : "";
+    if (resume === "post_ring") {
+      const callTypeQ = req.query && req.query.callType ? String(req.query.callType) : "";
+      const scenarioTagQ = req.query && req.query.scenarioTag ? String(req.query.scenarioTag) : "";
+      const aiFirstQ = req.query && req.query.aiFirst ? String(req.query.aiFirst) : "";
+
+      // Play ring audio, then reconnect to the media stream with parameters
+      vr.play(`${PUBLIC_BASE_URL}/audio-fixed/cellphonering.mp3`);
+
+      const connect = vr.connect();
+      const stream = connect.stream({ url: PUBLIC_WSS_URL });
+
+      // Pass parameters back into the /media WS on the new stream connection
+      stream.parameter({ name: "callType", value: callTypeQ });
+      stream.parameter({ name: "scenarioTag", value: scenarioTagQ });
+      stream.parameter({ name: "resume", value: "post_ring" });
+      stream.parameter({ name: "aiFirst", value: aiFirstQ });
+
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
 
     const retry = req.query && req.query.retry ? String(req.query.retry) : "0";
     const isRetry = retry === "1";
@@ -4146,60 +4168,60 @@ wss.on("connection", (twilioWs) => {
         }
 
         if (awaitingScenarioTag && callState.phase === "choose_scenario" && sawCallerSpeechSinceLastAIDone) {
-                  // Handle deterministic CONFIRM token for the auto-pick confirmation step.
-        if (
-          callState.phase === "choose_scenario" &&
-          callState.subphase === "scenario_auto_pick_confirm" &&
-          callState.confirmCaptureInFlight
-        ) {
-          callState.confirmCaptureInFlight = false;
+          // Handle deterministic CONFIRM token for the auto-pick confirmation step.
+          if (
+            callState.phase === "choose_scenario" &&
+            callState.subphase === "scenario_auto_pick_confirm" &&
+            callState.confirmCaptureInFlight
+          ) {
+            callState.confirmCaptureInFlight = false;
 
-          const confirm = extractTokenLineValue(text, "CONFIRM");
-          const v = confirm ? String(confirm).trim().toLowerCase() : "unknown";
+            const confirm = extractTokenLineValue(text, "CONFIRM");
+            const v = confirm ? String(confirm).trim().toLowerCase() : "unknown";
 
-          console.log(nowIso(), "Parsed CONFIRM", { value: v });
+            console.log(nowIso(), "Parsed CONFIRM", { value: v });
 
-          if (v === "yes") {
-            setPhase("connecting", "auto_pick_confirmed");
+            if (v === "yes") {
+              setPhase("connecting", "auto_pick_confirmed");
 
-            callState.turnIndex = 0;
+              callState.turnIndex = 0;
 
-            redirectCallToRing("outgoing_confirmed_start_ring").catch((e) =>
-              console.log(nowIso(), "redirectCallToRing failed", e)
-            );
+              redirectCallToRing("outgoing_confirmed_start_ring").catch((e) =>
+                console.log(nowIso(), "redirectCallToRing failed", e)
+              );
 
-            return;
-          }
+              return;
+            }
 
-          if (v === "no") {
-            setPhase("choose_scenario", "scenario_pick_start");
+            if (v === "no") {
+              setPhase("choose_scenario", "scenario_pick_start");
 
+              openaiResponseCreate({
+                type: "response.create",
+                response: {
+                  modalities: ["audio", "text"],
+                  instructions:
+                    "Ask exactly one question and nothing else.\n" +
+                    "Say: \"No problem. Do you have a call in mind, or should I pick one for you?\"\n",
+                },
+              });
+
+              return;
+            }
+
+            // unknown, re-ask confirmation
             openaiResponseCreate({
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
                 instructions:
                   "Ask exactly one question and nothing else.\n" +
-                  "Say: \"No problem. Do you have a call in mind, or should I pick one for you?\"\n",
+                  "Say: \"Does that sound good?\"\n",
               },
             });
 
             return;
           }
-
-          // unknown, re-ask confirmation
-          openaiResponseCreate({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions:
-                "Ask exactly one question and nothing else.\n" +
-                "Say: \"Does that sound good?\"\n",
-            },
-          });
-
-          return;
-        }
 
           const tag = extractTokenLineValue(text, "SCENARIO_TAG");
           const rawTag = tag ? String(tag).trim().toLowerCase() : "unknown";
