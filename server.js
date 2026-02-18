@@ -2943,7 +2943,7 @@ wss.on("connection", (twilioWs) => {
 
     openaiSend(payload);
   }
-
+ 
   LAST_OPENAI_SEND = openaiSend;
 
   function cancelOpenAIResponseIfAnyOnce(reason) {
@@ -3073,7 +3073,7 @@ wss.on("connection", (twilioWs) => {
       redirectCallToUnavailable("opener_no_audio");
     }, 3000);
 
-    openaiSend({
+    openaiResponseCreate({
       type: "response.create",
       response: {
         modalities: ["audio", "text"],
@@ -3088,7 +3088,7 @@ wss.on("connection", (twilioWs) => {
     lockedCallType = null;
     callTypeCaptureInFlight = false;
 
-    openaiSend({
+    openaiResponseCreate({
       type: "response.create",
       response: {
         modalities: ["audio", "text"],
@@ -3164,7 +3164,7 @@ wss.on("connection", (twilioWs) => {
       }, 900);
     });
 
-    openaiSend({
+    openaiResponseCreate({
       type: "response.create",
       response: {
         modalities: ["text"],
@@ -3705,7 +3705,7 @@ wss.on("connection", (twilioWs) => {
         if (turnDetectionEnabled && awaitingCallTypeChoice && !lockedCallType && !callTypeCaptureInFlight) {
           callTypeCaptureInFlight = true;
 
-          openaiSend({
+          openaiResponseCreate({
             type: "response.create",
             response: {
               modalities: ["text"],
@@ -3723,7 +3723,7 @@ wss.on("connection", (twilioWs) => {
         if (turnDetectionEnabled && callState.phase === "choose_scenario" && !callState.scenarioChosen && !callState.scenarioCaptureInFlight) {
           callState.scenarioCaptureInFlight = true;
 
-          openaiSend({
+          openaiResponseCreate({
             type: "response.create",
             response: {
               modalities: ["text"],
@@ -3739,7 +3739,7 @@ wss.on("connection", (twilioWs) => {
         }
 
         // Ask OpenAI to respond now, but ALWAYS include phase instructions.
-        openaiSend({
+        openaiResponseCreate({
           type: "response.create",
           response: {
             modalities: ["audio", "text"],
@@ -3789,7 +3789,7 @@ wss.on("connection", (twilioWs) => {
 
           callState.turnIndex = 0;
 
-          openaiSend({
+          openaiResponseCreate({
             type: "response.create",
             response: {
               modalities: ["audio", "text"],
@@ -3837,7 +3837,7 @@ wss.on("connection", (twilioWs) => {
             awaitingCallTypeChoice = true;
             setPhase("choose_call_type", "call_type_unclear_retry");
 
-            openaiSend({
+            openaiResponseCreate({
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
@@ -3861,7 +3861,7 @@ wss.on("connection", (twilioWs) => {
           setCallType(v, "parsed_call_type");
           awaitingCallTypeChoice = false;
 
-          openaiSend({
+          openaiResponseCreate({
             type: "response.create",
             response: {
               modalities: ["audio", "text"],
@@ -3895,7 +3895,7 @@ wss.on("connection", (twilioWs) => {
             callState.scenarioCaptureInFlight = false;
             setPhase("choose_scenario", "scenario_pick_unclear_retry");
 
-            openaiSend({
+            openaiResponseCreate({
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
@@ -3915,7 +3915,7 @@ wss.on("connection", (twilioWs) => {
             setPhase("choose_scenario", "scenario_pick_show_menu");
             awaitingScenarioTag = true;
 
-            openaiSend({
+            openaiResponseCreate({
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
@@ -3940,7 +3940,7 @@ wss.on("connection", (twilioWs) => {
             callState.scenarioChosen = false;
             setPhase("choose_scenario", "scenario_user_has_one");
 
-            openaiSend({
+            openaiResponseCreate({
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
@@ -3971,7 +3971,7 @@ wss.on("connection", (twilioWs) => {
           if (rawTag !== "doctor_default" && rawTag !== "pharmacy_refill" && rawTag !== "school_office") {
             setPhase("choose_scenario", "scenario_tag_unclear_retry");
 
-            openaiSend({
+            openaiResponseCreate({
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
@@ -4004,7 +4004,7 @@ wss.on("connection", (twilioWs) => {
 
           callState.turnIndex = 0;
 
-          openaiSend({
+          openaiResponseCreate({
             type: "response.create",
             response: {
               modalities: ["audio", "text"],
