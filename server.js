@@ -2823,7 +2823,7 @@ wss.on("connection", (twilioWs) => {
           "Say nothing before the question.\n" +
           "Do not say okay, sure, of course, or any other lead-in.\n" +
           "Ask exactly one question and nothing else:\n" +
-          "Say 'making a call' or 'answering a call'.",
+          "What do you want to practice today, making a call, or answering a call?",
 
       },
     });
@@ -3460,7 +3460,15 @@ wss.on("connection", (twilioWs) => {
 
         if (callTypeCaptureInFlight && awaitingCallTypeChoice) {
           const ct = extractTokenLineValue(text, "CALL_TYPE");
-          const v = ct ? String(ct).trim().toLowerCase() : "";
+          const raw = ct ? String(ct).trim().toLowerCase() : "";
+          let v = raw;
+
+          // Whitelist common human phrasings, map them to the only two legal values.
+          if (raw === "making a call" || raw === "make a call" || raw === "call" || raw === "outgoing") {
+            v = "outgoing";
+          } else if (raw === "answering a call" || raw === "answer a call" || raw === "answering" || raw === "incoming") {
+            v = "incoming";
+          }
 
           // Always clear the capture flag first so we can retry if needed.
           callTypeCaptureInFlight = false;
@@ -3479,7 +3487,8 @@ wss.on("connection", (twilioWs) => {
                   "Say nothing before the question.\n" +
                   "Do not say okay, sure, of course, or any other lead-in.\n" +
                   "Ask exactly one question and nothing else:\n" +
-                  "Do you want to practice making a call, or answering a call?",
+                  "What do you want to practice today, making a call, or answering a call?",
+
               },
             });
 
@@ -3539,26 +3548,28 @@ wss.on("connection", (twilioWs) => {
           }
 
           if (v === "yes") {
-            callState.scenarioChosen = true;
+            callState.scenarioChosen = false;
 
-            // Pick a default, common scenario for now.
-            setScenarioTag("doctor_default", "default_pick");
-            try {
-              if (callSid) setScenarioTagOnce(callSid, "doctor_default");
-            } catch (e) { }
-
-            setPhase("connecting", "scenario_picked_default");
-
-            callState.turnIndex = 0;
+            // Do NOT default silently. Route to a deterministic menu.
+            setPhase("choose_scenario", "scenario_pick_show_menu");
+            callState.awaitingScenarioTag = true;
 
             openaiSend({
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
                 instructions:
-                  buildScenarioIntro()
-
-              }
+                  "Ask exactly one question and nothing else.\n" +
+                  "Offer exactly these three options, in this order:\n" +
+                  "1) Scheduling a doctor appointment\n" +
+                  "2) Refilling a prescription at a pharmacy\n" +
+                  "3) Calling a school office\n" +
+                  "Then stop.\n" +
+                  "After the question, output exactly one final line in this format:\n" +
+                  "SCENARIO_TAG: <doctor_default|pharmacy_refill|school_office|unknown>\n" +
+                  "Choose doctor_default for option 1, pharmacy_refill for option 2, school_office for option 3.\n" +
+                  "If the HUMAN does not pick one of the three, output SCENARIO_TAG: unknown\n",
+              },
             });
 
             return;
@@ -3580,6 +3591,61 @@ wss.on("connection", (twilioWs) => {
 
             return;
           }
+        }
+
+        // Deterministic scenario tag selection menu (after SCENARIO_PICK: yes).
+        if (callState.awaitingScenarioTag && callState.phase === "choose_scenario") {
+          const tag = extractTokenLineValue(text, "SCENARIO_TAG");
+          const rawTag = tag ? String(tag).trim().toLowerCase() : "unknown";
+
+          console.log(nowIso(), "Parsed SCENARIO_TAG", { value: rawTag });
+
+          // Only allow known tags.
+          if (rawTag !== "doctor_default" && rawTag !== "pharmacy_refill" && rawTag !== "school_office") {
+            setPhase("choose_scenario", "scenario_tag_unclear_retry");
+
+            openaiSend({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "Ask exactly one question and nothing else.\n" +
+                  "Offer exactly these three options, in this order:\n" +
+                  "1) Scheduling a doctor appointment\n" +
+                  "2) Refilling a prescription at a pharmacy\n" +
+                  "3) Calling a school office\n" +
+                  "Then stop.\n" +
+                  "After the question, output exactly one final line in this format:\n" +
+                  "SCENARIO_TAG: <doctor_default|pharmacy_refill|school_office|unknown>\n" +
+                  "If the HUMAN does not pick one of the three, output SCENARIO_TAG: unknown\n",
+              },
+            });
+
+            return;
+          }
+
+          // Valid scenario tag.
+          callState.awaitingScenarioTag = false;
+          callState.scenarioChosen = true;
+
+          setScenarioTag(rawTag, "menu_pick");
+          try {
+            if (callSid) setScenarioTagOnce(callSid, rawTag);
+          } catch (e) { }
+
+          setPhase("connecting", "scenario_picked_menu");
+
+          callState.turnIndex = 0;
+
+          openaiSend({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              instructions: buildScenarioIntro(),
+            },
+          });
+
+          return;
         }
 
         if (openerSent && !turnDetectionEnabled) {
