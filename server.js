@@ -1977,14 +1977,18 @@ app.post("/debug/openai-realtime-check", async (req, res) => {
 
 app.post("/debug/extract-tokens", (req, res) => {
   try {
+
     const debugSecret = process.env.DEBUG_SECRET;
 
-    if (debugSecret) {
+    // Only enforce DEBUG_SECRET in production.
+    // Local dev should be frictionless.
+    if (process.env.NODE_ENV === "production" && debugSecret) {
       const provided = req.headers["x-debug-secret"];
       if (!provided || String(provided) !== String(debugSecret)) {
         return res.status(403).json({ ok: false, error: "forbidden" });
       }
     }
+
 
     const text = req.body && req.body.text ? String(req.body.text) : "";
 
@@ -2008,7 +2012,9 @@ app.post("/debug/scenario-gate-dryrun", (req, res) => {
   try {
     const debugSecret = process.env.DEBUG_SECRET;
 
-    if (debugSecret) {
+    // Only enforce DEBUG_SECRET in production.
+    // Local dev should be frictionless.
+    if (process.env.NODE_ENV === "production" && debugSecret) {
       const provided = req.headers["x-debug-secret"];
       if (!provided || String(provided) !== String(debugSecret)) {
         return res.status(403).json({ ok: false, error: "forbidden" });
