@@ -1975,6 +1975,35 @@ app.post("/debug/openai-realtime-check", async (req, res) => {
   }
 });
 
+app.post("/debug/extract-tokens", (req, res) => {
+  try {
+    const debugSecret = process.env.DEBUG_SECRET;
+
+    if (debugSecret) {
+      const provided = req.headers["x-debug-secret"];
+      if (!provided || String(provided) !== String(debugSecret)) {
+        return res.status(403).json({ ok: false, error: "forbidden" });
+      }
+    }
+
+    const text = req.body && req.body.text ? String(req.body.text) : "";
+
+    const out = {
+      CALL_TYPE: extractTokenLineValue(text, "CALL_TYPE"),
+      SCENARIO_PICK: extractTokenLineValue(text, "SCENARIO_PICK"),
+      SCENARIO_TAG: extractTokenLineValue(text, "SCENARIO_TAG"),
+      END_CALL_NOW: extractTokenLineValue(text, "END_CALL_NOW"),
+    };
+
+    return res.json({ ok: true, tokens: out });
+  } catch (e) {
+    return res.status(500).json({
+      ok: false,
+      error: e && e.message ? e.message : String(e),
+    });
+  }
+});
+
 app.post("/create-checkout", async (req, res) => {
   try {
     if (!stripe) {
