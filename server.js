@@ -2004,6 +2004,51 @@ app.post("/debug/extract-tokens", (req, res) => {
   }
 });
 
+app.post("/debug/scenario-gate-dryrun", (req, res) => {
+  try {
+    const debugSecret = process.env.DEBUG_SECRET;
+
+    if (debugSecret) {
+      const provided = req.headers["x-debug-secret"];
+      if (!provided || String(provided) !== String(debugSecret)) {
+        return res.status(403).json({ ok: false, error: "forbidden" });
+      }
+    }
+
+    const text = req.body && req.body.text ? String(req.body.text) : "";
+
+    const pick = extractTokenLineValue(text, "SCENARIO_PICK");
+    const tag = extractTokenLineValue(text, "SCENARIO_TAG");
+
+    const vPick = pick ? String(pick).trim().toLowerCase() : null;
+    const vTag = tag ? String(tag).trim().toLowerCase() : null;
+
+    // This mirrors the deterministic rules we just implemented.
+    let next = { action: "none" };
+
+    if (vPick === "yes") {
+      next = { action: "show_menu_and_require_tag" };
+    }
+
+    if (vTag && (vTag === "doctor_default" || vTag === "pharmacy_refill" || vTag === "school_office")) {
+      next = { action: "accept_tag_and_advance", scenarioTag: vTag };
+    } else if (vTag) {
+      next = { action: "tag_unknown_reprompt_menu", scenarioTag: vTag };
+    }
+
+    return res.json({
+      ok: true,
+      parsed: { SCENARIO_PICK: vPick, SCENARIO_TAG: vTag },
+      next,
+    });
+  } catch (e) {
+    return res.status(500).json({
+      ok: false,
+      error: e && e.message ? e.message : String(e),
+    });
+  }
+});
+
 app.post("/create-checkout", async (req, res) => {
   try {
     if (!stripe) {
