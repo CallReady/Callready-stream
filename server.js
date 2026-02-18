@@ -2261,9 +2261,21 @@ app.post("/ring", (req, res) => {
 
     vr.play(ringUrl);
 
-    vr.connect().stream({
+    const stream = vr.connect().stream({
       url: `wss://${new URL(PUBLIC_BASE_URL).host}/media`,
     });
+
+    // Pass resume context into the new /media WS connection after the ring.
+    // These will arrive in Twilio's start event "customParameters".
+    const callType = String(req.query.callType || "");
+    const scenarioTag = String(req.query.scenarioTag || "");
+    const resume = String(req.query.resume || "post_ring");
+    const aiFirst = String(req.query.aiFirst || "true"); // "true" means AI speaks first after ring
+
+    stream.parameter({ name: "callType", value: callType });
+    stream.parameter({ name: "scenarioTag", value: scenarioTag });
+    stream.parameter({ name: "resume", value: resume });
+    stream.parameter({ name: "aiFirst", value: aiFirst });
 
     res.type("text/xml").send(vr.toString());
   } catch (e) {
@@ -3383,7 +3395,7 @@ wss.on("connection", (twilioWs) => {
     }
   }
 
-    async function redirectCallToRing(reason) {
+  async function redirectCallToRing(reason) {
     if (ringRedirectRequested) return;
     ringRedirectRequested = true;
 
@@ -3463,10 +3475,10 @@ wss.on("connection", (twilioWs) => {
     return false;
   }
 
-function buildReturnCallerInstructions(ctx) {
-  // Disabled for now. We want every call to start fresh and not reuse prior call context.
-  return "";
-}
+  function buildReturnCallerInstructions(ctx) {
+    // Disabled for now. We want every call to start fresh and not reuse prior call context.
+    return "";
+  }
 
   function startOpenAIRealtime() {
     if (!OPENAI_API_KEY) {
