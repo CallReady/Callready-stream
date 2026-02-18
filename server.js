@@ -3508,7 +3508,70 @@ wss.on("connection", (twilioWs) => {
       const msg = safeJsonParse(data.toString());
       if (!msg) return;
       recordRealtimeServerEvent(msg);
+      // Capture caller transcript (from OpenAI transcription) and handle reroute phrases.
+      if (
+        msg.type === "conversation.item.input_audio_transcription.completed" ||
+        msg.type === "conversation.item.input_audio_transcription.delta"
+      ) {
+        var utter =
+          (typeof msg.transcript === "string" && msg.transcript) ||
+          (typeof msg.text === "string" && msg.text) ||
+          (typeof msg.delta === "string" && msg.delta) ||
+          "";
 
+        utter = String(utter || "").trim();
+
+        if (utter) {
+          callState.lastUserUtterance = utter;
+
+          var u = utter.toLowerCase();
+
+          // Reroute: end
+          if (
+            u.indexOf("stop") >= 0 ||
+            u.indexOf("end") >= 0 ||
+            u.indexOf("hang up") >= 0 ||
+            u.indexOf("hangup") >= 0 ||
+            u.indexOf("quit") >= 0
+          ) {
+            endingRequested = true;
+            setPhase("ending", "reroute_user_end_phrase");
+            cancelOpenAIResponseIfAnyOnce("reroute ending");
+            return;
+          }
+
+          // Reroute: change scenario
+          if (u.indexOf("change scenario") >= 0 || u.indexOf("different scenario") >= 0) {
+            callState.scenarioChosen = false;
+            callState.scenarioTag = null;
+            callState.goal = null;
+            callState.scenarioCaptureInFlight = false;
+            callState.awaitingScenarioTag = false;
+            setPhase("choose_scenario", "reroute_change_scenario");
+            cancelOpenAIResponseIfAnyOnce("reroute choose_scenario");
+            return;
+          }
+
+          // Reroute: change call type / start over
+          if (
+            u.indexOf("change call type") >= 0 ||
+            u.indexOf("change call") >= 0 ||
+            u.indexOf("start over") >= 0 ||
+            u.indexOf("restart") >= 0
+          ) {
+            callState.callType = null;
+            callState.role = null;
+            callState.scenarioChosen = false;
+            callState.scenarioTag = null;
+            callState.goal = null;
+            callState.scenarioCaptureInFlight = false;
+            callState.awaitingScenarioTag = false;
+            setPhase("choose_call_type", "reroute_change_call_type");
+            cancelOpenAIResponseIfAnyOnce("reroute choose_call_type");
+            return;
+          }
+        }
+      }
 
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
         if (openerNoAudioTimer) {
