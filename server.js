@@ -2823,7 +2823,8 @@ wss.on("connection", (twilioWs) => {
           "Say nothing before the question.\n" +
           "Do not say okay, sure, of course, or any other lead-in.\n" +
           "Ask exactly one question and nothing else:\n" +
-          "Do you want to practice making a call, or answering a call?",
+          "Say 'making a call' or 'answering a call'.",
+
       },
     });
   }
