@@ -2469,24 +2469,20 @@ wss.on("connection", (twilioWs) => {
     // Allowed phase transitions (server-owned gates)
     // Anything not listed here is blocked.
     var allowed = {
-      boot: ["session_start"],
-      session_start: ["choose_call_direction", "ending"],
-      choose_call_direction: ["choose_scenario", "ending"],
-      choose_scenario: ["role_assignment", "ending"],
-      role_assignment: ["collect_required_info", "ending"],
-      collect_required_info: ["offer_options", "ending"],
-      offer_options: ["confirmation", "ending"],
-      confirmation: ["next_steps_close", "ending"],
-      next_steps_close: ["ending"],
+      boot: ["opener"],
+      opener: ["choose_call_type", "ending"],
+      choose_call_type: ["choose_scenario", "ending"],
+      choose_scenario: ["connecting", "ending"],
+      connecting: ["roleplay", "ending"],
+      roleplay: ["ending"],
       ending: []
     };
 
     // Reroute transitions that are allowed from anywhere
     var reroutes = {
-      choose_call_direction: true,  // "change call type", "start over"
-      choose_scenario: true,        // "change scenario"
-      role_assignment: true,        // "I'm confused", "who am I"
-      ending: true                  // "stop", "end practice"
+      choose_call_type: true,   // "change call type", "start over"
+      choose_scenario: true,    // "change scenario"
+      ending: true              // "stop", "end practice"
     };
 
     // If prev is unknown, only allow restarting at session_start
