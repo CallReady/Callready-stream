@@ -2254,30 +2254,32 @@ app.post("/unavailable", async (req, res) => {
 
 app.post("/ring", (req, res) => {
   try {
-    const VoiceResponse = twilio.twiml.VoiceResponse;
-    const vr = new VoiceResponse();
+    const base = String(PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+    const host = new URL(base).host;
 
-    const ringUrl = `${PUBLIC_BASE_URL}/audio-fixed/cellphonering.mp3`;
-
-    vr.play(ringUrl);
-
-    const stream = vr.connect().stream({
-      url: `wss://${new URL(PUBLIC_BASE_URL).host}/media`,
-    });
-
-    // Pass resume context into the new /media WS connection after the ring.
-    // These will arrive in Twilio's start event "customParameters".
     const callType = String(req.query.callType || "");
     const scenarioTag = String(req.query.scenarioTag || "");
     const resume = String(req.query.resume || "post_ring");
-    const aiFirst = String(req.query.aiFirst || "true"); // "true" means AI speaks first after ring
+    const aiFirst = String(req.query.aiFirst || "true");
 
-    stream.parameter({ name: "callType", value: callType });
-    stream.parameter({ name: "scenarioTag", value: scenarioTag });
-    stream.parameter({ name: "resume", value: resume });
-    stream.parameter({ name: "aiFirst", value: aiFirst });
+    const ringUrl = `${base}/audio-fixed/cellphonering.mp3`;
+    const wsUrl = `wss://${host}/media`;
 
-    res.type("text/xml").send(vr.toString());
+    const xml =
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      "<Response>" +
+      `<Play>${ringUrl}</Play>` +
+      "<Connect>" +
+      `<Stream url="${wsUrl}">` +
+      `<Parameter name="callType" value="${callType}"/>` +
+      `<Parameter name="scenarioTag" value="${scenarioTag}"/>` +
+      `<Parameter name="resume" value="${resume}"/>` +
+      `<Parameter name="aiFirst" value="${aiFirst}"/>` +
+      "</Stream>" +
+      "</Connect>" +
+      "</Response>";
+
+    res.type("text/xml").send(xml);
   } catch (e) {
     console.log(nowIso(), "Error in /ring", e);
     res.type("text/xml").send(
