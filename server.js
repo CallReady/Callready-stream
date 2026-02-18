@@ -3546,7 +3546,7 @@ wss.on("connection", (twilioWs) => {
             callState.scenarioTag = null;
             callState.goal = null;
             callState.scenarioCaptureInFlight = false;
-            callState.awaitingScenarioTag = false;
+            awaitingScenarioTag = false;
             setPhase("choose_scenario", "reroute_change_scenario");
             cancelOpenAIResponseIfAnyOnce("reroute choose_scenario");
             return;
@@ -3565,7 +3565,7 @@ wss.on("connection", (twilioWs) => {
             callState.scenarioTag = null;
             callState.goal = null;
             callState.scenarioCaptureInFlight = false;
-            callState.awaitingScenarioTag = false;
+            awaitingScenarioTag = false;
             setPhase("choose_call_type", "reroute_change_call_type");
             cancelOpenAIResponseIfAnyOnce("reroute choose_call_type");
             return;
@@ -3875,7 +3875,7 @@ wss.on("connection", (twilioWs) => {
 
             // Do NOT default silently. Route to a deterministic menu.
             setPhase("choose_scenario", "scenario_pick_show_menu");
-            callState.awaitingScenarioTag = true;
+            awaitingScenarioTag = true;
 
             openaiSend({
               type: "response.create",
@@ -3917,14 +3917,14 @@ wss.on("connection", (twilioWs) => {
         }
 
         // Deterministic scenario tag selection menu (after SCENARIO_PICK: yes).
-        if (callState.awaitingScenarioTag && callState.phase === "choose_scenario") {
+        if (awaitingScenarioTag && callState.phase === "choose_scenario") {
           const tag = extractTokenLineValue(text, "SCENARIO_TAG");
           const rawTag = tag ? String(tag).trim().toLowerCase() : "unknown";
 
           console.log(nowIso(), "Parsed SCENARIO_TAG", { value: rawTag });
           console.log(nowIso(), "Scenario menu gate check", {
             phase: callState.phase,
-            awaitingScenarioTag: callState.awaitingScenarioTag,
+            awaitingScenarioTag: awaitingScenarioTag,
             scenarioChosen: callState.scenarioChosen,
             rawTag,
           });
@@ -3954,7 +3954,7 @@ wss.on("connection", (twilioWs) => {
           }
 
           // Valid scenario tag.
-          callState.awaitingScenarioTag = false;
+          awaitingScenarioTag = false;
           callState.scenarioChosen = true;
 
           setScenarioTag(rawTag, "menu_pick");
