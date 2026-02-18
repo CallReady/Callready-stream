@@ -3643,6 +3643,18 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
+        // Guard: do not auto-trigger AI in gate phases unless caller actually spoke
+        if (
+          (awaitingCallTypeChoice ||
+           callState.phase === "choose_call_type" ||
+           callState.phase === "choose_scenario" ||
+           callState.phase === "opener") &&
+          !sawCallerSpeechSinceLastAIDone
+        ) {
+          console.log(nowIso(), "Gate guard: ignoring speech_stopped because caller did not speak in gate phase");
+          return;
+        }
+
         // Guard: do not create a new response while one is already active.
         // This prevents: conversation_already_has_active_response
         if (responseActive) {
