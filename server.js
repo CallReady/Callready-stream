@@ -3673,6 +3673,12 @@ wss.on("connection", (twilioWs) => {
           const rawTag = tag ? String(tag).trim().toLowerCase() : "unknown";
 
           console.log(nowIso(), "Parsed SCENARIO_TAG", { value: rawTag });
+          console.log(nowIso(), "Scenario menu gate check", {
+            phase: callState.phase,
+            awaitingScenarioTag: callState.awaitingScenarioTag,
+            scenarioChosen: callState.scenarioChosen,
+            rawTag,
+          });
 
           // Only allow known tags.
           if (rawTag !== "doctor_default" && rawTag !== "pharmacy_refill" && rawTag !== "school_office") {
