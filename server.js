@@ -3973,7 +3973,9 @@ wss.on("connection", (twilioWs) => {
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
-                instructions: buildScenarioIntro(),
+                instructions:
+                  "Say this exactly, then stop:\n" +
+                  "\"Let’s try calling a doctor’s office to schedule an appointment.\"\n",
               },
             });
 
