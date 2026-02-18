@@ -2490,6 +2490,7 @@ wss.on("connection", (twilioWs) => {
       if (next !== "session_start") {
         try {
           console.log(nowIso(), "PHASE_BLOCKED", "prev=" + prev, "next=" + next, "why=" + String(why || ""), "reason=prev_unknown");
+          console.log(nowIso(), "PHASE_BLOCKED_STACK", new Error().stack);
         } catch (e) { }
         return;
       }
@@ -2514,6 +2515,7 @@ wss.on("connection", (twilioWs) => {
     if (!ok) {
       try {
         console.log(nowIso(), "PHASE_BLOCKED", "prev=" + prev, "next=" + next, "why=" + String(why || ""), "reason=not_allowed");
+        console.log(nowIso(), "PHASE_BLOCKED_STACK", new Error().stack);
       } catch (e) { }
       return;
     }
