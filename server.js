@@ -3953,24 +3953,27 @@ wss.on("connection", (twilioWs) => {
           }
 
           if (v === "yes") {
-            callState.scenarioChosen = false;
+            // HUMAN wants the system to pick a scenario.
+            // Default to doctor appointment for now.
+            const rawTag = "doctor_default";
 
-            // Do NOT default silently. Route to a deterministic menu.
-            setPhase("choose_scenario", "scenario_pick_show_menu");
-            awaitingScenarioTag = true;
+            awaitingScenarioTag = false;
+            callState.scenarioChosen = true;
+
+            setScenarioTag(rawTag, "auto_pick_default");
+            try {
+              if (callSid) setScenarioTagOnce(callSid, rawTag);
+            } catch (e) { }
+
+            setPhase("connecting", "scenario_auto_picked_default");
+
+            callState.turnIndex = 0;
 
             openaiResponseCreate({
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
-                instructions:
-                  "Ask exactly one question and nothing else.\n" +
-                  "Offer exactly these three options, in this order:\n" +
-                  "1) Scheduling a doctor appointment\n" +
-                  "2) Refilling a prescription at a pharmacy\n" +
-                  "3) Calling a school office\n" +
-                  "Then stop.\n" +
-                  "Do not output SCENARIO_TAG in this message.\n",
+                instructions: buildScenarioIntro(),
               },
             });
 
