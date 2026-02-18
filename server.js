@@ -3656,10 +3656,7 @@ wss.on("connection", (twilioWs) => {
 
         // Guard: do not auto-trigger AI in gate phases unless caller actually spoke
         if (
-          (awaitingCallTypeChoice ||
-           callState.phase === "choose_call_type" ||
-           callState.phase === "choose_scenario" ||
-           callState.phase === "opener") &&
+          (awaitingCallTypeChoice || isGatePhase(callState.phase)) &&
           !sawCallerSpeechSinceLastAIDone
         ) {
           console.log(nowIso(), "Gate guard: ignoring speech_stopped because caller did not speak in gate phase");
