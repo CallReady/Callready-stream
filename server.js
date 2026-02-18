@@ -2552,7 +2552,7 @@ wss.on("connection", (twilioWs) => {
     }
   }
 
-    function isGatePhase(phase) {
+  function isGatePhase(phase) {
     var p = String(phase || "").trim().toLowerCase();
     return (
       p === "boot" ||
@@ -2926,7 +2926,7 @@ wss.on("connection", (twilioWs) => {
     }
   }
 
-    function openaiResponseCreate(payload, why) {
+  function openaiResponseCreate(payload, why) {
     try {
       console.log(
         nowIso(),
@@ -2939,11 +2939,11 @@ wss.on("connection", (twilioWs) => {
         "awaitingScenarioTag=" + String(!!awaitingScenarioTag),
         "why=" + String(why || "")
       );
-    } catch (e) {}
+    } catch (e) { }
 
     openaiSend(payload);
   }
- 
+
   LAST_OPENAI_SEND = openaiSend;
 
   function cancelOpenAIResponseIfAnyOnce(reason) {
@@ -3566,6 +3566,9 @@ wss.on("connection", (twilioWs) => {
             endingRequested = true;
             setPhase("ending", "reroute_user_end_phrase");
             cancelOpenAIResponseIfAnyOnce("reroute ending");
+            sawCallerSpeechSinceLastAIDone = false;
+            sawSpeechStarted = false;
+
             return;
           }
 
@@ -3578,6 +3581,9 @@ wss.on("connection", (twilioWs) => {
             awaitingScenarioTag = false;
             setPhase("choose_scenario", "reroute_change_scenario");
             cancelOpenAIResponseIfAnyOnce("reroute choose_scenario");
+            sawCallerSpeechSinceLastAIDone = false;
+            sawSpeechStarted = false;
+
             return;
           }
 
@@ -3597,6 +3603,9 @@ wss.on("connection", (twilioWs) => {
             awaitingScenarioTag = false;
             setPhase("choose_call_type", "reroute_change_call_type");
             cancelOpenAIResponseIfAnyOnce("reroute choose_call_type");
+            sawCallerSpeechSinceLastAIDone = false;
+            sawSpeechStarted = false;
+
             return;
           }
         }
