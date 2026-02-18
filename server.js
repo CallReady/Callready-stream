@@ -3084,8 +3084,10 @@ wss.on("connection", (twilioWs) => {
       },
     });
   }
+  
   function sendScenarioStartOnce(label) {
-    console.log(nowIso(), "Asking scenario start question", label ? "(" + label + ")" : "");
+    console.log(nowIso(), "Asking call type question", label ? "(" + label + ")" : "");
+
     setPhase("choose_call_type", "sendScenarioStartOnce");
     awaitingCallTypeChoice = true;
     lockedCallType = null;
@@ -3097,15 +3099,13 @@ wss.on("connection", (twilioWs) => {
         modalities: ["audio", "text"],
         instructions:
           "Ask exactly one question and nothing else.\n" +
-          "Offer exactly these three options, in this order:\n" +
-          "1) Scheduling a doctor appointment\n" +
-          "2) Refilling a prescription at a pharmacy\n" +
-          "3) Calling a school office\n" +
-          "Then stop.\n" +
-          "Do not output SCENARIO_TAG in this message.\n",
-
+          "Offer exactly these two options, in this order:\n" +
+          "1) I am calling them (outgoing)\n" +
+          "2) They are calling me (incoming)\n" +
+          "Do not mention any other options.\n" +
+          "Then stop speaking and wait.",
       },
-    });
+    }, "gate_choose_call_type_ask");
   }
 
   function armOpenerRetryTimer() {
