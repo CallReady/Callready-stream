@@ -2423,6 +2423,7 @@ wss.on("connection", (twilioWs) => {
   let requireCallerSpeechBeforeNextAI = false;
   let lockedCallType = null; // "outgoing" or "incoming"
   let awaitingCallTypeChoice = false;
+  let awaitingScenarioTag = false;
   let callTypeCaptureInFlight = false;
 
   let sawCallerSpeechSinceLastAIDone = false;
