@@ -2552,6 +2552,17 @@ wss.on("connection", (twilioWs) => {
     }
   }
 
+    function isGatePhase(phase) {
+    var p = String(phase || "").trim().toLowerCase();
+    return (
+      p === "boot" ||
+      p === "opener" ||
+      p === "choose_call_type" ||
+      p === "choose_scenario" ||
+      p === "connecting"
+    );
+  }
+
   function setScenarioTag(nextTag, why) {
     const v = String(nextTag || "").trim();
     if (v) {
