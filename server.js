@@ -2894,10 +2894,13 @@ wss.on("connection", (twilioWs) => {
       response: {
         modalities: ["audio", "text"],
         instructions:
-          "Say nothing before the question.\n" +
-          "Do not say okay, sure, of course, or any other lead-in.\n" +
-          "Ask exactly one question and nothing else:\n" +
-          "What do you want to practice today, making a call, or answering a call?",
+          "Ask exactly one question and nothing else.\n" +
+          "Offer exactly these three options, in this order:\n" +
+          "1) Scheduling a doctor appointment\n" +
+          "2) Refilling a prescription at a pharmacy\n" +
+          "3) Calling a school office\n" +
+          "Then stop.\n" +
+          "Do not output SCENARIO_TAG in this message.\n",
 
       },
     });
@@ -3558,10 +3561,13 @@ wss.on("connection", (twilioWs) => {
               response: {
                 modalities: ["audio", "text"],
                 instructions:
-                  "Say nothing before the question.\n" +
-                  "Do not say okay, sure, of course, or any other lead-in.\n" +
-                  "Ask exactly one question and nothing else:\n" +
-                  "What do you want to practice today, making a call, or answering a call?",
+                  "Ask exactly one question and nothing else.\n" +
+                  "Offer exactly these three options, in this order:\n" +
+                  "1) Scheduling a doctor appointment\n" +
+                  "2) Refilling a prescription at a pharmacy\n" +
+                  "3) Calling a school office\n" +
+                  "Then stop.\n" +
+                  "Do not output SCENARIO_TAG in this message.\n",
 
               },
             });
