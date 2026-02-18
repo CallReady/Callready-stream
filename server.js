@@ -3084,29 +3084,30 @@ wss.on("connection", (twilioWs) => {
       },
     });
   }
-  
-  function sendScenarioStartOnce(label) {
-    console.log(nowIso(), "Asking call type question", label ? "(" + label + ")" : "");
 
-    setPhase("choose_call_type", "sendScenarioStartOnce");
-    awaitingCallTypeChoice = true;
-    lockedCallType = null;
-    callTypeCaptureInFlight = false;
+function sendScenarioStartOnce(label) {
+  console.log(nowIso(), "Asking call type question (post-opener)", label ? "(" + label + ")" : "");
 
-    openaiResponseCreate({
-      type: "response.create",
-      response: {
-        modalities: ["audio", "text"],
-        instructions:
-          "Ask exactly one question and nothing else.\n" +
-          "Offer exactly these two options, in this order:\n" +
-          "1) I am calling them (outgoing)\n" +
-          "2) They are calling me (incoming)\n" +
-          "Do not mention any other options.\n" +
-          "Then stop speaking and wait.",
-      },
-    }, "gate_choose_call_type_ask");
-  }
+  setPhase("choose_call_type", "sendScenarioStartOnce");
+  awaitingCallTypeChoice = true;
+  lockedCallType = null;
+  callTypeCaptureInFlight = false;
+
+  openaiResponseCreate({
+    type: "response.create",
+    response: {
+      modalities: ["audio", "text"],
+      instructions:
+        "You are CallReady. This is practice, not a real business, and not for emergencies.\n" +
+        "Ask exactly one question in a calm, natural way:\n" +
+        "\"Do you want to practice making a call, or answering a call?\"\n" +
+        "Offer both choices clearly.\n" +
+        "Do not mention scenarios yet.\n" +
+        "Do not output CALL_TYPE in this message.\n" +
+        "Then stop speaking and wait.",
+    },
+  }, "gate_choose_call_type_ask");
+}
 
   function armOpenerRetryTimer() {
     if (openerRetryTimer) return;
