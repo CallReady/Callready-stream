@@ -4080,6 +4080,34 @@ wss.on("connection", (twilioWs) => {
           }
         }
 
+        // Deterministic confirmation capture for auto-picked scenario.
+        // Runs only after the HUMAN speaks while we are asking "Does that sound good?"
+        if (
+          turnDetectionEnabled &&
+          callState.phase === "choose_scenario" &&
+          callState.subphase === "scenario_auto_pick_confirm" &&
+          !callState.confirmCaptureInFlight
+        ) {
+          callState.confirmCaptureInFlight = true;
+
+          openaiResponseCreate({
+            type: "response.create",
+            response: {
+              modalities: ["text"],
+              instructions:
+                "Output exactly one line and nothing else.\n" +
+                "Based on the HUMAN's most recent answer to \"Does that sound good?\", output:\n" +
+                "CONFIRM: yes\n" +
+                "or\n" +
+                "CONFIRM: no\n" +
+                "If unclear, output:\n" +
+                "CONFIRM: unknown\n",
+            },
+          });
+
+          return;
+        }
+
         // Deterministic scenario tag selection menu (after SCENARIO_PICK: yes).
         if (
           callState.phase === "choose_scenario" &&
@@ -4118,6 +4146,61 @@ wss.on("connection", (twilioWs) => {
         }
 
         if (awaitingScenarioTag && callState.phase === "choose_scenario" && sawCallerSpeechSinceLastAIDone) {
+                  // Handle deterministic CONFIRM token for the auto-pick confirmation step.
+        if (
+          callState.phase === "choose_scenario" &&
+          callState.subphase === "scenario_auto_pick_confirm" &&
+          callState.confirmCaptureInFlight
+        ) {
+          callState.confirmCaptureInFlight = false;
+
+          const confirm = extractTokenLineValue(text, "CONFIRM");
+          const v = confirm ? String(confirm).trim().toLowerCase() : "unknown";
+
+          console.log(nowIso(), "Parsed CONFIRM", { value: v });
+
+          if (v === "yes") {
+            setPhase("connecting", "auto_pick_confirmed");
+
+            callState.turnIndex = 0;
+
+            redirectCallToRing("outgoing_confirmed_start_ring").catch((e) =>
+              console.log(nowIso(), "redirectCallToRing failed", e)
+            );
+
+            return;
+          }
+
+          if (v === "no") {
+            setPhase("choose_scenario", "scenario_pick_start");
+
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "Ask exactly one question and nothing else.\n" +
+                  "Say: \"No problem. Do you have a call in mind, or should I pick one for you?\"\n",
+              },
+            });
+
+            return;
+          }
+
+          // unknown, re-ask confirmation
+          openaiResponseCreate({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              instructions:
+                "Ask exactly one question and nothing else.\n" +
+                "Say: \"Does that sound good?\"\n",
+            },
+          });
+
+          return;
+        }
+
           const tag = extractTokenLineValue(text, "SCENARIO_TAG");
           const rawTag = tag ? String(tag).trim().toLowerCase() : "unknown";
 
