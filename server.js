@@ -3085,29 +3085,29 @@ wss.on("connection", (twilioWs) => {
     });
   }
 
-function sendScenarioStartOnce(label) {
-  console.log(nowIso(), "Asking call type question (post-opener)", label ? "(" + label + ")" : "");
+  function sendScenarioStartOnce(label) {
+    console.log(nowIso(), "Asking call type question (post-opener)", label ? "(" + label + ")" : "");
 
-  setPhase("choose_call_type", "sendScenarioStartOnce");
-  awaitingCallTypeChoice = true;
-  lockedCallType = null;
-  callTypeCaptureInFlight = false;
+    setPhase("choose_call_type", "sendScenarioStartOnce");
+    awaitingCallTypeChoice = true;
+    lockedCallType = null;
+    callTypeCaptureInFlight = false;
 
-  openaiResponseCreate({
-    type: "response.create",
-    response: {
-      modalities: ["audio", "text"],
-      instructions:
-        "You are CallReady. This is practice, not a real business, and not for emergencies.\n" +
-        "Ask exactly one question in a calm, natural way:\n" +
-        "\"Do you want to practice making a call, or answering a call?\"\n" +
-        "Offer both choices clearly.\n" +
-        "Do not mention scenarios yet.\n" +
-        "Do not output CALL_TYPE in this message.\n" +
-        "Then stop speaking and wait.",
-    },
-  }, "gate_choose_call_type_ask");
-}
+    openaiResponseCreate({
+      type: "response.create",
+      response: {
+        modalities: ["audio", "text"],
+        instructions:
+          "You are CallReady. This is practice, not a real business, and not for emergencies.\n" +
+          "Ask exactly one question in a calm, natural way:\n" +
+          "\"Do you want to practice making a call, or answering a call?\"\n" +
+          "Offer both choices clearly.\n" +
+          "Do not mention scenarios yet.\n" +
+          "Do not output CALL_TYPE in this message.\n" +
+          "Then stop speaking and wait.",
+      },
+    }, "gate_choose_call_type_ask");
+  }
 
   function armOpenerRetryTimer() {
     if (openerRetryTimer) return;
@@ -3751,6 +3751,32 @@ function sendScenarioStartOnce(label) {
           return;
         }
 
+        if (
+          turnDetectionEnabled &&
+          callState.phase === "choose_scenario" &&
+          awaitingScenarioTag &&
+          !scenarioTagCaptureInFlight &&
+          !scenarioTagAlreadyCaptured
+        ) {
+          scenarioTagCaptureInFlight = true;
+
+          openaiResponseCreate({
+            type: "response.create",
+            response: {
+              modalities: ["text"],
+              instructions:
+                "Output exactly one line and nothing else.\n" +
+                "Choose the tag based on the HUMAN's most recent choice.\n" +
+                "If they chose option 1, output: SCENARIO_TAG: doctor_default\n" +
+                "If they chose option 2, output: SCENARIO_TAG: pharmacy_refill\n" +
+                "If they chose option 3, output: SCENARIO_TAG: school_office\n" +
+                "If unclear, output: SCENARIO_TAG: unknown\n",
+            },
+          });
+
+          return;
+        }
+
         // Ask OpenAI to respond now, but ALWAYS include phase instructions.
         openaiResponseCreate({
           type: "response.create",
@@ -3819,20 +3845,20 @@ function sendScenarioStartOnce(label) {
             console.log(nowIso(), "Skipping SCENARIO_TAG capture because caller has not spoken yet");
           } else {
 
-          const scenarioTag = extractTokenLineValue(text, "SCENARIO_TAG");
-          console.log(nowIso(), "Scenario tag raw text (first 300 chars)", String(text || "").slice(0, 300));
+            const scenarioTag = extractTokenLineValue(text, "SCENARIO_TAG");
+            console.log(nowIso(), "Scenario tag raw text (first 300 chars)", String(text || "").slice(0, 300));
 
-          if (scenarioTag) {
-            scenarioTagAlreadyCaptured = true;
-            setScenarioTagOnce(callSid, scenarioTag);
-          }
+            if (scenarioTag) {
+              scenarioTagAlreadyCaptured = true;
+              setScenarioTagOnce(callSid, scenarioTag);
+            }
 
-          if (scenarioTagCaptureResolve) {
-            scenarioTagCaptureResolve();
-            scenarioTagCaptureResolve = null;
+            if (scenarioTagCaptureResolve) {
+              scenarioTagCaptureResolve();
+              scenarioTagCaptureResolve = null;
+            }
           }
         }
-      }
 
         if (callTypeCaptureInFlight && awaitingCallTypeChoice) {
           const ct = extractTokenLineValue(text, "CALL_TYPE");
@@ -3944,10 +3970,7 @@ function sendScenarioStartOnce(label) {
                   "2) Refilling a prescription at a pharmacy\n" +
                   "3) Calling a school office\n" +
                   "Then stop.\n" +
-                  "After the question, output exactly one final line in this format:\n" +
-                  "SCENARIO_TAG: <doctor_default|pharmacy_refill|school_office|unknown>\n" +
-                  "Choose doctor_default for option 1, pharmacy_refill for option 2, school_office for option 3.\n" +
-                  "If the HUMAN does not pick one of the three, output SCENARIO_TAG: unknown\n",
+                  "Do not output SCENARIO_TAG in this message.\n",
               },
             });
 
@@ -3973,7 +3996,7 @@ function sendScenarioStartOnce(label) {
         }
 
         // Deterministic scenario tag selection menu (after SCENARIO_PICK: yes).
-        if (awaitingScenarioTag && callState.phase === "choose_scenario") {
+        if (awaitingScenarioTag && callState.phase === "choose_scenario" && sawCallerSpeechSinceLastAIDone) {
           const tag = extractTokenLineValue(text, "SCENARIO_TAG");
           const rawTag = tag ? String(tag).trim().toLowerCase() : "unknown";
 
@@ -4000,9 +4023,7 @@ function sendScenarioStartOnce(label) {
                   "2) Refilling a prescription at a pharmacy\n" +
                   "3) Calling a school office\n" +
                   "Then stop.\n" +
-                  "After the question, output exactly one final line in this format:\n" +
-                  "SCENARIO_TAG: <doctor_default|pharmacy_refill|school_office|unknown>\n" +
-                  "If the HUMAN does not pick one of the three, output SCENARIO_TAG: unknown\n",
+                  "Do not output SCENARIO_TAG in this message.\n",
               },
             });
 
