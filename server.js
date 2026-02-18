@@ -3398,17 +3398,10 @@ wss.on("connection", (twilioWs) => {
     return false;
   }
 
-  function buildReturnCallerInstructions(ctx) {
-    if (!ctx || !ctx.scenario_tag) return "";
-    const scenario = String(ctx.scenario_tag);
-
-    return (
-      "\nReturn caller context:\n" +
-      `Last time, we practiced ${scenario}.\n` +
-      "Ask exactly one question:\n" +
-      "Do you want to focus on that again or move on to something new?\n"
-    );
-  }
+function buildReturnCallerInstructions(ctx) {
+  // Disabled for now. We want every call to start fresh and not reuse prior call context.
+  return "";
+}
 
   function startOpenAIRealtime() {
     if (!OPENAI_API_KEY) {
