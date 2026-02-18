@@ -3417,6 +3417,16 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
+        // Only treat this as a real user turn if we saw speech_started.
+        // This prevents silence or echo from advancing phases.
+        if (!sawSpeechStarted) {
+          console.log(nowIso(), "Ignoring speech_stopped without speech_started (likely silence/echo)");
+          return;
+        }
+
+        // Reset for next turn
+        sawSpeechStarted = false;
+
         // Allow AI to respond after the caller finishes speaking
         requireCallerSpeechBeforeNextAI = false;
         sawCallerSpeechSinceLastAIDone = true;
