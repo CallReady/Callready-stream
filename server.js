@@ -2055,6 +2055,116 @@ app.post("/debug/scenario-gate-dryrun", (req, res) => {
   }
 });
 
+app.post("/debug/gate-step", (req, res) => {
+  try {
+    const phase = req.body && req.body.phase ? String(req.body.phase) : "choose_call_type";
+    const text = req.body && req.body.text ? String(req.body.text) : "";
+
+    // Flags supplied by caller so we can simulate state.
+    const awaitingCallTypeChoice = String(req.body && req.body.awaitingCallTypeChoice).toLowerCase() === "true";
+    const awaitingScenarioTag = String(req.body && req.body.awaitingScenarioTag).toLowerCase() === "true";
+
+    const ct = extractTokenLineValue(text, "CALL_TYPE");
+    const sp = extractTokenLineValue(text, "SCENARIO_PICK");
+    const st = extractTokenLineValue(text, "SCENARIO_TAG");
+
+    const vCt = ct ? String(ct).trim().toLowerCase() : null;
+    const vSp = sp ? String(sp).trim().toLowerCase() : null;
+    const vSt = st ? String(st).trim().toLowerCase() : null;
+
+    const result = {
+      ok: true,
+      input: { phase, awaitingCallTypeChoice, awaitingScenarioTag },
+      parsed: { CALL_TYPE: vCt, SCENARIO_PICK: vSp, SCENARIO_TAG: vSt },
+      next: { phase, flags: { awaitingCallTypeChoice, awaitingScenarioTag }, note: "no change" },
+    };
+
+    // Gate 1: choose_call_type completion
+    if (phase === "choose_call_type" && awaitingCallTypeChoice) {
+      if (vCt === "incoming" || vCt === "outgoing") {
+        result.next.phase = "choose_scenario";
+        result.next.flags.awaitingCallTypeChoice = false;
+        result.next.note = "call type accepted, advance to choose_scenario";
+        return res.json(result);
+      }
+      result.next.note = "call type unclear, stay in choose_call_type";
+      return res.json(result);
+    }
+
+    // Gate 2: SCENARIO_PICK yes triggers menu requirement
+    if (phase === "choose_scenario" && vSp === "yes") {
+      result.next.phase = "choose_scenario";
+      result.next.flags.awaitingScenarioTag = true;
+      result.next.note = "scenario pick yes, require SCENARIO_TAG next";
+      return res.json(result);
+    }
+
+    // Gate 3: scenario tag accepted advances
+    if (phase === "choose_scenario" && awaitingScenarioTag) {
+      if (vSt === "doctor_default" || vSt === "pharmacy_refill" || vSt === "school_office") {
+        result.next.phase = "connecting";
+        result.next.flags.awaitingScenarioTag = false;
+        result.next.note = "scenario tag accepted, advance to connecting";
+        return res.json(result);
+      }
+      result.next.note = "scenario tag missing/unknown, stay in choose_scenario";
+      return res.json(result);
+    }
+
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e && e.message ? e.message : String(e) });
+  }
+});
+
+app.post("/debug/prompt-contract", (req, res) => {
+  try {
+    const gate = req.body && req.body.gate ? String(req.body.gate) : "";
+
+    let ask = "";
+    let capture = "";
+
+    if (gate === "call_type") {
+      ask =
+        "Ask exactly one question and nothing else:\n" +
+        "What do you want to practice today, making a call, or answering a call?\n" +
+        "Do not output CALL_TYPE in this message.\n";
+
+      capture =
+        "Output exactly one final line and nothing else:\n" +
+        "CALL_TYPE: <incoming|outgoing|unknown>\n" +
+        "Rules:\n" +
+        "- incoming means answering a call\n" +
+        "- outgoing means making a call\n" +
+        "- if unclear, unknown\n";
+    }
+
+    if (gate === "scenario_menu") {
+      ask =
+        "Ask exactly one question and nothing else.\n" +
+        "Offer exactly these three options, in this order:\n" +
+        "1) Scheduling a doctor appointment\n" +
+        "2) Refilling a prescription at a pharmacy\n" +
+        "3) Calling a school office\n" +
+        "Then stop.\n" +
+        "Do not output SCENARIO_TAG in this message.\n";
+
+      capture =
+        "Output exactly one final line and nothing else:\n" +
+        "SCENARIO_TAG: <doctor_default|pharmacy_refill|school_office|unknown>\n" +
+        "Rules:\n" +
+        "- option 1 => doctor_default\n" +
+        "- option 2 => pharmacy_refill\n" +
+        "- option 3 => school_office\n" +
+        "- if unclear, unknown\n";
+    }
+
+    return res.json({ ok: true, gate, ask, capture });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e && e.message ? e.message : String(e) });
+  }
+});
+
 app.post("/create-checkout", async (req, res) => {
   try {
     if (!stripe) {
