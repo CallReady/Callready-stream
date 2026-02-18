@@ -4003,6 +4003,46 @@ wss.on("connection", (twilioWs) => {
         }
 
         // Deterministic scenario tag selection menu (after SCENARIO_PICK: yes).
+        if (
+          callState.phase === "choose_scenario" &&
+          callState.subphase === "scenario_auto_pick_confirm" &&
+          sawCallerSpeechSinceLastAIDone
+        ) {
+          const text = (lastHumanTranscript || "").toLowerCase();
+
+          if (text.includes("yes")) {
+            setPhase("connecting", "auto_pick_confirmed");
+
+            callState.turnIndex = 0;
+
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions: buildScenarioIntro(),
+              },
+            });
+
+            return;
+          }
+
+          if (text.includes("no")) {
+            setPhase("choose_scenario", "scenario_pick_start");
+
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "Ask exactly one question and nothing else.\n" +
+                  "Say: \"Do you have a call in mind, or should I pick one for you?\"\n",
+              },
+            });
+
+            return;
+          }
+        }
+
         if (awaitingScenarioTag && callState.phase === "choose_scenario" && sawCallerSpeechSinceLastAIDone) {
           const tag = extractTokenLineValue(text, "SCENARIO_TAG");
           const rawTag = tag ? String(tag).trim().toLowerCase() : "unknown";
