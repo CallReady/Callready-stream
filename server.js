@@ -3450,7 +3450,7 @@ wss.on("connection", (twilioWs) => {
         "&resume=post_ring" +
         "&aiFirst=true";
 
-      const url = base + "/ring" + qs;
+      const url = base + "/end" + qs;
 
       console.log(nowIso(), "Redirecting call to /ring now", callSid, "reason:", reason);
 
