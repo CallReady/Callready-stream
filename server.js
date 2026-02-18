@@ -3815,6 +3815,10 @@ function sendScenarioStartOnce(label) {
         }
 
         if (scenarioTagCaptureInFlight && !scenarioTagAlreadyCaptured && callSid) {
+          if (!sawCallerSpeechSinceLastAIDone) {
+            console.log(nowIso(), "Skipping SCENARIO_TAG capture because caller has not spoken yet");
+          } else {
+
           const scenarioTag = extractTokenLineValue(text, "SCENARIO_TAG");
           console.log(nowIso(), "Scenario tag raw text (first 300 chars)", String(text || "").slice(0, 300));
 
@@ -3828,6 +3832,7 @@ function sendScenarioStartOnce(label) {
             scenarioTagCaptureResolve = null;
           }
         }
+      }
 
         if (callTypeCaptureInFlight && awaitingCallTypeChoice) {
           const ct = extractTokenLineValue(text, "CALL_TYPE");
