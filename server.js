@@ -3422,7 +3422,13 @@ wss.on("connection", (twilioWs) => {
     try {
       const client = twilioClient();
       const base = PUBLIC_BASE_URL.replace(/\/+$/, "");
-      const url = base + "/ring";
+      const qs =
+        "?callType=" + encodeURIComponent(String(callState.callType || "")) +
+        "&scenarioTag=" + encodeURIComponent(String(callState.scenarioTag || "")) +
+        "&resume=post_ring" +
+        "&aiFirst=true";
+
+      const url = base + "/ring" + qs;
 
       console.log(nowIso(), "Redirecting call to /ring now", callSid, "reason:", reason);
 
