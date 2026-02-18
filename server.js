@@ -2926,6 +2926,24 @@ wss.on("connection", (twilioWs) => {
     }
   }
 
+    function openaiResponseCreate(payload, why) {
+    try {
+      console.log(
+        nowIso(),
+        "RESPONSE_CREATE",
+        "phase=" + String(callState.phase || ""),
+        "callType=" + String(callState.callType || ""),
+        "scenarioTag=" + String(callState.scenarioTag || ""),
+        "scenarioChosen=" + String(!!callState.scenarioChosen),
+        "awaitingCallTypeChoice=" + String(!!awaitingCallTypeChoice),
+        "awaitingScenarioTag=" + String(!!awaitingScenarioTag),
+        "why=" + String(why || "")
+      );
+    } catch (e) {}
+
+    openaiSend(payload);
+  }
+
   LAST_OPENAI_SEND = openaiSend;
 
   function cancelOpenAIResponseIfAnyOnce(reason) {
