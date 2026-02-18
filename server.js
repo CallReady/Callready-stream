@@ -2466,6 +2466,63 @@ wss.on("connection", (twilioWs) => {
 
     if (!next) return;
 
+    // Allowed phase transitions (server-owned gates)
+    // Anything not listed here is blocked.
+    var allowed = {
+      boot: ["session_start"],
+      session_start: ["choose_call_direction", "ending"],
+      choose_call_direction: ["choose_scenario", "ending"],
+      choose_scenario: ["role_assignment", "ending"],
+      role_assignment: ["collect_required_info", "ending"],
+      collect_required_info: ["offer_options", "ending"],
+      offer_options: ["confirmation", "ending"],
+      confirmation: ["next_steps_close", "ending"],
+      next_steps_close: ["ending"],
+      ending: []
+    };
+
+    // Reroute transitions that are allowed from anywhere
+    var reroutes = {
+      choose_call_direction: true,  // "change call type", "start over"
+      choose_scenario: true,        // "change scenario"
+      role_assignment: true,        // "I'm confused", "who am I"
+      ending: true                  // "stop", "end practice"
+    };
+
+    // If prev is unknown, only allow restarting at session_start
+    if (!allowed[prev]) {
+      if (next !== "session_start") {
+        try {
+          console.log(nowIso(), "PHASE_BLOCKED", "prev=" + prev, "next=" + next, "why=" + String(why || ""), "reason=prev_unknown");
+        } catch (e) { }
+        return;
+      }
+    }
+
+    // If next is a reroute gate, allow it from anywhere
+    if (reroutes[next]) {
+      callState.phase = next;
+      try {
+        console.log(nowIso(), "PHASE_TRANSITION", "prev=" + prev, "next=" + next, "why=" + String(why || ""), "mode=reroute");
+      } catch (e) { }
+      return;
+    }
+
+    // Normal forward transitions must be explicitly allowed
+    var nexts = allowed[prev] || [];
+    var ok = false;
+    for (var i = 0; i < nexts.length; i++) {
+      if (nexts[i] === next) { ok = true; break; }
+    }
+
+    if (!ok) {
+      try {
+        console.log(nowIso(), "PHASE_BLOCKED", "prev=" + prev, "next=" + next, "why=" + String(why || ""), "reason=not_allowed");
+      } catch (e) { }
+      return;
+    }
+
+    // Apply
     callState.phase = next;
 
     try {
@@ -2474,7 +2531,8 @@ wss.on("connection", (twilioWs) => {
         "PHASE_TRANSITION",
         "prev=" + prev,
         "next=" + next,
-        "why=" + String(why || "")
+        "why=" + String(why || ""),
+        "mode=forward"
       );
     } catch (e) { }
   }
