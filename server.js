@@ -4084,17 +4084,12 @@ wss.on("connection", (twilioWs) => {
 
           if (text.includes("yes")) {
             setPhase("connecting", "auto_pick_confirmed");
-            redirectCallToRing("outgoing_confirmed_start_ring").catch((e) => console.log(nowIso(), "redirectCallToRing failed", e));
 
             callState.turnIndex = 0;
 
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions: buildScenarioIntro(),
-              },
-            });
+            redirectCallToRing("outgoing_confirmed_start_ring").catch((e) =>
+              console.log(nowIso(), "redirectCallToRing failed", e)
+            );
 
             return;
           }
