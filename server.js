@@ -3965,7 +3965,7 @@ wss.on("connection", (twilioWs) => {
               if (callSid) setScenarioTagOnce(callSid, rawTag);
             } catch (e) { }
 
-            setPhase("connecting", "scenario_auto_picked_default");
+            setPhase("choose_scenario", "scenario_auto_pick_confirm");
 
             callState.turnIndex = 0;
 
@@ -3974,8 +3974,10 @@ wss.on("connection", (twilioWs) => {
               response: {
                 modalities: ["audio", "text"],
                 instructions:
-                  "Say this exactly, then stop:\n" +
-                  "\"Let’s try calling a doctor’s office to schedule an appointment.\"\n",
+                  "Say this exactly, then ask one question and stop:\n" +
+                  "\"Let’s try calling a doctor’s office to schedule an appointment.\"\n" +
+                  "\"Does that sound good?\"\n",
+
               },
             });
 
