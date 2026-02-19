@@ -2463,7 +2463,7 @@ wss.on("connection", (twilioWs) => {
   LAST_CALL_STATE = callState;
 
   function setPhase(nextPhase, why) {
-    var prev = String(callState.phase || "unknown").trim(); // Gate: previous phase for transition validation
+    var prev = String(callState.phase || "unknown").trim(); // State: previous phase for transition validation
     var next = String(nextPhase || "").trim();
 
     if (!next) return;
@@ -3907,7 +3907,7 @@ wss.on("connection", (twilioWs) => {
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
 
         // If we just finished the scenario intro, transition into roleplay instructions.
-        if (callState && callState.phase === "connecting") { // Gate: after scenario intro complete, transition to roleplay
+        if (callState && callState.phase === "connecting") { // Transition: after scenario intro complete, move to roleplay
           // Move into roleplay and immediately start in character.
           setPhase("roleplay", "scenario_intro_done");
 
