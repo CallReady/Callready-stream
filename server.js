@@ -2676,7 +2676,7 @@ wss.on("connection", (twilioWs) => {
           "In the JSON block, include only the checklist IDs you are updating this turn.\n" +
           "After your natural spoken response, append this text-only JSON block (NOT in audio):\n" +
           "CHECKLIST_UPDATE_JSON\n" +
-          "{ \"birthdate\": {\"done\": true, \"value\": \"1985-03-15\"}, \"chief_complaint\": {\"done\": false, \"value\": null} }\n" +
+          "{ \"patient_name\": {\"done\": true, \"value\": \"John Smith\"}, \"reason_for_appointment\": {\"done\": false, \"value\": null} }\n" +
           "END_CHECKLIST_UPDATE_JSON\n";
       }
       
@@ -3188,7 +3188,7 @@ wss.on("connection", (twilioWs) => {
 
   function buildDoctorChecklist() {
     return {
-      new_or_returning_patient
+      new_or_returning_patient: { required: true, done: false, value: null },
       birthdate: { required: true, done: false, value: null },
       patient_name: { required: true, done: false, value: null },
       reason_for_appointment: { required: true, done: false, value: null },
@@ -3835,7 +3835,7 @@ wss.on("connection", (twilioWs) => {
                 type: "response.create",
                 response: {
                   modalities: ["audio", "text"],
-                  instructions: "Speak this exactly, then stop speaking and wait: Great, I'll answer as the receptionist after the ring.\n",
+                  instructions: "Speak this exactly, then stop speaking and wait: Great, I'll answer as the receptionist after the ring. You can make up any details you're uncomfortable sharing during our call.\n",
                 },
               });
 
