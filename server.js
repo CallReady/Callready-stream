@@ -3750,7 +3750,7 @@ wss.on("connection", (twilioWs) => {
           turnDetectionEnabled &&
           callState.phase === "choose_scenario" &&
           callState.scenarioConfirmCaptureInFlight &&
-          callState.subphase === "auto_pick_needs_confirm" &&
+          callState.subphase === "scenario_auto_pick_confirm" &&
           sawCallerSpeechSinceLastAIDone
         ) {
 
