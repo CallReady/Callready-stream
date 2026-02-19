@@ -3906,20 +3906,87 @@ wss.on("connection", (twilioWs) => {
 
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
 
-        // If we just finished the scenario intro, transition into roleplay instructions.
-        if (callState && callState.phase === "connecting") { // Transition: after scenario intro complete, move to roleplay
+        // If we just finished something while in connecting, decide next step based on connectingStep.
+        if (callState && callState.phase === "connecting") {
+          const cs = callState.connectingStep || null;
+
+          // If the ring just finished, start the scenario intro.
+          if (cs === "ring") {
+            callState.connectingStep = "intro";
+            try { console.log(nowIso(), "CONNECTING_STEP", "intro"); } catch (e) { }
+
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions: buildScenarioIntro(),
+              },
+            });
+
+            return;
+          }
+
+          // If the scenario intro just finished, mark intro_done and transition to roleplay.
+          if (cs === "intro") {
+            callState.connectingStep = "intro_done";
+            try { console.log(nowIso(), "CONNECTING_STEP", "intro_done"); } catch (e) { }
+
+            // Move into roleplay and immediately start in character.
+            setPhase("roleplay", "scenario_intro_done");
+
+            const ct = (callState.callType || "").toLowerCase();
+
+            // Lock roles correctly:
+            // Outgoing: HUMAN is the caller, AI is the one answering.
+            // Incoming: HUMAN is the one answering, AI is the caller.
+            if (ct === "outgoing") callState.role = "caller";
+            if (ct === "incoming") callState.role = "answerer";
+
+            // Start line, scenario-specific. Keep it simple and realistic.
+            // Ring already played in the previous step; do not repeat it here.
+            let startLine = "";
+
+            if (callState.scenarioTag === "doctor_default") {
+              if (ct === "outgoing") {
+                startLine = "Thank you for calling Evergreen Family Clinic. How can I help you today?";
+              } else {
+                startLine = "Hi, this is Evergreen Family Clinic calling. Are you available to talk for a moment?";
+              }
+            } else {
+              // Fallback if scenarioTag is missing or unknown.
+              if (ct === "outgoing") {
+                startLine = "Hello, thanks for calling. How can I help you today?";
+              } else {
+                startLine = "Hi, I am calling you about your request. Is now a good time?";
+              }
+            }
+
+            callState.turnIndex = 0;
+
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "Speak this exactly, then stop speaking and wait:\n" +
+                  startLine +
+                  "\n",
+              },
+            });
+
+            callState.turnIndex += 1;
+            return;
+          }
+
+          // Fallback: if connectingStep not set, preserve previous behavior and transition to roleplay.
           // Move into roleplay and immediately start in character.
           setPhase("roleplay", "scenario_intro_done");
 
           const ct = (callState.callType || "").toLowerCase();
 
-          // Lock roles correctly:
-          // Outgoing: HUMAN is the caller, AI is the one answering.
-          // Incoming: HUMAN is the one answering, AI is the caller.
           if (ct === "outgoing") callState.role = "caller";
           if (ct === "incoming") callState.role = "answerer";
 
-          // Start line, scenario-specific. Keep it simple and realistic.
           let startLine = "Ring ring.";
 
           if (callState.scenarioTag === "doctor_default") {
@@ -3931,9 +3998,28 @@ wss.on("connection", (twilioWs) => {
                 "Ring ring. Hi, this is Evergreen Family Clinic calling. Are you available to talk for a moment?";
             }
           } else {
-            // Fallback if scenarioTag is missing or unknown.
             if (ct === "outgoing") {
               startLine = "Ring ring. Hello, thanks for calling. How can I help you today?";
+            } else {
+              startLine = "Ring ring. Hi, I am calling you about your request. Is now a good time?";
+            }
+          }
+
+          callState.turnIndex = 0;
+
+          openaiResponseCreate({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              instructions:
+                "Speak this exactly, then stop speaking and wait:\n" +
+                startLine +
+                "\n",
+            },
+          });
+
+          callState.turnIndex += 1;
+          return;
             } else {
               startLine = "Ring ring. Hi, I am calling you about your request. Is now a good time?";
             }
@@ -4166,11 +4252,15 @@ wss.on("connection", (twilioWs) => {
 
           callState.turnIndex = 0;
 
+          // Start connecting sequence: play a short ring first, then scenario intro.
+          callState.connectingStep = "ring";
+          try { console.log(nowIso(), "CONNECTING_STEP", "ring"); } catch (e) { }
+
           openaiResponseCreate({
             type: "response.create",
             response: {
               modalities: ["audio", "text"],
-              instructions: buildScenarioIntro(),
+              instructions: "Speak this exactly, then stop speaking and wait:\nRing ring.\n",
             },
           });
 
