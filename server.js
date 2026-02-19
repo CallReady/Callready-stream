@@ -4055,69 +4055,6 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-        if (callState.scenarioConfirmCaptureInFlight && callState.phase === "choose_scenario") {
-          const confirm = extractTokenLineValue(text, "SCENARIO_CONFIRM");
-          const v = confirm ? String(confirm).trim().toLowerCase() : "unknown";
-
-          console.log(nowIso(), "Parsed SCENARIO_CONFIRM", { value: v });
-
-          // Done waiting for the model token for this turn.
-          callState.scenarioConfirmCaptureInFlight = false;
-
-          // If unclear, repeat the same confirmation question and do not advance.
-          if (v !== "yes" && v !== "no") {
-            setPhase("choose_scenario", "auto_pick_needs_confirm");
-
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "Ask exactly one question and nothing else.\n" +
-                  "Say: \"Does that sound good?\"\n",
-              },
-            });
-
-            return;
-          }
-
-          // Confirmed, now we can lock the scenario and move into connecting.
-          if (v === "yes") {
-            callState.scenarioChosen = true;
-
-            setPhase("connecting", "auto_pick_confirmed");
-
-            // This should start the next phase, same as your existing connecting flow.
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions: buildScenarioIntro(),
-              },
-            });
-
-            return;
-          }
-
-          // Rejected, go back to scenario selection question.
-          callState.scenarioTag = null;
-          callState.scenarioChosen = false;
-
-          setPhase("choose_scenario", "scenario_pick_start");
-
-          openaiResponseCreate({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions:
-                "Ask exactly one question and nothing else.\n" +
-                "Say: \"Do you have a call in mind, or should I pick one for you?\"\n",
-            },
-          });
-
-          return;
-        }
-
         if (awaitingScenarioTag && callState.phase === "choose_scenario" && sawCallerSpeechSinceLastAIDone) {
           const tag = extractTokenLineValue(text, "SCENARIO_TAG");
           const rawTag = tag ? String(tag).trim().toLowerCase() : "unknown";
