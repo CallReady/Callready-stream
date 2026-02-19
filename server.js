@@ -3821,6 +3821,16 @@ wss.on("connection", (twilioWs) => {
           aiSpeakingTailTimer = null;
         }
 
+        if (callState.phase === "connecting" || callState.phase === "roleplay") {
+          try {
+            console.log(nowIso(), "Audio debug: twilioSend media", {
+              phase: callState.phase,
+              bytes: b,
+              streamSid
+            });
+          } catch { }
+        }
+
         twilioSend({ event: "media", streamSid, media: { payload: msg.delta } });
         return;
       }
