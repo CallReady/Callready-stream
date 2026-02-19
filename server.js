@@ -2652,6 +2652,17 @@ wss.on("connection", (twilioWs) => {
         "Ask exactly one short question per turn.\n" +
         "Wait for the caller's response before moving on.\n";
       
+      // Add scenario context and goal reminder for every turn
+      if (callState.scenarioTag === "doctor_default") {
+        instructions +=
+          "\n" +
+          "SCENARIO CONTEXT (reminder for this turn):\n" +
+          "You are a receptionist at Evergreen Medical Clinic.\n" +
+          "The caller is scheduling a doctor appointment.\n" +
+          "YOUR GOAL: Collect required information to complete the appointment booking.\n" +
+          "You must stay focused on gathering: new/returning patient status, name, birthdate, reason for visit, and preferred appointment time.\n";
+      }
+      
       // Add checklist tracking for doctor_default
       if (callState.scenarioTag === "doctor_default" && callState.checklist) {
         const nextTarget = getNextRequiredChecklistId();
