@@ -4136,6 +4136,11 @@ wss.on("connection", (twilioWs) => {
           callState.pendingResponseCreate = null;
           console.log(nowIso(), "Guard: flushing queued response.create after response.done");
           openaiSend(queued);
+          
+          // Skip phase transition logic below; let the queued response's completion handle it
+          if (callState && callState.phase === "connecting") {
+            return;
+          }
         }
 
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
@@ -4148,9 +4153,7 @@ wss.on("connection", (twilioWs) => {
           if (callState.connectingStep === "intro_done") return;
 
           // If the ring just finished, start the scenario intro.
-          // IMPORTANT: Only transition if we're not about to send ring, i.e., if there's no pending sendRing response
-          // Check: pendingResponseCreate should be empty when transitioning from ring to intro
-          if (cs === "ring" && !callState.pendingResponseCreate) {
+          if (cs === "ring") {
             callState.connectingStep = "intro";
             try { console.log(nowIso(), "CONNECTING_STEP", "intro"); } catch (e) { }
 
