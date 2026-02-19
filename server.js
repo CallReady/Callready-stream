@@ -3050,6 +3050,9 @@ wss.on("connection", (twilioWs) => {
       );
     } catch (e) { }
 
+    // Reset the flag: when AI asks a question, we need to wait for user to respond
+    sawCallerSpeechSinceLastAIDone = false;
+
     openaiSend(payload);
   }
 
@@ -3777,10 +3780,12 @@ wss.on("connection", (twilioWs) => {
           }
 
           // Confirm auto-picked scenario directly from transcription (no speech_stopped needed).
+          // Only process USER transcriptions (not AI output transcriptions)
           if (
             msg.type === "conversation.item.input_audio_transcription.completed" &&
             callState.phase === "choose_scenario" &&
-            callState.scenarioConfirmCaptureInFlight
+            callState.scenarioConfirmCaptureInFlight &&
+            sawCallerSpeechSinceLastAIDone  // Only process after caller has spoken post-AI-response
           ) {
             const yesRe =
               /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|lets do it|let's do it|go ahead)\b/i;
