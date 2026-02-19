@@ -4037,6 +4037,11 @@ wss.on("connection", (twilioWs) => {
 
           // HUMAN wants the AI to pick a scenario.
           if (v === "yes") {
+            // Prevent the 3-option scenario menu from running after auto-pick.
+            awaitingScenarioTag = false;
+            scenarioTagCaptureInFlight = false;
+            scenarioTagAlreadyCaptured = true;
+
             callState.scenarioTag = "doctor_default";
             callState.scenarioChosen = false;
 
