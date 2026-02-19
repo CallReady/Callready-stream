@@ -2455,7 +2455,6 @@ wss.on("connection", (twilioWs) => {
   let sessionTimer = null;
 
   let endRedirectRequested = false;
-  let ringRedirectRequested = false;
 
   let suppressCallerAudioToOpenAI = false;
   let aiSpeaking = false;
@@ -3382,47 +3381,6 @@ wss.on("connection", (twilioWs) => {
       closeAll("Redirect to /unavailable failed");
     }
   }
-
-    async function redirectCallToRing(reason) {
-    if (ringRedirectRequested) return;
-    ringRedirectRequested = true;
-
-    if (!callSid) {
-      console.log(nowIso(), "Cannot redirect to /ring, missing callSid", reason);
-      closeAll("Missing callSid for ring redirect");
-      return;
-    }
-
-    if (!hasTwilioRest()) {
-      console.log(nowIso(), "Cannot redirect to /ring, missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN", reason);
-      closeAll("Missing Twilio REST creds for ring redirect");
-      return;
-    }
-
-    if (!PUBLIC_BASE_URL) {
-      console.log(nowIso(), "Cannot redirect to /ring, missing PUBLIC_BASE_URL", reason);
-      closeAll("Missing PUBLIC_BASE_URL for ring redirect");
-      return;
-    }
-
-    try {
-      const client = twilioClient();
-      const base = PUBLIC_BASE_URL.replace(/\/+$/, "");
-      const url = base + "/ring";
-
-      console.log(nowIso(), "Redirecting call to /ring now", callSid, "reason:", reason);
-
-      await client.calls(callSid).update({ url: url, method: "POST" });
-
-      console.log(nowIso(), "Redirected call to /ring via Twilio REST", callSid);
-
-      closeOpenAIOnly("Redirected to /ring");
-    } catch (err) {
-      console.log(nowIso(), "Twilio REST redirect to /ring error:", err && err.message ? err.message : err);
-      closeAll("Redirect to /ring failed");
-    }
-  }
-
   function maybeStartSessionTimer() {
     return;
   }
