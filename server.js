@@ -2652,6 +2652,18 @@ wss.on("connection", (twilioWs) => {
         "Ask exactly one short question per turn.\n" +
         "Wait for the caller's response before moving on.\n";
       
+      // Add speaking style guidance
+      instructions +=
+        "\n" +
+        "SPEAKING STYLE:\n" +
+        "Sound natural and conversational, not scripted or robotic.\n" +
+        "Use fragments to sound more natural (e.g., 'Sure, I can help with that. Are you a new patient?' instead of 'I am happy to assist you. May I ask if you are a new patient?').\n" +
+        "Use brief acknowledgments ('Got it', 'Okay', 'Thanks') before moving to your next question but do not repeat the same .\n" +
+        "Vary your phrasing slightly each turn—don't repeat the exact same questions word-for-word.\n" +
+        "It's completely fine to sound slightly awkward or take a breath between thoughts—that's realistic.\n" +
+        "Avoid being overly formal or using corporate jargon.\n" +
+        "Be friendly and personable.\n";
+      
       // Add scenario context and goal reminder for every turn
       if (callState.scenarioTag === "doctor_default") {
         instructions +=
@@ -2674,21 +2686,25 @@ wss.on("connection", (twilioWs) => {
           "\n" +
           "NEXT_TARGET: " + (nextTarget || "NONE") + "\n" +
           "Your next question should primarily aim to collect NEXT_TARGET.\n" +
-          "If the caller already provided it, briefly confirm it and then aim for the next required item.\n" +
+          "Do not repeatedly confirm information the caller already provided—move directly to the next required item.\n" +
           "Do not jump ahead unless the caller volunteers relevant information.\n" +
-          "If NEXT_TARGET is NONE, confirm details and wrap up naturally.\n" +
+          "If NEXT_TARGET is NONE, you have all required information. Thank the caller and complete the appointment scheduling with a natural closing line. Do NOT repeat back or read out the collected details.\n" +
           "\n" +
           (remaining.length > 0
             ? "STILL GATHERING: " + remaining.join(", ") + "\n"
-            : "All required items are gathered. You may confirm details and wrap up naturally.\n") +
+            : "All required items are gathered. Proceed directly to wrap up without recapping the details.\n") +
           "\n" +
           "OUTPUT FORMAT INSTRUCTION:\n" +
           "CRITICAL: Your audio and text outputs serve different purposes:\n" +
-          "- AUDIO OUTPUT (what the caller hears): ONLY your natural spoken response. No JSON, no brackets, no delimiters.\n" +
+          "- AUDIO OUTPUT (what the caller hears): ONLY your natural spoken response. No JSON, no brackets, no delimiters, NO checklist item names or values.\n" +
           "- TEXT OUTPUT (server-side only): Your natural spoken response, then add the JSON block below.\n" +
           "\n" +
-          "Structure:\n" +
-          "Audio: 'Great, so your name is John Smith. What is the reason for your appointment?'\n" +
+          "Examples:\n" +
+          "GOOD - Audio: 'Great, I've got all the information. Dr. Johnson can see you next Tuesday at 2 PM. You're all set!'\n" +
+          "BAD - Audio: 'So I have patient_name: John Smith, birthdate: 1990-04-15...' (don't do this)\n" +
+          "\n" +
+          "Structure for text output:\n" +
+          "Audio: 'Great, I've got all the information. Dr. Johnson can see you next Tuesday at 2 PM. You're all set!'\n" +
           "Text: Same as audio above, then:\n" +
           "CHECKLIST_UPDATE_JSON\n" +
           "{ \"patient_name\": {\"done\": true, \"value\": \"John Smith\"} }\n" +
