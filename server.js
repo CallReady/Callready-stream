@@ -3745,22 +3745,65 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-                // If we are waiting for the HUMAN to confirm the auto-picked scenario, classify yes/no now.
+        // If we are waiting for the HUMAN to confirm the auto-picked scenario, parse locally from caller transcript.
         if (
           turnDetectionEnabled &&
           callState.phase === "choose_scenario" &&
           callState.scenarioConfirmCaptureInFlight &&
           callState.subphase === "auto_pick_needs_confirm"
         ) {
+          const utter = (callState.lastUserUtterance || "").toLowerCase().trim();
+
+          const yesRe =
+            /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|lets do it|let's do it|go ahead)\b/i;
+          const noRe =
+            /\b(no|nope|nah|not really|dont|don't|do not|different|something else|another)\b/i;
+
+          if (yesRe.test(utter)) {
+            callState.scenarioConfirmCaptureInFlight = false;
+            callState.scenarioChosen = true;
+
+            setPhase("connecting", "auto_pick_confirmed");
+
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions: buildScenarioIntro(),
+              },
+            });
+
+            return;
+          }
+
+          if (noRe.test(utter)) {
+            callState.scenarioConfirmCaptureInFlight = false;
+            callState.scenarioTag = null;
+            callState.scenarioChosen = false;
+
+            setPhase("choose_scenario", "scenario_pick_start");
+
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "Ask exactly one question and nothing else.\n" +
+                  "Say: \"Do you have a call in mind, or should I pick one for you?\"\n",
+              },
+            });
+
+            return;
+          }
+
+          // Unclear, re-ask and keep waiting for confirmation.
           openaiResponseCreate({
             type: "response.create",
             response: {
-              modalities: ["text"],
+              modalities: ["audio", "text"],
               instructions:
-                "Output exactly one line and nothing else.\n" +
-                "If the HUMAN confirms, output: SCENARIO_CONFIRM: yes\n" +
-                "If the HUMAN rejects, output: SCENARIO_CONFIRM: no\n" +
-                "If unclear, output: SCENARIO_CONFIRM: unknown\n",
+                "Ask exactly one question and nothing else.\n" +
+                "Say: \"Does that sound good?\"\n",
             },
           });
 
@@ -4012,7 +4055,7 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-                if (callState.scenarioConfirmCaptureInFlight && callState.phase === "choose_scenario") {
+        if (callState.scenarioConfirmCaptureInFlight && callState.phase === "choose_scenario") {
           const confirm = extractTokenLineValue(text, "SCENARIO_CONFIRM");
           const v = confirm ? String(confirm).trim().toLowerCase() : "unknown";
 
