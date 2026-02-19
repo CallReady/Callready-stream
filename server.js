@@ -2460,7 +2460,8 @@ wss.on("connection", (twilioWs) => {
     turnIndex: 0,                // increments each time we ask OpenAI to speak
     connectingStep: null,        // null | 'ring' | 'intro' | 'intro_done' - track connecting substep
     connectingStartedAtMs: null, // milliseconds timestamp when entering connecting phase
-    connectingTimeoutFired: false // flag to fire connecting timeout only once
+    connectingTimeoutFired: false, // flag to fire connecting timeout only once
+    checklist: null              // { id: { required: bool, done: bool, value: string|null }, ... }
   };
 
   LAST_CALL_STATE = callState;
@@ -2533,6 +2534,11 @@ wss.on("connection", (twilioWs) => {
       callState.connectingStartedAtMs = null;
       callState.connectingTimeoutFired = false;
       try { console.log(nowIso(), "CONNECTING_STEP", "cleared"); } catch (e) { }
+    }
+    
+    // State hygiene: clear checklist when exiting roleplay
+    if (prev === "roleplay" && next !== "roleplay") {
+      callState.checklist = null;
     }
 
     try {
@@ -2620,13 +2626,33 @@ wss.on("connection", (twilioWs) => {
     }
 
     if (phase === "roleplay") {
-      return (
+      let instructions =
         header +
         "ROLEPLAY MODE.\n" +
         "Stay in your locked role based on CALL_TYPE.\n" +
         "Ask one short question at a time, then wait.\n" +
-        "If the HUMAN asks for help, switch to coaching for one response only, give one suggested sentence, then return to roleplay.\n"
-      );
+        "If the HUMAN asks for help, switch to coaching for one response only, give one suggested sentence, then return to roleplay.\n";
+      
+      // Add checklist tracking for doctor_default
+      if (callState.scenarioTag === "doctor_default" && callState.checklist) {
+        const remaining = Object.keys(callState.checklist).filter(
+          id => callState.checklist[id].required && !callState.checklist[id].done
+        );
+        if (remaining.length > 0) {
+          instructions +=
+            "\n" +
+            "STILL GATHERING: " + remaining.join(", ") + "\n" +
+            "\n" +
+            "OUTPUT FORMAT INSTRUCTION:\n" +
+            "Do not speak the checklist block or delimiters. Audio must contain only your natural spoken response.\n" +
+            "After your natural spoken response, append this text-only JSON block (NOT in audio):\n" +
+            "CHECKLIST_UPDATE_JSON\n" +
+            "{ \"birthdate\": {\"done\": true, \"value\": \"1985-03-15\"}, \"chief_complaint\": {\"done\": false, \"value\": null} }\n" +
+            "END_CHECKLIST_UPDATE_JSON\n";
+        }
+      }
+      
+      return instructions;
     }
 
     if (phase === "ending") {
@@ -3076,6 +3102,15 @@ wss.on("connection", (twilioWs) => {
     );
   }
 
+  function buildDoctorChecklist() {
+    return {
+      birthdate: { required: true, done: false, value: null },
+      chief_complaint: { required: true, done: false, value: null },
+      appointment_preference: { required: true, done: false, value: null },
+      insurance: { required: false, done: false, value: null }
+    };
+  }
+
   function sendOpenerOnce(label) {
     console.log(nowIso(), "Sending opener", label ? "(" + label + ")" : "");
     setPhase("opener", "sendOpenerOnce");
@@ -3396,6 +3431,26 @@ wss.on("connection", (twilioWs) => {
 
     if (typeof response.output_text === "string") out += response.output_text + "\n";
     return out;
+  }
+
+  function parseChecklistUpdateJson(text) {
+    if (!text) return null;
+    
+    const startDelim = "CHECKLIST_UPDATE_JSON";
+    const endDelim = "END_CHECKLIST_UPDATE_JSON";
+    
+    const startIdx = String(text).indexOf(startDelim);
+    if (startIdx === -1) return null;
+    
+    const endIdx = String(text).indexOf(endDelim, startIdx);
+    if (endIdx === -1) return null;
+    
+    const jsonBlock = String(text).substring(startIdx + startDelim.length, endIdx).trim();
+    try {
+      return JSON.parse(jsonBlock);
+    } catch (e) {
+      return null;
+    }
   }
 
   function responseTextRequestsEnd(text) {
@@ -3812,6 +3867,11 @@ wss.on("connection", (twilioWs) => {
             if (ct === "outgoing") callState.role = "caller";
             if (ct === "incoming") callState.role = "answerer";
 
+            // Initialize checklist for doctor_default scenario
+            if (callState.scenarioTag === "doctor_default") {
+              callState.checklist = buildDoctorChecklist();
+            }
+
             let startLine = "Ring ring.";
 
             if (callState.scenarioTag === "doctor_default") {
@@ -3933,6 +3993,27 @@ wss.on("connection", (twilioWs) => {
         const text = extractTextFromResponseDone(msg);
         responseActive = false;
         callState.openaiResponseActive = false;
+        
+        // Roleplay: parse and merge checklist updates from text-only JSON block
+        // Do this BEFORE flushing pendingResponseCreate so checklist is current
+        if (callState.phase === "roleplay" && callState.scenarioTag === "doctor_default" && callState.checklist) {
+          const checklistUpdate = parseChecklistUpdateJson(text);
+          if (checklistUpdate) {
+            try { console.log(nowIso(), "CHECKLIST_UPDATE_PARSED", JSON.stringify(checklistUpdate)); } catch (e) { }
+            // Merge updates: only update known keys
+            for (const id in checklistUpdate) {
+              if (id in callState.checklist && typeof checklistUpdate[id] === "object") {
+                if (checklistUpdate[id].done !== undefined) {
+                  callState.checklist[id].done = !!checklistUpdate[id].done;
+                }
+                if (checklistUpdate[id].value !== undefined) {
+                  callState.checklist[id].value = checklistUpdate[id].value;
+                }
+              }
+            }
+          }
+        }
+        
         if (callState.pendingResponseCreate) {
           const queued = callState.pendingResponseCreate;
           callState.pendingResponseCreate = null;
@@ -3980,6 +4061,11 @@ wss.on("connection", (twilioWs) => {
             // Incoming: HUMAN is the one answering, AI is the caller.
             if (ct === "outgoing") callState.role = "caller";
             if (ct === "incoming") callState.role = "answerer";
+
+            // Initialize checklist for doctor_default scenario
+            if (callState.scenarioTag === "doctor_default") {
+              callState.checklist = buildDoctorChecklist();
+            }
 
             // Start line, scenario-specific. Keep it simple and realistic.
             // Ring already played in the previous step; do not repeat it here.
@@ -4059,27 +4145,6 @@ wss.on("connection", (twilioWs) => {
 
           callState.turnIndex += 1;
           return;
-            } else {
-              startLine = "Ring ring. Hi, I am calling you about your request. Is now a good time?";
-            }
-          }
-
-          callState.turnIndex = 0;
-
-          openaiResponseCreate({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions:
-                "Speak this exactly, then stop speaking and wait:\n" +
-                startLine +
-                "\n",
-            },
-          });
-
-          callState.turnIndex += 1;
-          return;
-
         }
 
         if (scenarioTagCaptureInFlight && !scenarioTagAlreadyCaptured && callSid) {
