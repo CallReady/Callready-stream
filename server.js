@@ -3745,6 +3745,28 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
+                // If we are waiting for the HUMAN to confirm the auto-picked scenario, classify yes/no now.
+        if (
+          turnDetectionEnabled &&
+          callState.phase === "choose_scenario" &&
+          callState.scenarioConfirmCaptureInFlight &&
+          callState.subphase === "auto_pick_needs_confirm"
+        ) {
+          openaiResponseCreate({
+            type: "response.create",
+            response: {
+              modalities: ["text"],
+              instructions:
+                "Output exactly one line and nothing else.\n" +
+                "If the HUMAN confirms, output: SCENARIO_CONFIRM: yes\n" +
+                "If the HUMAN rejects, output: SCENARIO_CONFIRM: no\n" +
+                "If unclear, output: SCENARIO_CONFIRM: unknown\n",
+            },
+          });
+
+          return;
+        }
+
         if (
           turnDetectionEnabled &&
           callState.phase === "choose_scenario" &&
@@ -3984,6 +4006,69 @@ wss.on("connection", (twilioWs) => {
                 "2) Refilling a prescription at a pharmacy\n" +
                 "3) Calling a school office\n" +
                 "Then stop.\n",
+            },
+          });
+
+          return;
+        }
+
+                if (callState.scenarioConfirmCaptureInFlight && callState.phase === "choose_scenario") {
+          const confirm = extractTokenLineValue(text, "SCENARIO_CONFIRM");
+          const v = confirm ? String(confirm).trim().toLowerCase() : "unknown";
+
+          console.log(nowIso(), "Parsed SCENARIO_CONFIRM", { value: v });
+
+          // Done waiting for the model token for this turn.
+          callState.scenarioConfirmCaptureInFlight = false;
+
+          // If unclear, repeat the same confirmation question and do not advance.
+          if (v !== "yes" && v !== "no") {
+            setPhase("choose_scenario", "auto_pick_needs_confirm");
+
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "Ask exactly one question and nothing else.\n" +
+                  "Say: \"Does that sound good?\"\n",
+              },
+            });
+
+            return;
+          }
+
+          // Confirmed, now we can lock the scenario and move into connecting.
+          if (v === "yes") {
+            callState.scenarioChosen = true;
+
+            setPhase("connecting", "auto_pick_confirmed");
+
+            // This should start the next phase, same as your existing connecting flow.
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions: buildScenarioIntro(),
+              },
+            });
+
+            return;
+          }
+
+          // Rejected, go back to scenario selection question.
+          callState.scenarioTag = null;
+          callState.scenarioChosen = false;
+
+          setPhase("choose_scenario", "scenario_pick_start");
+
+          openaiResponseCreate({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              instructions:
+                "Ask exactly one question and nothing else.\n" +
+                "Say: \"Do you have a call in mind, or should I pick one for you?\"\n",
             },
           });
 
