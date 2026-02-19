@@ -4053,7 +4053,19 @@ wss.on("connection", (twilioWs) => {
           }
 
           if (v === "yes") {
-            setPhase("roleplay", "outgoing_start_no_mp3_ring");
+            // HUMAN wants the system to pick a scenario.
+            // Default to doctor appointment for now.
+            const rawTag = "doctor_default";
+
+            awaitingScenarioTag = false;
+            callState.scenarioChosen = true;
+
+            setScenarioTag(rawTag, "auto_pick_default");
+            try {
+              if (callSid) setScenarioTagOnce(callSid, rawTag);
+            } catch (e) { }
+
+            setPhase("choose_scenario", "scenario_auto_pick_confirm");
 
             callState.turnIndex = 0;
 
@@ -4062,10 +4074,10 @@ wss.on("connection", (twilioWs) => {
               response: {
                 modalities: ["audio", "text"],
                 instructions:
-                  "Say exactly these two sentences, then stop.\n" +
-                  "\"Let’s go ahead and start the call now. I’ll answer as the receptionist after the ring.\"\n" +
-                  "\n" +
-                  "\"Ring ring.\"\n",
+                  "Say this exactly, then ask one question and stop:\n" +
+                  "\"Let’s try calling a doctor’s office to schedule an appointment.\"\n" +
+                  "\"Does that sound good?\"\n",
+
               },
             });
 
