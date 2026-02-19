@@ -2435,8 +2435,8 @@ wss.on("connection", (twilioWs) => {
   // Server-owned lightweight call state (we will start using this in the next steps)
   const callState = {
     phase: "boot",               // boot, opener, choose_scenario, roleplay, coaching, wrap, ending
-    callType: null,              // outgoing or incoming
-    role: null,                  // answerer or caller (derived from callType when roleplay starts)
+    callType: "outgoing",        // Always outgoing (user is caller, AI is receptionist/answerer)
+    role: "answerer",            // Always answerer (AI answers as receptionist)
     scenarioTag: null,           // snake_case tag once known
     goal: null,                  // short goal text once known
     scenarioChosen: false,
