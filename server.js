@@ -3771,7 +3771,7 @@ wss.on("connection", (twilioWs) => {
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
-                instructions: buildScenarioIntro(),
+                instructions: "Say: \"Okay.\" Then stop.\n",
               },
             });
 
