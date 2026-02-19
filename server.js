@@ -2251,29 +2251,6 @@ app.post("/unavailable", async (req, res) => {
     res.status(500).send("Error");
   }
 });
-
-app.post("/ring", (req, res) => {
-  try {
-    const VoiceResponse = twilio.twiml.VoiceResponse;
-    const vr = new VoiceResponse();
-
-    const ringUrl = `${PUBLIC_BASE_URL}/audio-fixed/cellphonering.mp3`;
-
-    vr.play(ringUrl);
-
-    vr.connect().stream({
-      url: `wss://${new URL(PUBLIC_BASE_URL).host}/media`,
-    });
-
-    res.type("text/xml").send(vr.toString());
-  } catch (e) {
-    console.log(nowIso(), "Error in /ring", e);
-    res.type("text/xml").send(
-      '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, something went wrong.</Say><Hangup/></Response>'
-    );
-  }
-});
-
 app.post("/end", async (req, res) => {
   try {
     const VoiceResponse = twilio.twiml.VoiceResponse;
