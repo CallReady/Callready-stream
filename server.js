@@ -3926,7 +3926,7 @@ wss.on("connection", (twilioWs) => {
 
           console.log(nowIso(), "Parsed SCENARIO_PICK", { value: v });
 
-          // We are done waiting for the model's SCENARIO_PICK token for this turn.
+          // Done waiting for the model token for this turn.
           callState.scenarioCaptureInFlight = false;
 
           // If the model couldn't decide, ask again and stay in choose_scenario.
@@ -3946,14 +3946,12 @@ wss.on("connection", (twilioWs) => {
             return;
           }
 
-          // HUMAN wants the AI to pick.
+          // HUMAN wants the AI to pick a scenario.
           if (v === "yes") {
             callState.scenarioTag = "doctor_default";
-
-            // Do not mark scenarioChosen until the human confirms.
             callState.scenarioChosen = false;
 
-            // We will listen for the human's yes/no confirmation next.
+            // Next thing we need is the human's confirmation.
             callState.scenarioConfirmCaptureInFlight = true;
 
             setPhase("choose_scenario", "auto_pick_needs_confirm");
@@ -3971,8 +3969,9 @@ wss.on("connection", (twilioWs) => {
             return;
           }
 
-          // HUMAN says they already have something in mind.
-          setPhase("choose_scenario", "scenario_pick_start");
+          // HUMAN has something in mind, switch to the 3 option scenario menu.
+          awaitingScenarioTag = true;
+          setPhase("choose_scenario", "scenario_menu");
 
           openaiResponseCreate({
             type: "response.create",
@@ -3980,7 +3979,11 @@ wss.on("connection", (twilioWs) => {
               modalities: ["audio", "text"],
               instructions:
                 "Ask exactly one question and nothing else.\n" +
-                "Say: \"What kind of call do you want to practice?\"\n",
+                "Offer exactly these three options, in this order:\n" +
+                "1) Scheduling a doctor appointment\n" +
+                "2) Refilling a prescription at a pharmacy\n" +
+                "3) Calling a school office\n" +
+                "Then stop.\n",
             },
           });
 
