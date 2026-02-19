@@ -7,9 +7,12 @@ const WebSocket = require("ws");
 const twilio = require("twilio");
 const { Pool } = require("pg");
 const Stripe = require("stripe");
+const fs = require("fs");
+const path = require("path");
+const { spawn } = require("child_process");
 
 const app = express();
-const path = require("path");
+
 // Serve audio-fixed folder publicly (for ring sounds and other static audio)
 app.use("/audio-fixed", express.static(path.join(process.cwd(), "audio-fixed")));
 // Serve static files (so Twilio can fetch the ring MP3)
@@ -3735,18 +3738,43 @@ wss.on("connection", (twilioWs) => {
                 callState.checklist = buildDoctorChecklist();
               }
 
-              callState.connectingStep = "ring";
+              // Skip both ring and intro steps: go directly to roleplay with the opening greeting
+              setPhase("roleplay", "scenario_confirmed_direct");
 
               cancelOpenAIResponseIfAnyOnce("confirm_yes_transition_to_connecting");
+
+              // Start line, scenario-specific. This is the first thing the AI says in the roleplay.
+              let startLine = "";
+
+              if (callState.scenarioTag === "doctor_default") {
+                if (ct === "outgoing") {
+                  startLine = "Thank you for calling Evergreen Family Clinic. How can I help you today?";
+                } else {
+                  startLine = "Hi, this is Evergreen Family Clinic calling. Are you available to talk for a moment?";
+                }
+              } else {
+                // Fallback if scenarioTag is missing or unknown.
+                if (ct === "outgoing") {
+                  startLine = "Hello, thanks for calling. How can I help you today?";
+                } else {
+                  startLine = "Hi, I am calling you about your request. Is now a good time?";
+                }
+              }
+
+              callState.turnIndex = 0;
 
               openaiResponseCreate({
                 type: "response.create",
                 response: {
                   modalities: ["audio", "text"],
-                  instructions: "Speak this exactly, then stop speaking and wait: Ring ring.\n",
+                  instructions:
+                    "Speak this exactly, then stop speaking and wait:\n" +
+                    startLine +
+                    "\n",
                 },
               });
 
+              callState.turnIndex += 1;
               return;
             }
 
@@ -4151,22 +4179,6 @@ wss.on("connection", (twilioWs) => {
 
           // Prevent duplicate transitions if intro_done has already been processed
           if (callState.connectingStep === "intro_done") return;
-
-          // If the ring just finished, start the scenario intro.
-          if (cs === "ring") {
-            callState.connectingStep = "intro";
-            try { console.log(nowIso(), "CONNECTING_STEP", "intro"); } catch (e) { }
-
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions: buildScenarioIntro(),
-              },
-            });
-
-            return;
-          }
 
           // If the scenario intro just finished, mark intro_done and transition to roleplay.
           if (cs === "intro") {
