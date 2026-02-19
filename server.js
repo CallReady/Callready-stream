@@ -3133,8 +3133,8 @@ wss.on("connection", (twilioWs) => {
         "We are now entering roleplay.\n" +
         "This is an OUTGOING call.\n" +
         "You are the ANSWERER.\n" +
-        "First say exactly: Ring ring.\n" +
-        "Then immediately continue with a realistic greeting as the person answering the phone.\n" +
+        "A ring sound has played before this message.\n" +
+        "Now continue with a realistic greeting as the person answering the phone.\n" +
         "After your greeting, ask one short, natural question.\n"
       );
     }
@@ -4038,8 +4038,9 @@ wss.on("connection", (twilioWs) => {
           });
         }
 
-        // If we are waiting for the HUMAN to confirm the auto-picked scenario, parse locally from caller transcript.
-        if (
+        // OLD confirm handler - DISABLED because new transcription-based confirm handler (line 3783+) handles this
+        // This old speech_stopped based handler was conflicting with the new one
+        if (false && // DISABLED
           turnDetectionEnabled &&
           callState.phase === "choose_scenario" && // Gate: scenario-confirm flow checks
           callState.scenarioConfirmCaptureInFlight &&
@@ -4221,6 +4222,7 @@ wss.on("connection", (twilioWs) => {
         // If we just finished something while in connecting, decide next step based on connectingStep.
         if (callState && callState.phase === "connecting") {
           const cs = callState.connectingStep || null;
+          try { console.log(nowIso(), "CONNECTING_PHASE_HANDLER", "phase=connecting", "connectingStep=" + String(cs)); } catch (e) { }
 
           // Step 1: Transition message (AI says "Great, I'll answer as the receptionist after the ring.")
           if (cs === "transition_message") {
