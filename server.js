@@ -2453,6 +2453,10 @@ wss.on("connection", (twilioWs) => {
 
   LAST_CALL_STATE = callState;
 
+  console.log("═══════════════════════════════════════════════════════════════");
+  console.log(nowIso(), "NEW CALL STARTED");
+  console.log("═══════════════════════════════════════════════════════════════");
+
   function setPhase(nextPhase, why) {
     var prev = String(callState.phase || "unknown").trim(); // State: previous phase for transition validation
     var next = String(nextPhase || "").trim();
@@ -2535,7 +2539,7 @@ wss.on("connection", (twilioWs) => {
         "why=" + String(why || ""),
         "mode=forward"
       );
-      console.log(nowIso(), "PHASE_FLAGS", "prev=" + prev, "next=" + next, (callState && ('awaitingScenarioTag' in callState) ? "awaitingScenarioTag=" + String(!!callState.awaitingScenarioTag) : ""), "scenarioChosen=" + String(!!(callState && callState.scenarioChosen)), "scenarioCaptureInFlight=" + String(!!(callState && callState.scenarioCaptureInFlight)), "scenarioConfirmCaptureInFlight=" + String(!!(callState && callState.scenarioConfirmCaptureInFlight)));
+
     } catch (e) { }
   }
 
@@ -3240,9 +3244,7 @@ wss.on("connection", (twilioWs) => {
 
       if (responseActive) {
         console.log(nowIso(), "Opener retry waiting, OpenAI response still active");
-        try {
-          openerRetryTimer = null;
-        } catch { }
+        try { openerRetryTimer = null; } catch { }
         armOpenerRetryTimer();
         return;
       }
@@ -3690,14 +3692,7 @@ wss.on("connection", (twilioWs) => {
         if (utter) {
           callState.lastUserUtterance = utter;
 
-          if (callState.phase === "choose_scenario" && callState.scenarioConfirmCaptureInFlight) {
-            console.log(nowIso(), "Confirm debug: transcript", {
-              utter,
-              sawCallerSpeechSinceLastAIDone,
-              awaitingScenarioTag,
-              scenarioConfirmCaptureInFlight: callState.scenarioConfirmCaptureInFlight
-            });
-          }
+
 
           var u = utter.toLowerCase();
 
@@ -3805,13 +3800,7 @@ wss.on("connection", (twilioWs) => {
           openerNoAudioTimer = null;
         }
         if (aiAudioBytesThisResponse === 0 && (callState.phase === "connecting" || callState.phase === "roleplay")) {
-          try {
-            console.log(nowIso(), "Audio debug: first audio delta", {
-              phase: callState.phase,
-              responseActive,
-              openaiResponseActive: !!callState.openaiResponseActive
-            });
-          } catch { }
+          // Audio started
         }
         const b = Buffer.from(msg.delta, "base64").length;
         aiAudioBytesThisResponse += b;
@@ -3826,7 +3815,7 @@ wss.on("connection", (twilioWs) => {
         if (!turnDetectionEnabled && openerSent) {
           openerAudioDeltaCount += 1;
           if (openerAudioDeltaCount === 1) {
-            console.log(nowIso(), "Opener: first audio delta forwarded to Twilio");
+
           }
         }
 
@@ -3848,16 +3837,6 @@ wss.on("connection", (twilioWs) => {
           aiSpeakingTailTimer = null;
         }
 
-        if (callState.phase === "connecting" || callState.phase === "roleplay") {
-          try {
-            console.log(nowIso(), "Audio debug: twilioSend media", {
-              phase: callState.phase,
-              bytes: b,
-              streamSid
-            });
-          } catch { }
-        }
-
         twilioSend({ event: "media", streamSid, media: { payload: msg.delta } });
         return;
       }
@@ -3876,27 +3855,13 @@ wss.on("connection", (twilioWs) => {
         }
 
         sawCallerSpeechSinceLastAIDone = true;
-        if (callState.phase === "choose_scenario" && callState.scenarioConfirmCaptureInFlight) {
-          console.log(nowIso(), "Confirm debug: speech_started", {
-            sawCallerSpeechSinceLastAIDone,
-            awaitingScenarioTag,
-            scenarioConfirmCaptureInFlight: callState.scenarioConfirmCaptureInFlight
-          });
-        }
         return;
       }
       if (msg.type === "input_audio_buffer.speech_stopped") {
         if (!turnDetectionEnabled) return;
         if (endingRequested || endRedirectRequested) return;
 
-        if (callState.phase === "choose_scenario" && callState.scenarioConfirmCaptureInFlight) {
-          console.log(nowIso(), "Confirm debug: speech_stopped", {
-            sawSpeechStarted,
-            sawCallerSpeechSinceLastAIDone,
-            awaitingScenarioTag,
-            scenarioConfirmCaptureInFlight: callState.scenarioConfirmCaptureInFlight
-          });
-        }
+
 
         // In roleplay phase, do not auto-trigger AI unless the caller actually spoke
         if (callState.phase === "roleplay" && !sawCallerSpeechSinceLastAIDone) { // Roleplay: ignore speech_stopped unless caller actually spoke
@@ -3971,11 +3936,6 @@ wss.on("connection", (twilioWs) => {
           callState.scenarioConfirmCaptureInFlight &&
           !sawCallerSpeechSinceLastAIDone
         ) {
-          console.log(nowIso(), "Confirm debug: waiting for caller speech", {
-            sawCallerSpeechSinceLastAIDone,
-            awaitingScenarioTag,
-            scenarioConfirmCaptureInFlight: callState.scenarioConfirmCaptureInFlight
-          });
         }
 
         // OLD confirm handler - DISABLED because new transcription-based confirm handler (line 3783+) handles this
@@ -3986,11 +3946,6 @@ wss.on("connection", (twilioWs) => {
           callState.scenarioConfirmCaptureInFlight &&
           sawCallerSpeechSinceLastAIDone
         ) {
-          console.log(nowIso(), "Confirm debug: evaluating utterance", {
-            utter: callState.lastUserUtterance || "",
-            awaitingScenarioTag,
-            scenarioConfirmCaptureInFlight: callState.scenarioConfirmCaptureInFlight
-          });
 
           const utter = (callState.lastUserUtterance || "").toLowerCase().trim();
 
@@ -4114,14 +4069,7 @@ wss.on("connection", (twilioWs) => {
         responseActive = false;
         callState.openaiResponseActive = false;
         if ((callState.phase === "connecting" || callState.phase === "roleplay") && aiAudioBytesThisResponse === 0) {
-          try {
-            console.log(nowIso(), "Audio debug: response.done with no audio", {
-              phase: callState.phase,
-              responseActive,
-              openaiResponseActive: !!callState.openaiResponseActive,
-              textLen: (text || "").length
-            });
-          } catch { }
+          // Response completed with no audio
         }
 
         // Roleplay: parse and merge checklist updates from text-only JSON block
@@ -4129,7 +4077,7 @@ wss.on("connection", (twilioWs) => {
         if (callState.phase === "roleplay" && callState.scenarioTag === "doctor_default" && callState.checklist) {
           const checklistUpdate = parseChecklistUpdateJson(text);
           if (checklistUpdate) {
-            try { console.log(nowIso(), "CHECKLIST_UPDATE_PARSED", JSON.stringify(checklistUpdate)); } catch (e) { }
+
             // Merge updates: only update known keys
             for (const id in checklistUpdate) {
               if (id in callState.checklist && typeof checklistUpdate[id] === "object") {
@@ -4158,19 +4106,9 @@ wss.on("connection", (twilioWs) => {
 
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
 
-        // Debug: log response.done in all phases
-        try { console.log(nowIso(), "RESPONSE_DONE_RECEIVED", "phase=" + String(callState && callState.phase || "NO_STATE"), "connectingStep=" + String(callState && callState.connectingStep || "N/A"), "firstChar=" + String((text || "").charAt(0)), "textLength=" + String((text || "").length)); } catch (e) { }
-
-        // Log the first 200 chars of response text for debugging
-        if (text) {
-          const preview = String(text).substring(0, 200).replace(/\n/g, "\\n");
-          try { console.log(nowIso(), "RESPONSE_TEXT_PREVIEW:", preview); } catch (e) { }
-        }
-
-        // If we just finished something while in connecting, decide next step based on connectingStep.
+        // Response completed
         if (callState && callState.phase === "connecting") {
           const cs = callState.connectingStep || null;
-          try { console.log(nowIso(), "CONNECTING_PHASE_HANDLER", "phase=connecting", "connectingStep=" + String(cs)); } catch (e) { }
 
           // Step 1: Transition message (AI says "Great, I'll answer as the receptionist after the ring.")
           if (cs === "transition_message") {
@@ -4228,7 +4166,6 @@ wss.on("connection", (twilioWs) => {
           } else {
 
             const scenarioTag = extractTokenLineValue(text, "SCENARIO_TAG");
-            console.log(nowIso(), "Scenario tag raw text (first 300 chars)", String(text || "").slice(0, 300));
 
             if (scenarioTag) {
               scenarioTagAlreadyCaptured = true;
@@ -4246,7 +4183,7 @@ wss.on("connection", (twilioWs) => {
           const pick = extractTokenLineValue(text, "SCENARIO_PICK");
           const v = pick ? String(pick).trim().toLowerCase() : "unknown";
 
-          console.log(nowIso(), "Parsed SCENARIO_PICK", { value: v });
+          console.log(nowIso(), "SCENARIO_PICK:", v);
 
           // Done waiting for the model token for this turn.
           callState.scenarioCaptureInFlight = false;
@@ -4309,13 +4246,7 @@ wss.on("connection", (twilioWs) => {
           const tag = extractTokenLineValue(text, "SCENARIO_TAG");
           const rawTag = tag ? String(tag).trim().toLowerCase() : "unknown";
 
-          console.log(nowIso(), "Parsed SCENARIO_TAG", { value: rawTag });
-          console.log(nowIso(), "Scenario menu gate check", {
-            phase: callState.phase, // Log: include phase in scenario menu gate log
-            awaitingScenarioTag: awaitingScenarioTag,
-            scenarioChosen: callState.scenarioChosen,
-            rawTag,
-          });
+          console.log(nowIso(), "SCENARIO_TAG:", rawTag);
 
           // Only allow known tags.
           if (rawTag !== "doctor_default" && rawTag !== "pharmacy_refill" && rawTag !== "school_office") {
