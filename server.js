@@ -3765,18 +3765,52 @@ wss.on("connection", (twilioWs) => {
             callState.scenarioConfirmCaptureInFlight = false;
             callState.scenarioChosen = true;
 
-            setPhase("connecting", "auto_pick_confirmed");
+            // Go straight into roleplay and speak the in-character opener now.
+            setPhase("roleplay", "scenario_intro_done");
+
+            const ct = (callState.callType || "").toLowerCase();
+
+            // Match your existing role mapping in connecting:
+            // outgoing = HUMAN is caller, AI answers
+            // incoming = HUMAN answers, AI calls
+            if (ct === "outgoing") callState.role = "caller";
+            if (ct === "incoming") callState.role = "answerer";
+
+            let startLine = "Ring ring.";
+
+            if (callState.scenarioTag === "doctor_default") {
+              if (ct === "outgoing") {
+                startLine =
+                  "Ring ring. Thank you for calling Evergreen Family Clinic. How can I help you today?";
+              } else {
+                startLine =
+                  "Ring ring. Hi, this is Evergreen Family Clinic calling. Are you available to talk for a moment?";
+              }
+            } else {
+              if (ct === "outgoing") {
+                startLine = "Ring ring. Hello, thanks for calling. How can I help you today?";
+              } else {
+                startLine = "Ring ring. Hi, I am calling you about your request. Is now a good time?";
+              }
+            }
+
+            callState.turnIndex = 0;
 
             openaiResponseCreate({
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
-                instructions: "Say: \"Okay.\" Then stop.\n",
+                instructions:
+                  "Speak this exactly, then stop speaking and wait:\n" +
+                  startLine +
+                  "\n",
               },
             });
 
+            callState.turnIndex += 1;
             return;
           }
+
 
           if (noRe.test(utter)) {
             callState.scenarioConfirmCaptureInFlight = false;
