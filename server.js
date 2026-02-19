@@ -2596,6 +2596,19 @@ wss.on("connection", (twilioWs) => {
     }
   }
 
+  function getNextRequiredChecklistId() {
+    if (!callState.checklist || callState.scenarioTag !== "doctor_default") return null;
+    
+    const preferredOrder = getDoctorChecklistOrder();
+    for (const id of preferredOrder) {
+      const item = callState.checklist[id];
+      if (item && item.required && !item.done) {
+        return id;
+      }
+    }
+    return null;
+  }
+
   function buildPhaseInstructions(why) {
     var phase = String(callState.phase || "").trim(); // Log: current phase used to build AI instructions
 
@@ -2641,10 +2654,18 @@ wss.on("connection", (twilioWs) => {
       
       // Add checklist tracking for doctor_default
       if (callState.scenarioTag === "doctor_default" && callState.checklist) {
+        const nextTarget = getNextRequiredChecklistId();
         const remaining = Object.keys(callState.checklist).filter(
           id => callState.checklist[id].required && !callState.checklist[id].done
         );
+        
         instructions +=
+          "\n" +
+          "NEXT_TARGET: " + (nextTarget || "NONE") + "\n" +
+          "Your next question should primarily aim to collect NEXT_TARGET.\n" +
+          "If the caller already provided it, briefly confirm it and then aim for the next required item.\n" +
+          "Do not jump ahead unless the caller volunteers relevant information.\n" +
+          "If NEXT_TARGET is NONE, confirm details and wrap up naturally.\n" +
           "\n" +
           (remaining.length > 0
             ? "STILL GATHERING: " + remaining.join(", ") + "\n"
@@ -3172,6 +3193,12 @@ wss.on("connection", (twilioWs) => {
       appointment_preference: { required: true, done: false, value: null },
       insurance: { required: false, done: false, value: null }
     };
+  }
+
+  function getDoctorChecklistOrder() {
+    // Define the preferred order for collecting doctor appointment checklist items.
+    // Edit this array to change the order in which the AI asks for information.
+    return ["birthdate", "chief_complaint", "appointment_preference", "insurance"];
   }
 
   function sendOpenerOnce(label) {
