@@ -3874,18 +3874,36 @@ wss.on("connection", (twilioWs) => {
 
         // If we just finished the scenario intro, transition into roleplay instructions.
         if (callState && callState.phase === "connecting") {
+          // Move into roleplay and immediately start in character.
           setPhase("roleplay", "scenario_intro_done");
 
-          // Derive role from callType
           const ct = (callState.callType || "").toLowerCase();
-          if (ct === "outgoing") callState.role = "answerer";
-          if (ct === "incoming") callState.role = "caller";
 
-          // Roleplay instructions differ by call type
-          const roleplayStart =
-            ct === "outgoing"
-              ? "We are going to do an outgoing call. You will hear a ring sound, then I will answer in role as the person you are calling. When you are ready, start the call with your first line."
-              : "We are going to do an incoming call. You will hear a ring sound. After the ring, say hello as the person answering the phone, then I will speak in role as the caller.";
+          // Lock roles correctly:
+          // Outgoing: HUMAN is the caller, AI is the one answering.
+          // Incoming: HUMAN is the one answering, AI is the caller.
+          if (ct === "outgoing") callState.role = "caller";
+          if (ct === "incoming") callState.role = "answerer";
+
+          // Start line, scenario-specific. Keep it simple and realistic.
+          let startLine = "Ring ring.";
+
+          if (callState.scenarioTag === "doctor_default") {
+            if (ct === "outgoing") {
+              startLine =
+                "Ring ring. Thank you for calling Evergreen Family Clinic. How can I help you today?";
+            } else {
+              startLine =
+                "Ring ring. Hi, this is Evergreen Family Clinic calling. Are you available to talk for a moment?";
+            }
+          } else {
+            // Fallback if scenarioTag is missing or unknown.
+            if (ct === "outgoing") {
+              startLine = "Ring ring. Hello, thanks for calling. How can I help you today?";
+            } else {
+              startLine = "Ring ring. Hi, I am calling you about your request. Is now a good time?";
+            }
+          }
 
           callState.turnIndex = 0;
 
@@ -3893,12 +3911,16 @@ wss.on("connection", (twilioWs) => {
             type: "response.create",
             response: {
               modalities: ["audio", "text"],
-              instructions: roleplayStart
-            }
+              instructions:
+                "Speak this exactly, then stop speaking and wait:\n" +
+                startLine +
+                "\n",
+            },
           });
 
           callState.turnIndex += 1;
           return;
+
         }
 
         if (scenarioTagCaptureInFlight && !scenarioTagAlreadyCaptured && callSid) {
