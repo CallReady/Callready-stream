@@ -3741,7 +3741,7 @@ wss.on("connection", (twilioWs) => {
                 type: "response.create",
                 response: {
                   modalities: ["audio", "text"],
-                  instructions: "Speak this exactly, then stop speaking and wait:\nRing ring.\n",
+                  instructions: "Speak this exactly, then stop speaking and wait: Ring ring.\n",
                 },
               });
 
