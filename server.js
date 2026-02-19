@@ -2459,7 +2459,8 @@ wss.on("connection", (twilioWs) => {
     summary: null,               // short rolling summary (we will add later)
     turnIndex: 0,                // increments each time we ask OpenAI to speak
     connectingStep: null,        // null | 'ring' | 'intro' | 'intro_done' - track connecting substep
-    connectingStartedAtMs: null  // milliseconds timestamp when entering connecting phase
+    connectingStartedAtMs: null, // milliseconds timestamp when entering connecting phase
+    connectingTimeoutFired: false // flag to fire connecting timeout only once
   };
 
   LAST_CALL_STATE = callState;
@@ -2527,8 +2528,10 @@ wss.on("connection", (twilioWs) => {
     // Apply
     callState.phase = next;
     // State hygiene: clear connectingStep when returning to gate or ending phases
-    if (next === "choose_call_type" || next === "choose_scenario" || next === "ending") {
+    if (next === "choose_call_type" || next === "choose_scenario" || next === "ending" || next === "roleplay") {
       callState.connectingStep = null;
+      callState.connectingStartedAtMs = null;
+      callState.connectingTimeoutFired = false;
       try { console.log(nowIso(), "CONNECTING_STEP", "cleared"); } catch (e) { }
     }
 
@@ -3543,6 +3546,32 @@ wss.on("connection", (twilioWs) => {
       const msg = safeJsonParse(data.toString());
       if (!msg) return;
       recordRealtimeServerEvent(msg);
+      // Watchdog: if connecting phase timeout (>20 seconds), gracefully end the call
+      if (callState.phase === "connecting" && callState.connectingStartedAtMs) {
+        // Skip if timeout already fired
+        if (callState.connectingTimeoutFired) return;
+
+        const elapsedMs = Date.now() - callState.connectingStartedAtMs;
+        if (elapsedMs > 20000) {
+          try {
+            callState.connectingTimeoutFired = true;
+            // Transition to ending phase first so state is correct
+            setPhase("ending", "connecting_timeout");
+            console.log(nowIso(), "CONNECTING_TIMEOUT", { elapsedMs });
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio"],
+                instructions: "Speak this exactly, then stop speaking and wait:\nSorry, something got stuck. Let's end the practice call and try again.",
+              },
+            });
+            endingRequested = true;
+          } catch (e) {
+            console.log(nowIso(), "Connecting timeout handler error:", e && e.message ? e.message : e);
+          }
+          return;
+        }
+      }
       // Capture caller transcript (from OpenAI transcription) and handle reroute phrases.
       if (
         msg.type === "conversation.item.input_audio_transcription.completed" ||
@@ -4262,6 +4291,7 @@ wss.on("connection", (twilioWs) => {
 
           callState.turnIndex = 0;
           callState.connectingStartedAtMs = Date.now();
+          try { console.log(nowIso(), "CONNECTING_BEGIN", "scenarioTag=" + String(callState.scenarioTag || ""), "callType=" + String(callState.callType || ""), "role=" + String(callState.role || "")); } catch (e) { }
 
           // Start connecting sequence: play a short ring first, then scenario intro.
           callState.connectingStep = "ring";
