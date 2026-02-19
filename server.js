@@ -2130,14 +2130,13 @@ app.post("/debug/prompt-contract", (req, res) => {
     if (gate === "call_type") {
       ask =
         "Ask exactly one question and nothing else:\n" +
-        "What do you want to practice today, making a call, or answering a call?\n" +
+        "Are you ready to practice making a call?\n" +
         "Do not output CALL_TYPE in this message.\n";
 
       capture =
         "Output exactly one final line and nothing else:\n" +
-        "CALL_TYPE: <incoming|outgoing|unknown>\n" +
+        "CALL_TYPE: <outgoing|unknown>\n" +
         "Rules:\n" +
-        "- incoming means answering a call\n" +
         "- outgoing means making a call\n" +
         "- if unclear, unknown\n";
     }
@@ -2561,7 +2560,7 @@ wss.on("connection", (twilioWs) => {
     var v = String(nextCallType || "").trim().toLowerCase();
     if (v === "outgoing" || v === "incoming") {
       callState.callType = v;
-      callState.role = (v === "outgoing") ? "answerer" : "caller";
+      callState.role = "answerer"; // Always answerer since we only do outgoing calls
       try {
         console.log(
           nowIso(),
@@ -2616,7 +2615,7 @@ wss.on("connection", (twilioWs) => {
       return (
         header +
         "Ask exactly one question and nothing else:\n" +
-        "Do you want to practice making a call, or answering a call?\n"
+        "Are you ready to practice making a call?\n"
       );
     }
 
@@ -3122,7 +3121,7 @@ wss.on("connection", (twilioWs) => {
 
   function buildRoleplayStartInstructions() {
     if (!callState.callType) {
-      return "Ask one short question to clarify whether this is an incoming or outgoing call.";
+      return "We are now entering roleplay. The human is calling and you are answering.";
     }
 
     if (callState.callType === "outgoing") {
@@ -3136,15 +3135,7 @@ wss.on("connection", (twilioWs) => {
       );
     }
 
-    if (callState.callType === "incoming") {
-      return (
-        "We are now entering roleplay.\n" +
-        "This is an INCOMING call.\n" +
-        "You are the CALLER.\n" +
-        "First say exactly: Go ahead and say hello to start the call.\n" +
-        "Then stop speaking completely and wait.\n"
-      );
-    }
+
 
     return "Begin roleplay naturally.";
   }
@@ -3215,8 +3206,8 @@ wss.on("connection", (twilioWs) => {
         instructions:
           "You are CallReady. This is practice, not a real business, and not for emergencies.\n" +
           "Ask exactly one question in a calm, natural way:\n" +
-          "\"Do you want to practice making a call, or answering a call?\"\n" +
-          "Offer both choices clearly.\n" +
+          "\"Are you ready to practice making a call?\"\n" +
+          "Wait for the response.\n" +
           "Do not mention scenarios yet.\n" +
           "Do not output CALL_TYPE in this message.\n" +
           "Then stop speaking and wait.",
@@ -3589,7 +3580,6 @@ wss.on("connection", (twilioWs) => {
             "AI: you, CallReady.\n" +
             "CALLER: initiates the call and drives the purpose.\n" +
             "ANSWERER: answers and responds.\n" +
-            "INCOMING CALL: HUMAN is ANSWERER, AI is CALLER.\n" +
             "OUTGOING CALL: HUMAN is CALLER, AI is ANSWERER.\n" +
             "ROLEPLAY MODE: you speak as the other person in the scenario.\n" +
             "COACHING MODE: you speak as CallReady to help the HUMAN.\n" +
@@ -3795,9 +3785,8 @@ wss.on("connection", (twilioWs) => {
               setPhase("connecting", "scenario_confirmed");
               callState.connectingStartedAtMs = Date.now();
 
-              const ct = (callState.callType || "").toLowerCase();
-              if (ct === "outgoing") callState.role = "caller";
-              if (ct === "incoming") callState.role = "answerer";
+              // Always answerer role since we only do outgoing calls (human calls, AI answers)
+              callState.role = "answerer";
 
               if (callState.scenarioTag === "doctor_default") {
                 callState.checklist = buildDoctorChecklist();
@@ -3993,8 +3982,7 @@ wss.on("connection", (twilioWs) => {
               modalities: ["text"],
               instructions:
                 "Output exactly one line and nothing else.\n" +
-                "If the HUMAN chose making a call, output: CALL_TYPE: outgoing\n" +
-                "If the HUMAN chose answering a call, output: CALL_TYPE: incoming\n" +
+                "If the HUMAN is ready to practice making a call, output: CALL_TYPE: outgoing\n" +
                 "If unclear, output: CALL_TYPE: unknown\n",
             },
           });
@@ -4068,9 +4056,8 @@ wss.on("connection", (twilioWs) => {
             setPhase("connecting", "scenario_confirmed");
             callState.connectingStartedAtMs = Date.now();
 
-            const ct = (callState.callType || "").toLowerCase();
-            if (ct === "outgoing") callState.role = "caller";
-            if (ct === "incoming") callState.role = "answerer";
+            // Always answerer role since we only do outgoing calls (human calls, AI answers)
+            callState.role = "answerer";
 
             if (callState.scenarioTag === "doctor_default") {
               callState.checklist = buildDoctorChecklist();
@@ -4304,18 +4291,16 @@ wss.on("connection", (twilioWs) => {
           const raw = ct ? String(ct).trim().toLowerCase() : "";
           let v = raw;
 
-          // Whitelist common human phrasings, map them to the only two legal values.
-          if (raw === "making a call" || raw === "make a call" || raw === "call" || raw === "outgoing") {
+          // Whitelist common human phrasings, map them to outgoing only.
+          if (raw === "making a call" || raw === "make a call" || raw === "call" || raw === "outgoing" || raw === "yes" || raw === "ready") {
             v = "outgoing";
-          } else if (raw === "answering a call" || raw === "answer a call" || raw === "answering" || raw === "incoming") {
-            v = "incoming";
           }
 
           // Always clear the capture flag first so we can retry if needed.
           callTypeCaptureInFlight = false;
 
           // If the model couldn't determine it, ask the call type question again and stay in choose_call_type.
-          if (v !== "outgoing" && v !== "incoming") {
+          if (v !== "outgoing") {
             lockedCallType = null;
             awaitingCallTypeChoice = true;
             setPhase("choose_call_type", "call_type_unclear_retry");
