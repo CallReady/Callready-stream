@@ -4331,34 +4331,6 @@ wss.on("connection", (twilioWs) => {
       streamSid = msg.start && msg.start.streamSid ? msg.start.streamSid : null;
       callSid = msg.start && msg.start.callSid ? msg.start.callSid : null;
 
-            // If this /media connection was created by /ring, Twilio will include Stream Parameters here.
-      // Example: msg.start.customParameters = { callType, scenarioTag, resume, aiFirst }
-      const cp =
-        msg.start && msg.start.customParameters && typeof msg.start.customParameters === "object"
-          ? msg.start.customParameters
-          : null;
-
-      if (cp) {
-        const resume = String(cp.resume || "");
-        const callTypeFromCp = String(cp.callType || "");
-        const scenarioTagFromCp = String(cp.scenarioTag || "");
-        const aiFirstFromCp = String(cp.aiFirst || "");
-
-        console.log(nowIso(), "Twilio start customParameters", {
-          resume,
-          callType: callTypeFromCp,
-          scenarioTag: scenarioTagFromCp,
-          aiFirst: aiFirstFromCp,
-        });
-
-        // Store for later. We are not changing behavior yet in this step.
-        callState.resume = resume || callState.resume || "";
-        if (callTypeFromCp) callState.callType = callTypeFromCp;
-        if (scenarioTagFromCp) callState.scenarioTag = scenarioTagFromCp;
-
-        callState.aiFirstAfterRing = aiFirstFromCp === "true";
-      }
-
       console.log(nowIso(), "Twilio stream start:", streamSid || "(no streamSid)");
       console.log(nowIso(), "Twilio callSid:", callSid || "(no callSid)");
       usageLog.callSid = callSid || null;
