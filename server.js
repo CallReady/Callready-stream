@@ -3820,7 +3820,14 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-        if (turnDetectionEnabled && callState.phase === "choose_scenario" && !callState.scenarioChosen && !callState.scenarioCaptureInFlight) { // Gate: parse SCENARIO_PICK in choose_scenario
+        if (
+          turnDetectionEnabled &&
+          callState.phase === "choose_scenario" &&
+          !callState.scenarioChosen &&
+          !callState.scenarioCaptureInFlight &&
+          !awaitingScenarioTag &&
+          !callState.scenarioConfirmCaptureInFlight
+        ) { // Gate: parse SCENARIO_PICK in choose_scenario
           callState.scenarioCaptureInFlight = true;
 
           openaiResponseCreate({
@@ -3857,54 +3864,27 @@ wss.on("connection", (twilioWs) => {
             callState.scenarioConfirmCaptureInFlight = false;
             callState.scenarioChosen = true;
 
-            // Go straight into roleplay and speak the in-character opener now.
-            setPhase("roleplay", "scenario_intro_done");
+            setPhase("connecting", "scenario_confirmed");
+            callState.connectingStartedAtMs = Date.now();
 
             const ct = (callState.callType || "").toLowerCase();
-
-            // Match your existing role mapping in connecting:
-            // outgoing = HUMAN is caller, AI answers
-            // incoming = HUMAN answers, AI calls
             if (ct === "outgoing") callState.role = "caller";
             if (ct === "incoming") callState.role = "answerer";
 
-            // Initialize checklist for doctor_default scenario
             if (callState.scenarioTag === "doctor_default") {
               callState.checklist = buildDoctorChecklist();
             }
 
-            let startLine = "Ring ring.";
-
-            if (callState.scenarioTag === "doctor_default") {
-              if (ct === "outgoing") {
-                startLine =
-                  "Ring ring. Thank you for calling Evergreen Family Clinic. How can I help you today?";
-              } else {
-                startLine =
-                  "Ring ring. Hi, this is Evergreen Family Clinic calling. Are you available to talk for a moment?";
-              }
-            } else {
-              if (ct === "outgoing") {
-                startLine = "Ring ring. Hello, thanks for calling. How can I help you today?";
-              } else {
-                startLine = "Ring ring. Hi, I am calling you about your request. Is now a good time?";
-              }
-            }
-
-            callState.turnIndex = 0;
+            callState.connectingStep = "ring";
 
             openaiResponseCreate({
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
-                instructions:
-                  "Speak this exactly, then stop speaking and wait:\n" +
-                  startLine +
-                  "\n",
+                instructions: "Speak this exactly, then stop speaking and wait:\nRing ring.\n",
               },
             });
 
-            callState.turnIndex += 1;
             return;
           }
 
@@ -3914,7 +3894,8 @@ wss.on("connection", (twilioWs) => {
             callState.scenarioTag = null;
             callState.scenarioChosen = false;
 
-            setPhase("choose_scenario", "scenario_pick_start");
+            awaitingScenarioTag = true;
+            setPhase("choose_scenario", "scenario_menu");
 
             openaiResponseCreate({
               type: "response.create",
@@ -3922,7 +3903,7 @@ wss.on("connection", (twilioWs) => {
                 modalities: ["audio", "text"],
                 instructions:
                   "Ask exactly one question and nothing else.\n" +
-                  "Say: \"Do you have a call in mind, or should I pick one for you?\"\n",
+                  "Say: \"Which do you want to practice? Say 1 for scheduling a doctor's appointment, 2 for a pharmacy refill, or 3 for calling a school office.\"\n",
               },
             });
 
@@ -4243,36 +4224,12 @@ wss.on("connection", (twilioWs) => {
           // Done waiting for the model token for this turn.
           callState.scenarioCaptureInFlight = false;
 
-          // If the model couldn't decide, ask again and stay in choose_scenario.
-          if (v !== "yes" && v !== "no") {
-            setPhase("choose_scenario", "scenario_pick_unclear_retry");
-
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "Ask exactly one question and nothing else.\n" +
-                  "Say: \"Do you have a call in mind, or should I pick one for you?\"\n",
-              },
-            });
-
-            return;
-          }
-
-          // HUMAN wants the AI to pick a scenario.
-          if (v === "yes") {
-            // Prevent the 3-option scenario menu from running after auto-pick.
+          if (v === "no") {
             awaitingScenarioTag = false;
-            scenarioTagCaptureInFlight = false;
-            scenarioTagAlreadyCaptured = true;
 
             callState.scenarioTag = "doctor_default";
             callState.scenarioChosen = false;
-
-            // Next thing we need is the human's confirmation.
             callState.scenarioConfirmCaptureInFlight = true;
-            callState.subphase = "scenario_auto_pick_confirm";
 
             setPhase("choose_scenario", "auto_pick_needs_confirm");
 
@@ -4282,16 +4239,31 @@ wss.on("connection", (twilioWs) => {
                 modalities: ["audio", "text"],
                 instructions:
                   "Ask exactly one question and nothing else.\n" +
-                  "Say: \"Okay. Let’s practice calling a doctor’s office to schedule an appointment. Does that sound good?\"\n",
+                  "Say: \"Okay. Let's practice calling a doctor's office to schedule an appointment. Does that sound good?\"\n",
               },
             });
 
             return;
           }
 
-          // HUMAN has something in mind, switch to the 3 option scenario menu.
-          awaitingScenarioTag = true;
-          setPhase("choose_scenario", "scenario_menu");
+          if (v === "yes") {
+            awaitingScenarioTag = true;
+            setPhase("choose_scenario", "scenario_menu");
+
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "Ask exactly one question and nothing else.\n" +
+                  "Say: \"Which do you want to practice? Say 1 for scheduling a doctor's appointment, 2 for a pharmacy refill, or 3 for calling a school office.\"\n",
+              },
+            });
+
+            return;
+          }
+
+          setPhase("choose_scenario", "scenario_pick_unclear_retry");
 
           openaiResponseCreate({
             type: "response.create",
@@ -4299,11 +4271,7 @@ wss.on("connection", (twilioWs) => {
               modalities: ["audio", "text"],
               instructions:
                 "Ask exactly one question and nothing else.\n" +
-                "Offer exactly these three options, in this order:\n" +
-                "1) Scheduling a doctor appointment\n" +
-                "2) Refilling a prescription at a pharmacy\n" +
-                "3) Calling a school office\n" +
-                "Then stop.\n",
+                "Say: \"Do you have a specific call you want to practice, or should I pick one for you?\"\n",
             },
           });
 
