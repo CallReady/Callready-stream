@@ -3708,6 +3708,67 @@ wss.on("connection", (twilioWs) => {
 
             return;
           }
+
+          // Confirm auto-picked scenario directly from transcription (no speech_stopped needed).
+          if (
+            msg.type === "conversation.item.input_audio_transcription.completed" &&
+            callState.phase === "choose_scenario" &&
+            callState.scenarioConfirmCaptureInFlight
+          ) {
+            const yesRe =
+              /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|lets do it|let's do it|go ahead)\b/i;
+            const noRe =
+              /\b(no|nope|nah|not really|dont|don't|do not|different|something else|another)\b/i;
+
+            if (yesRe.test(u)) {
+              callState.scenarioConfirmCaptureInFlight = false;
+              callState.scenarioChosen = true;
+
+              setPhase("connecting", "scenario_confirmed");
+              callState.connectingStartedAtMs = Date.now();
+
+              const ct = (callState.callType || "").toLowerCase();
+              if (ct === "outgoing") callState.role = "caller";
+              if (ct === "incoming") callState.role = "answerer";
+
+              if (callState.scenarioTag === "doctor_default") {
+                callState.checklist = buildDoctorChecklist();
+              }
+
+              callState.connectingStep = "ring";
+
+              openaiResponseCreate({
+                type: "response.create",
+                response: {
+                  modalities: ["audio", "text"],
+                  instructions: "Speak this exactly, then stop speaking and wait:\nRing ring.\n",
+                },
+              });
+
+              return;
+            }
+
+            if (noRe.test(u)) {
+              callState.scenarioConfirmCaptureInFlight = false;
+              callState.scenarioTag = null;
+              callState.scenarioChosen = false;
+
+              awaitingScenarioTag = true;
+              setPhase("choose_scenario", "scenario_menu");
+
+              openaiResponseCreate({
+                type: "response.create",
+                response: {
+                  modalities: ["audio", "text"],
+                  instructions:
+                    "Ask exactly one question and nothing else.\n" +
+                    "Say: \"Which do you want to practice? Say 1 for scheduling a doctor's appointment, 2 for a pharmacy refill, or 3 for calling a school office.\"\n",
+                },
+              });
+
+              return;
+            }
+          }
         }
       }
 
