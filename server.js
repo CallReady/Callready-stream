@@ -2638,18 +2638,19 @@ wss.on("connection", (twilioWs) => {
         const remaining = Object.keys(callState.checklist).filter(
           id => callState.checklist[id].required && !callState.checklist[id].done
         );
-        if (remaining.length > 0) {
-          instructions +=
-            "\n" +
-            "STILL GATHERING: " + remaining.join(", ") + "\n" +
-            "\n" +
-            "OUTPUT FORMAT INSTRUCTION:\n" +
-            "Do not speak the checklist block or delimiters. Audio must contain only your natural spoken response.\n" +
-            "After your natural spoken response, append this text-only JSON block (NOT in audio):\n" +
-            "CHECKLIST_UPDATE_JSON\n" +
-            "{ \"birthdate\": {\"done\": true, \"value\": \"1985-03-15\"}, \"chief_complaint\": {\"done\": false, \"value\": null} }\n" +
-            "END_CHECKLIST_UPDATE_JSON\n";
-        }
+        instructions +=
+          "\n" +
+          (remaining.length > 0
+            ? "STILL GATHERING: " + remaining.join(", ") + "\n"
+            : "All required items are gathered. You may confirm details and wrap up naturally.\n") +
+          "\n" +
+          "OUTPUT FORMAT INSTRUCTION:\n" +
+          "Do not speak the checklist block or delimiters. Audio must contain only your natural spoken response.\n" +
+          "In the JSON block, include only the checklist IDs you are updating this turn.\n" +
+          "After your natural spoken response, append this text-only JSON block (NOT in audio):\n" +
+          "CHECKLIST_UPDATE_JSON\n" +
+          "{ \"birthdate\": {\"done\": true, \"value\": \"1985-03-15\"}, \"chief_complaint\": {\"done\": false, \"value\": null} }\n" +
+          "END_CHECKLIST_UPDATE_JSON\n";
       }
       
       return instructions;
