@@ -3737,6 +3737,8 @@ wss.on("connection", (twilioWs) => {
 
               callState.connectingStep = "ring";
 
+              cancelOpenAIResponseIfAnyOnce("confirm_yes_transition_to_connecting");
+
               openaiResponseCreate({
                 type: "response.create",
                 response: {
