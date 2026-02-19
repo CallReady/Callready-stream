@@ -3644,6 +3644,15 @@ wss.on("connection", (twilioWs) => {
         if (utter) {
           callState.lastUserUtterance = utter;
 
+          if (callState.phase === "choose_scenario" && callState.scenarioConfirmCaptureInFlight) {
+            console.log(nowIso(), "Confirm debug: transcript", {
+              utter,
+              sawCallerSpeechSinceLastAIDone,
+              awaitingScenarioTag,
+              scenarioConfirmCaptureInFlight: callState.scenarioConfirmCaptureInFlight
+            });
+          }
+
           var u = utter.toLowerCase();
 
           // Reroute: end
@@ -3760,11 +3769,27 @@ wss.on("connection", (twilioWs) => {
         }
 
         sawCallerSpeechSinceLastAIDone = true;
+        if (callState.phase === "choose_scenario" && callState.scenarioConfirmCaptureInFlight) {
+          console.log(nowIso(), "Confirm debug: speech_started", {
+            sawCallerSpeechSinceLastAIDone,
+            awaitingScenarioTag,
+            scenarioConfirmCaptureInFlight: callState.scenarioConfirmCaptureInFlight
+          });
+        }
         return;
       }
       if (msg.type === "input_audio_buffer.speech_stopped") {
         if (!turnDetectionEnabled) return;
         if (endingRequested || endRedirectRequested) return;
+
+        if (callState.phase === "choose_scenario" && callState.scenarioConfirmCaptureInFlight) {
+          console.log(nowIso(), "Confirm debug: speech_stopped", {
+            sawSpeechStarted,
+            sawCallerSpeechSinceLastAIDone,
+            awaitingScenarioTag,
+            scenarioConfirmCaptureInFlight: callState.scenarioConfirmCaptureInFlight
+          });
+        }
 
         // In roleplay phase, do not auto-trigger AI unless the caller actually spoke
         if (callState.phase === "roleplay" && !sawCallerSpeechSinceLastAIDone) { // Roleplay: ignore speech_stopped unless caller actually spoke
@@ -3845,6 +3870,19 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
+        if (
+          turnDetectionEnabled &&
+          callState.phase === "choose_scenario" &&
+          callState.scenarioConfirmCaptureInFlight &&
+          !sawCallerSpeechSinceLastAIDone
+        ) {
+          console.log(nowIso(), "Confirm debug: waiting for caller speech", {
+            sawCallerSpeechSinceLastAIDone,
+            awaitingScenarioTag,
+            scenarioConfirmCaptureInFlight: callState.scenarioConfirmCaptureInFlight
+          });
+        }
+
         // If we are waiting for the HUMAN to confirm the auto-picked scenario, parse locally from caller transcript.
         if (
           turnDetectionEnabled &&
@@ -3852,6 +3890,11 @@ wss.on("connection", (twilioWs) => {
           callState.scenarioConfirmCaptureInFlight &&
           sawCallerSpeechSinceLastAIDone
         ) {
+          console.log(nowIso(), "Confirm debug: evaluating utterance", {
+            utter: callState.lastUserUtterance || "",
+            awaitingScenarioTag,
+            scenarioConfirmCaptureInFlight: callState.scenarioConfirmCaptureInFlight
+          });
 
           const utter = (callState.lastUserUtterance || "").toLowerCase().trim();
 
