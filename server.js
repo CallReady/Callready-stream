@@ -4084,7 +4084,6 @@ wss.on("connection", (twilioWs) => {
 
           if (text.includes("yes")) {
             setPhase("connecting", "auto_pick_confirmed");
-            redirectCallToRing("outgoing_confirmed_start_ring").catch((e) => console.log(nowIso(), "redirectCallToRing failed", e));
 
             callState.turnIndex = 0;
 
@@ -4332,7 +4331,7 @@ wss.on("connection", (twilioWs) => {
       streamSid = msg.start && msg.start.streamSid ? msg.start.streamSid : null;
       callSid = msg.start && msg.start.callSid ? msg.start.callSid : null;
 
-      // If this /media connection was created by /ring, Twilio will include Stream Parameters here.
+            // If this /media connection was created by /ring, Twilio will include Stream Parameters here.
       // Example: msg.start.customParameters = { callType, scenarioTag, resume, aiFirst }
       const cp =
         msg.start && msg.start.customParameters && typeof msg.start.customParameters === "object"
