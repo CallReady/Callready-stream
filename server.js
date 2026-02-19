@@ -4081,6 +4081,7 @@ wss.on("connection", (twilioWs) => {
 
             // Next thing we need is the human's confirmation.
             callState.scenarioConfirmCaptureInFlight = true;
+            callState.subphase = "scenario_auto_pick_confirm";
 
             setPhase("choose_scenario", "auto_pick_needs_confirm");
 
