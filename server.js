@@ -2672,12 +2672,18 @@ wss.on("connection", (twilioWs) => {
             : "All required items are gathered. You may confirm details and wrap up naturally.\n") +
           "\n" +
           "OUTPUT FORMAT INSTRUCTION:\n" +
-          "Do not speak the checklist block or delimiters. Audio must contain only your natural spoken response.\n" +
-          "In the JSON block, include only the checklist IDs you are updating this turn.\n" +
-          "After your natural spoken response, append this text-only JSON block (NOT in audio):\n" +
+          "CRITICAL: Your audio and text outputs serve different purposes:\n" +
+          "- AUDIO OUTPUT (what the caller hears): ONLY your natural spoken response. No JSON, no brackets, no delimiters.\n" +
+          "- TEXT OUTPUT (server-side only): Your natural spoken response, then add the JSON block below.\n" +
+          "\n" +
+          "Structure:\n" +
+          "Audio: 'Great, so your name is John Smith. What is the reason for your appointment?'\n" +
+          "Text: Same as audio above, then:\n" +
           "CHECKLIST_UPDATE_JSON\n" +
-          "{ \"patient_name\": {\"done\": true, \"value\": \"John Smith\"}, \"reason_for_appointment\": {\"done\": false, \"value\": null} }\n" +
-          "END_CHECKLIST_UPDATE_JSON\n";
+          "{ \"patient_name\": {\"done\": true, \"value\": \"John Smith\"} }\n" +
+          "END_CHECKLIST_UPDATE_JSON\n" +
+          "\n" +
+          "Only include checklist IDs you are updating this turn in the JSON block.\n";
       }
       
       return instructions;
