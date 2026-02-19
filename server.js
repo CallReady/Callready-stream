@@ -4062,8 +4062,10 @@ wss.on("connection", (twilioWs) => {
               response: {
                 modalities: ["audio", "text"],
                 instructions:
-                  "Say this exactly, then stop:\n" +
-                  "\"Let's go ahead and start the call now. I'll answer as the receptionist after the ring. Ring ring.\"\n",
+                  "Say exactly these two sentences, then stop.\n" +
+                  "\"Let’s go ahead and start the call now. I’ll answer as the receptionist after the ring.\"\n" +
+                  "\n" +
+                  "\"Ring ring.\"\n",
               },
             });
 
