@@ -2060,7 +2060,7 @@ app.post("/debug/scenario-gate-dryrun", (req, res) => {
 
 app.post("/debug/gate-step", (req, res) => {
   try {
-    const phase = req.body && req.body.phase ? String(req.body.phase) : "choose_call_type";
+    const phase = req.body && req.body.phase ? String(req.body.phase) : "choose_scenario";
     const text = req.body && req.body.text ? String(req.body.text) : "";
 
     // Flags supplied by caller so we can simulate state.
@@ -2081,18 +2081,6 @@ app.post("/debug/gate-step", (req, res) => {
       parsed: { CALL_TYPE: vCt, SCENARIO_PICK: vSp, SCENARIO_TAG: vSt },
       next: { phase, flags: { awaitingCallTypeChoice, awaitingScenarioTag }, note: "no change" },
     };
-
-    // Gate 1: choose_call_type completion
-    if (phase === "choose_call_type" && awaitingCallTypeChoice) {
-      if (vCt === "incoming" || vCt === "outgoing") {
-        result.next.phase = "choose_scenario";
-        result.next.flags.awaitingCallTypeChoice = false;
-        result.next.note = "call type accepted, advance to choose_scenario";
-        return res.json(result);
-      }
-      result.next.note = "call type unclear, stay in choose_call_type";
-      return res.json(result);
-    }
 
     // Gate 2: SCENARIO_PICK yes triggers menu requirement
     if (phase === "choose_scenario" && vSp === "yes") {
@@ -2423,10 +2411,7 @@ wss.on("connection", (twilioWs) => {
   let sawSpeechStarted = false;
 
   let requireCallerSpeechBeforeNextAI = false;
-  let lockedCallType = null; // "outgoing" or "incoming"
-  let awaitingCallTypeChoice = false;
   let awaitingScenarioTag = false;
-  let callTypeCaptureInFlight = false;
 
   let sawCallerSpeechSinceLastAIDone = false;
 
@@ -2449,7 +2434,7 @@ wss.on("connection", (twilioWs) => {
 
   // Server-owned lightweight call state (we will start using this in the next steps)
   const callState = {
-    phase: "boot",               // boot, opener, choose_call_type, choose_scenario, roleplay, coaching, wrap, ending
+    phase: "boot",               // boot, opener, choose_scenario, roleplay, coaching, wrap, ending
     callType: null,              // outgoing or incoming
     role: null,                  // answerer or caller (derived from callType when roleplay starts)
     scenarioTag: null,           // snake_case tag once known
@@ -2478,8 +2463,7 @@ wss.on("connection", (twilioWs) => {
     // Anything not listed here is blocked.
     var allowed = {
       boot: ["opener"],
-      opener: ["choose_call_type", "ending"],
-      choose_call_type: ["choose_scenario", "ending"],
+      opener: ["choose_scenario", "ending"],
       choose_scenario: ["connecting", "ending"],
       connecting: ["roleplay", "ending"],
       roleplay: ["ending"],
@@ -2488,7 +2472,6 @@ wss.on("connection", (twilioWs) => {
 
     // Reroute transitions that are allowed from anywhere
     var reroutes = {
-      choose_call_type: true,   // "change call type", "start over"
       choose_scenario: true,    // "change scenario"
       ending: true              // "stop", "end practice"
     };
@@ -2531,7 +2514,7 @@ wss.on("connection", (twilioWs) => {
     // Apply
     callState.phase = next;
     // State hygiene: clear connectingStep when returning to gate or ending phases
-    if (next === "choose_call_type" || next === "choose_scenario" || next === "ending" || next === "roleplay") {
+    if (next === "choose_scenario" || next === "ending" || next === "roleplay") {
       callState.connectingStep = null;
       callState.connectingStartedAtMs = null;
       callState.connectingTimeoutFired = false;
@@ -2552,7 +2535,7 @@ wss.on("connection", (twilioWs) => {
         "why=" + String(why || ""),
         "mode=forward"
       );
-      console.log(nowIso(), "PHASE_FLAGS", "prev=" + prev, "next=" + next, (callState && ('awaitingCallTypeChoice' in callState) ? "awaitingCallTypeChoice=" + String(!!callState.awaitingCallTypeChoice) : ""), (callState && ('lockedCallType' in callState) ? "lockedCallType=" + String(callState.lockedCallType) : ""), (callState && ('callTypeCaptureInFlight' in callState) ? "callTypeCaptureInFlight=" + String(!!callState.callTypeCaptureInFlight) : ""), (callState && ('awaitingScenarioTag' in callState) ? "awaitingScenarioTag=" + String(!!callState.awaitingScenarioTag) : ""), "scenarioChosen=" + String(!!(callState && callState.scenarioChosen)), "scenarioCaptureInFlight=" + String(!!(callState && callState.scenarioCaptureInFlight)), "scenarioConfirmCaptureInFlight=" + String(!!(callState && callState.scenarioConfirmCaptureInFlight)));
+      console.log(nowIso(), "PHASE_FLAGS", "prev=" + prev, "next=" + next, (callState && ('awaitingScenarioTag' in callState) ? "awaitingScenarioTag=" + String(!!callState.awaitingScenarioTag) : ""), "scenarioChosen=" + String(!!(callState && callState.scenarioChosen)), "scenarioCaptureInFlight=" + String(!!(callState && callState.scenarioCaptureInFlight)), "scenarioConfirmCaptureInFlight=" + String(!!(callState && callState.scenarioConfirmCaptureInFlight)));
     } catch (e) { }
   }
 
@@ -2580,7 +2563,6 @@ wss.on("connection", (twilioWs) => {
     return (
       p === "boot" ||
       p === "opener" ||
-      p === "choose_call_type" ||
       p === "choose_scenario" ||
       p === "connecting"
     );
@@ -2623,14 +2605,6 @@ wss.on("connection", (twilioWs) => {
       "CALL_TYPE: " + String(callState.callType || "unknown") + "\n" +
       "ROLE: " + String(callState.role || "unknown") + "\n" +
       "TURN_REASON: " + String(why || "") + "\n\n";
-
-    if (phase === "choose_call_type") {
-      return (
-        header +
-        "Ask exactly one question and nothing else:\n" +
-        "Are you ready to practice making a call?\n"
-      );
-    }
 
     if (phase === "choose_scenario") {
       return (
@@ -3099,7 +3073,6 @@ wss.on("connection", (twilioWs) => {
         "callType=" + String(callState.callType || ""),
         "scenarioTag=" + String(callState.scenarioTag || ""),
         "scenarioChosen=" + String(!!callState.scenarioChosen),
-        "awaitingCallTypeChoice=" + String(!!awaitingCallTypeChoice),
         "awaitingScenarioTag=" + String(!!awaitingScenarioTag),
         "why=" + String(why || "")
       );
@@ -3254,30 +3227,6 @@ wss.on("connection", (twilioWs) => {
         instructions: "Speak this exactly, naturally, then stop speaking:\n" + openerSpeech,
       },
     });
-  }
-
-  function askCallTypeOnce(label) {
-    console.log(nowIso(), "Asking call type question (post-opener)", label ? "(" + label + ")" : "");
-
-    setPhase("choose_call_type", "askCallTypeOnce");
-    awaitingCallTypeChoice = true;
-    lockedCallType = null;
-    callTypeCaptureInFlight = false;
-
-    openaiResponseCreate({
-      type: "response.create",
-      response: {
-        modalities: ["audio", "text"],
-        instructions:
-          "You are CallReady. This is practice, not a real business, and not for emergencies.\n" +
-          "Ask exactly one question in a calm, natural way:\n" +
-          "\"Are you ready to practice making a call?\"\n" +
-          "Wait for the response.\n" +
-          "Do not mention scenarios yet.\n" +
-          "Do not output CALL_TYPE in this message.\n" +
-          "Then stop speaking and wait.",
-      },
-    }, "gate_choose_call_type_ask");
   }
 
   function armOpenerRetryTimer() {
@@ -3784,28 +3733,6 @@ wss.on("connection", (twilioWs) => {
             return;
           }
 
-          // Reroute: change call type / start over
-          if (
-            u.indexOf("change call type") >= 0 ||
-            u.indexOf("change call") >= 0 ||
-            u.indexOf("start over") >= 0 ||
-            u.indexOf("restart") >= 0
-          ) {
-            callState.callType = null;
-            callState.role = null;
-            callState.scenarioChosen = false;
-            callState.scenarioTag = null;
-            callState.goal = null;
-            callState.scenarioCaptureInFlight = false;
-            awaitingScenarioTag = false;
-            setPhase("choose_call_type", "reroute_change_call_type");
-            cancelOpenAIResponseIfAnyOnce("reroute choose_call_type");
-            sawCallerSpeechSinceLastAIDone = false;
-            sawSpeechStarted = false;
-
-            return;
-          }
-
           // Confirm auto-picked scenario directly from transcription (no speech_stopped needed).
           // Only process USER transcriptions (not AI output transcriptions)
           if (
@@ -3979,7 +3906,7 @@ wss.on("connection", (twilioWs) => {
 
         // Guard: do not auto-trigger AI in gate phases unless caller actually spoke
         if (
-          (awaitingCallTypeChoice || isGatePhase(callState.phase)) && // Gate: treat phase as gate to require caller speech
+          isGatePhase(callState.phase) && // Gate: treat phase as gate to require caller speech
           !sawCallerSpeechSinceLastAIDone
         ) {
           console.log(nowIso(), "Gate guard: ignoring speech_stopped because caller did not speak in gate phase");
@@ -4010,23 +3937,6 @@ wss.on("connection", (twilioWs) => {
         // GATE: During scenario confirm, do NOT send a generic response - let the transcription handler take over
         if (callState.phase === "choose_scenario" && callState.scenarioConfirmCaptureInFlight) {
           console.log(nowIso(), "Confirm: returning early from speech_stopped to let transcription handler process");
-          return;
-        }
-
-        if (turnDetectionEnabled && awaitingCallTypeChoice && !lockedCallType && !callTypeCaptureInFlight) {
-          callTypeCaptureInFlight = true;
-
-          openaiResponseCreate({
-            type: "response.create",
-            response: {
-              modalities: ["text"],
-              instructions:
-                "Output exactly one line and nothing else.\n" +
-                "If the HUMAN is ready to practice making a call, output: CALL_TYPE: outgoing\n" +
-                "If unclear, output: CALL_TYPE: unknown\n",
-            },
-          });
-
           return;
         }
 
@@ -4332,70 +4242,6 @@ wss.on("connection", (twilioWs) => {
           }
         }
 
-        if (callTypeCaptureInFlight && awaitingCallTypeChoice) {
-          const ct = extractTokenLineValue(text, "CALL_TYPE");
-          const raw = ct ? String(ct).trim().toLowerCase() : "";
-          let v = raw;
-
-          // Whitelist common human phrasings, map them to outgoing only.
-          if (raw === "making a call" || raw === "make a call" || raw === "call" || raw === "outgoing" || raw === "yes" || raw === "ready") {
-            v = "outgoing";
-          }
-
-          // Always clear the capture flag first so we can retry if needed.
-          callTypeCaptureInFlight = false;
-
-          // If the model couldn't determine it, ask the call type question again and stay in choose_call_type.
-          if (v !== "outgoing") {
-            lockedCallType = null;
-            awaitingCallTypeChoice = true;
-            setPhase("choose_call_type", "call_type_unclear_retry");
-
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "Ask exactly one question and nothing else.\n" +
-                  "Offer exactly these three options, in this order:\n" +
-                  "1) Scheduling a doctor appointment\n" +
-                  "2) Refilling a prescription at a pharmacy\n" +
-                  "3) Calling a school office\n" +
-                  "Then stop.\n" +
-                  "Do not output SCENARIO_TAG in this message.\n",
-
-              },
-            });
-
-            return;
-          }
-
-          // Valid call type.
-          if (!lockedCallType) lockedCallType = v;
-          setCallType(v, "parsed_call_type");
-          awaitingCallTypeChoice = false;
-
-          openaiResponseCreate({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions:
-                "Say one short sentence confirming the call type in plain language.\n" +
-                "Then ask exactly one question, using this wording:\n" +
-                "Do you already have a call in mind, or would you like me to pick one for you?\n" +
-                "Do not use the words scenario or goal.\n" +
-                "Do not ask follow-up questions yet.\n",
-            },
-          });
-
-          // Next phase is choosing the scenario (do not start roleplay yet)
-          setPhase("choose_scenario", "after_call_type_confirm");
-          callState.scenarioChosen = false;
-          callState.turnIndex += 1;
-
-          return;
-        }
-
         if (callState.scenarioCaptureInFlight && callState.phase === "choose_scenario") { // Gate: retry/clarify SCENARIO_PICK while in choose_scenario
           const pick = extractTokenLineValue(text, "SCENARIO_PICK");
           const v = pick ? String(pick).trim().toLowerCase() : "unknown";
@@ -4571,8 +4417,26 @@ wss.on("connection", (twilioWs) => {
             } catch { }
           }, 50);
 
+          // Skip call type phase and go directly to scenario selection
+          setPhase("choose_scenario", "post-opener");
+          callState.scenarioChosen = false;
+          awaitingScenarioTag = false;
+          callState.scenarioCaptureInFlight = false;
+          callState.scenarioConfirmCaptureInFlight = false;
 
-          askCallTypeOnce("post-opener");
+          openaiResponseCreate({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              instructions:
+                "Ask exactly one question in a calm, natural way:\n" +
+                "\"Do you already have a call in mind, or would you like me to pick one for you?\"\n" +
+                "Wait for the response.\n" +
+                "Do not output SCENARIO_PICK in this message.\n" +
+                "Then stop speaking and wait.",
+            },
+          });
+
           return;
         }
 
