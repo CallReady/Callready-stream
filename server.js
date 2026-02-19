@@ -3050,9 +3050,6 @@ wss.on("connection", (twilioWs) => {
       );
     } catch (e) { }
 
-    // Reset the flag: when AI asks a question, we need to wait for user to respond
-    sawCallerSpeechSinceLastAIDone = false;
-
     openaiSend(payload);
   }
 
@@ -3784,8 +3781,7 @@ wss.on("connection", (twilioWs) => {
           if (
             msg.type === "conversation.item.input_audio_transcription.completed" &&
             callState.phase === "choose_scenario" &&
-            callState.scenarioConfirmCaptureInFlight &&
-            sawCallerSpeechSinceLastAIDone  // Only process after caller has spoken post-AI-response
+            callState.scenarioConfirmCaptureInFlight
           ) {
             const yesRe =
               /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|lets do it|let's do it|go ahead)\b/i;
@@ -3981,6 +3977,12 @@ wss.on("connection", (twilioWs) => {
         // Allow AI to respond after the caller finishes speaking
         requireCallerSpeechBeforeNextAI = false;
         sawCallerSpeechSinceLastAIDone = true;
+
+        // GATE: During scenario confirm, do NOT send a generic response - let the transcription handler take over
+        if (callState.phase === "choose_scenario" && callState.scenarioConfirmCaptureInFlight) {
+          console.log(nowIso(), "Confirm: returning early from speech_stopped to let transcription handler process");
+          return;
+        }
 
         if (turnDetectionEnabled && awaitingCallTypeChoice && !lockedCallType && !callTypeCaptureInFlight) {
           callTypeCaptureInFlight = true;
@@ -4218,6 +4220,9 @@ wss.on("connection", (twilioWs) => {
         }
 
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
+
+        // Debug: log response.done in all phases
+        try { console.log(nowIso(), "RESPONSE_DONE_RECEIVED", "phase=" + String(callState && callState.phase || "NO_STATE"), "connectingStep=" + String(callState && callState.connectingStep || "N/A")); } catch (e) { }
 
         // If we just finished something while in connecting, decide next step based on connectingStep.
         if (callState && callState.phase === "connecting") {
