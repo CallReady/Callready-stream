@@ -2537,7 +2537,7 @@ wss.on("connection", (twilioWs) => {
       callState.connectingTimeoutFired = false;
       try { console.log(nowIso(), "CONNECTING_STEP", "cleared"); } catch (e) { }
     }
-    
+
     // State hygiene: clear checklist when exiting roleplay
     if (prev === "roleplay" && next !== "roleplay") {
       callState.checklist = null;
@@ -2598,7 +2598,7 @@ wss.on("connection", (twilioWs) => {
 
   function getNextRequiredChecklistId() {
     if (!callState.checklist || callState.scenarioTag !== "doctor_default") return null;
-    
+
     const preferredOrder = getDoctorChecklistOrder();
     for (const id of preferredOrder) {
       const item = callState.checklist[id];
@@ -2649,18 +2649,20 @@ wss.on("connection", (twilioWs) => {
         "If the caller asks for help or seems unsure, respond in character with a short, realistic clarification or reassurance, then continue the call.\n" +
         "Ask exactly one short question per turn, then wait for the caller's response.\n" +
         "Do not rush to complete the goal or repeatedly confirm information already provided.\n";
-      
+
       // Add speaking style guidance
       instructions +=
         "\n" +
         "SPEAKING STYLE:\n" +
-        "Sound natural and conversational, not scripted or robotic.\n" +
-        "Use brief acknowledgments ('Got it', 'Okay', 'Thanks') before moving to your next question.\n" +
-        "Vary your phrasing slightly each turn—don't repeat the exact same questions word-for-word.\n" +
-        "It's completely fine to sound slightly awkward or take a breath between thoughts—that's realistic.\n" +
-        "Avoid being overly formal or using corporate jargon.\n" +
-        "Be friendly and personable.\n";
-      
+        "Speak like a real front-desk staff member on the phone.\n" +
+        "Use one or two short sentences per turn.\n" +
+        "Ask exactly one clear question at a time.\n" +
+        "Use brief acknowledgments like 'Okay' or 'Got it' when appropriate.\n" +
+        "Natural fragments are fine if they fit.\n" +
+        "Do not sound scripted, overly formal, or corporate.\n" +
+        "Do not repeat the same wording across turns.\n" +
+        "Stay warm and professional.\n";
+
       // Add scenario context and goal reminder for every turn
       if (callState.scenarioTag === "doctor_default") {
         instructions +=
@@ -2671,14 +2673,14 @@ wss.on("connection", (twilioWs) => {
           "YOUR GOAL: Collect required information to complete the appointment booking.\n" +
           "You must stay focused on gathering: new/returning patient status, name, birthdate, reason for visit, and preferred appointment time.\n";
       }
-      
+
       // Add checklist tracking for doctor_default
       if (callState.scenarioTag === "doctor_default" && callState.checklist) {
         const nextTarget = getNextRequiredChecklistId();
         const remaining = Object.keys(callState.checklist).filter(
           id => callState.checklist[id].required && !callState.checklist[id].done
         );
-        
+
         instructions +=
           "\n" +
           "NEXT_TARGET: " + (nextTarget || "NONE") + "\n" +
@@ -2708,7 +2710,7 @@ wss.on("connection", (twilioWs) => {
           "\n" +
           "Only include checklist IDs you are updating this turn in the JSON block.\n";
       }
-      
+
       return instructions;
     }
 
@@ -2991,7 +2993,7 @@ wss.on("connection", (twilioWs) => {
     // Load and transcode cellphonering.mp3 to g711_ulaw for Twilio
     try {
       const ringPath = path.join(process.cwd(), "audio-fixed", "cellphonering.mp3");
-      
+
       if (!fs.existsSync(ringPath)) {
         console.log(nowIso(), "Ring file not found, skipping ring audio:", ringPath);
         return;
@@ -3017,7 +3019,7 @@ wss.on("connection", (twilioWs) => {
         for (let i = 0; i < chunk.length; i += chunkSize) {
           const audioChunk = chunk.slice(i, i + chunkSize);
           const payload = audioChunk.toString("base64");
-          
+
           twilioSend({
             event: "media",
             streamSid: streamSid,
@@ -3025,7 +3027,7 @@ wss.on("connection", (twilioWs) => {
               payload: payload
             }
           });
-          
+
           audioSent += audioChunk.length;
         }
       });
@@ -3221,7 +3223,7 @@ wss.on("connection", (twilioWs) => {
       birthdate: { required: true, done: false, value: null },
       patient_name: { required: true, done: false, value: null },
       reason_for_appointment: { required: true, done: false, value: null },
-      insurance: { required: false, done: false, value: null },      
+      insurance: { required: false, done: false, value: null },
       appointment_preference: { required: true, done: false, value: null },
       confirmation_preference: { required: false, done: false, value: null }
     };
@@ -3557,16 +3559,16 @@ wss.on("connection", (twilioWs) => {
 
   function parseChecklistUpdateJson(text) {
     if (!text) return null;
-    
+
     const startDelim = "CHECKLIST_UPDATE_JSON";
     const endDelim = "END_CHECKLIST_UPDATE_JSON";
-    
+
     const startIdx = String(text).indexOf(startDelim);
     if (startIdx === -1) return null;
-    
+
     const endIdx = String(text).indexOf(endDelim, startIdx);
     if (endIdx === -1) return null;
-    
+
     const jsonBlock = String(text).substring(startIdx + startDelim.length, endIdx).trim();
     try {
       return JSON.parse(jsonBlock);
@@ -3642,7 +3644,7 @@ wss.on("connection", (twilioWs) => {
             "CALLER: initiates the call and drives the purpose.\n" +
             "ANSWERER: answers and responds.\n" +
             "OUTGOING CALL: HUMAN is CALLER, AI is ANSWERER.\n" +
-            "ROLEPLAY MODE: you speak as the other person in the scenario.\n" +
+            "ROLEPLAY MODE: you speak as the ANSWERER in the scenario.\n" +
             "COACHING MODE: you speak as CallReady to help the HUMAN.\n" +
             "SCENARIO: the real-world reason for the call.\n" +
             "GOAL: the specific outcome needed for the scenario to be complete.\n" +
@@ -3652,12 +3654,6 @@ wss.on("connection", (twilioWs) => {
             "You will be told the current phase by the server.\n" +
             "Only follow the rules for the current phase.\n" +
             "Do not invent or change phases yourself.\n" +
-            "\n" +
-            "COACHING RULES:\n" +
-            "Only coach if HUMAN asks for help (help, I'm stuck, what should I say, can you give me a line).\n" +
-            "Coaching lasts one response only.\n" +
-            "In coaching, give one short suggested sentence the HUMAN can say next.\n" +
-            "Then immediately return to roleplay and wait for HUMAN.\n" +
             "\n" +
             "PRIVACY:\n" +
             "If personal details are needed, tell HUMAN to use clearly fake details.\n" +
@@ -4217,7 +4213,7 @@ wss.on("connection", (twilioWs) => {
             });
           } catch { }
         }
-        
+
         // Roleplay: parse and merge checklist updates from text-only JSON block
         // Do this BEFORE flushing pendingResponseCreate so checklist is current
         if (callState.phase === "roleplay" && callState.scenarioTag === "doctor_default" && callState.checklist) {
@@ -4237,13 +4233,13 @@ wss.on("connection", (twilioWs) => {
             }
           }
         }
-        
+
         if (callState.pendingResponseCreate) {
           const queued = callState.pendingResponseCreate;
           callState.pendingResponseCreate = null;
           console.log(nowIso(), "Guard: flushing queued response.create after response.done");
           openaiSend(queued);
-          
+
           // Skip phase transition logic below; let the queued response's completion handle it
           if (callState && callState.phase === "connecting") {
             return;
@@ -4273,10 +4269,10 @@ wss.on("connection", (twilioWs) => {
 
             // Stream the ring file (cellphonering.mp3) to Twilio
             streamRingAudioToTwilio(streamSid);
-            
+
             // Ring file is approximately 3 seconds, so schedule the roleplay greeting after that
             const ct = (callState.callType || "").toLowerCase();
-            
+
             let startLine = "";
             if (callState.scenarioTag === "doctor_default") {
               if (ct === "outgoing") {
@@ -4296,7 +4292,7 @@ wss.on("connection", (twilioWs) => {
               if (callState && callState.connectingStep === "ring_audio" && callState.phase === "connecting") {
                 // Ring finished, move to roleplay with greeting
                 setPhase("roleplay", "after_ring");
-                
+
                 callState.turnIndex = 0;
                 openaiResponseCreate({
                   type: "response.create",
