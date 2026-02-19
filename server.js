@@ -3716,6 +3716,15 @@ wss.on("connection", (twilioWs) => {
           clearTimeout(openerNoAudioTimer);
           openerNoAudioTimer = null;
         }
+        if (aiAudioBytesThisResponse === 0 && (callState.phase === "connecting" || callState.phase === "roleplay")) {
+          try {
+            console.log(nowIso(), "Audio debug: first audio delta", {
+              phase: callState.phase,
+              responseActive,
+              openaiResponseActive: !!callState.openaiResponseActive
+            });
+          } catch { }
+        }
         const b = Buffer.from(msg.delta, "base64").length;
         aiAudioBytesThisResponse += b;
 
@@ -4018,6 +4027,16 @@ wss.on("connection", (twilioWs) => {
         const text = extractTextFromResponseDone(msg);
         responseActive = false;
         callState.openaiResponseActive = false;
+        if ((callState.phase === "connecting" || callState.phase === "roleplay") && aiAudioBytesThisResponse === 0) {
+          try {
+            console.log(nowIso(), "Audio debug: response.done with no audio", {
+              phase: callState.phase,
+              responseActive,
+              openaiResponseActive: !!callState.openaiResponseActive,
+              textLen: (text || "").length
+            });
+          } catch { }
+        }
         
         // Roleplay: parse and merge checklist updates from text-only JSON block
         // Do this BEFORE flushing pendingResponseCreate so checklist is current
