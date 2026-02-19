@@ -2661,11 +2661,37 @@ wss.on("connection", (twilioWs) => {
 
         instructions +=
           "\n" +
-          "NEXT_TARGET: " + (nextTarget || "NONE") + "\n" +
-          "Your next question should primarily aim to collect NEXT_TARGET.\n" +
-          "Do not jump ahead unless the caller volunteers relevant information.\n" +
-          "If NEXT_TARGET is NONE, you have all required information. Thank the caller and complete the appointment scheduling with a natural closing line. Do NOT repeat back or read out the collected details.\n" +
-          "\n" +
+          "NEXT_TARGET: " + (nextTarget || "NONE") + "\n";
+
+        // Special handling for questions_and_closing phase
+        if (nextTarget === "questions_and_closing") {
+          instructions +=
+            "QUESTIONS AND CLOSING PHASE:\n" +
+            "You have collected all required appointment information.\n" +
+            "Now ask: 'Do you have any questions for me?'\n" +
+            "Wait for the caller's response.\n" +
+            "If they have questions or concerns, address them naturally and helpfully in character.\n" +
+            "After answering their question(s), ask: 'Do you have any other questions?'\n" +
+            "Repeat this loop until they indicate they have no further questions (e.g., 'No', 'I think that's all', 'That's it', etc.).\n" +
+            "Once they confirm no more questions:\n" +
+            "Provide a professional closing statement like:\n" +
+            "'Great! We'll see you on [APPOINTMENT_DATE] at [APPOINTMENT_TIME]. Have a great day!'\n" +
+            "Use the appointment_preference value you collected to fill in the date/time in the closing.\n" +
+            "Then mark questions_and_closing as done.\n" +
+            "\n" +
+            "OUTPUT FORMAT:\n" +
+            "When marking questions_and_closing as done, include in the JSON:\n" +
+            "{ \"questions_and_closing\": {\"done\": true, \"value\": \"completed\"} }\n" +
+            "\n";
+        } else {
+          instructions +=
+            "Your next question should primarily aim to collect NEXT_TARGET.\n" +
+            "Do not jump ahead unless the caller volunteers relevant information.\n" +
+            "If NEXT_TARGET is NONE, you have all required information. Thank the caller and complete the appointment scheduling with a natural closing line. Do NOT repeat back or read out the collected details.\n" +
+            "\n";
+        }
+
+        instructions +=
           (remaining.length > 0
             ? "STILL GATHERING: " + remaining.join(", ") + "\n"
             : "All required items are gathered. Proceed directly to wrap up without recapping the details.\n") +
@@ -3202,14 +3228,15 @@ wss.on("connection", (twilioWs) => {
       reason_for_appointment: { required: true, done: false, value: null },
       insurance: { required: false, done: false, value: null },
       appointment_preference: { required: true, done: false, value: null },
-      confirmation_preference: { required: false, done: false, value: null }
+      confirmation_preference: { required: false, done: false, value: null },
+      questions_and_closing: { required: true, done: false, value: null }
     };
   }
 
   function getDoctorChecklistOrder() {
     // Define the preferred order for collecting doctor appointment checklist items.
     // Edit this array to change the order in which the AI asks for information.
-    return ["new_or_returning_patient", "birthdate", "patient_name", "reason_for_appointment", "insurance", "appointment_preference", "confirmation_preference"];
+    return ["new_or_returning_patient", "birthdate", "patient_name", "reason_for_appointment", "insurance", "appointment_preference", "confirmation_preference", "questions_and_closing"];
   }
 
   function sendOpenerOnce(label) {
