@@ -2454,6 +2454,7 @@ wss.on("connection", (twilioWs) => {
     goal: null,                  // short goal text once known
     scenarioChosen: false,
     scenarioCaptureInFlight: false,
+    scenarioConfirmCaptureInFlight: false,
     lastUserUtterance: null,     // last transcript snippet we captured
     summary: null,               // short rolling summary (we will add later)
     turnIndex: 0                 // increments each time we ask OpenAI to speak
@@ -3398,10 +3399,10 @@ wss.on("connection", (twilioWs) => {
     return false;
   }
 
-function buildReturnCallerInstructions(ctx) {
-  // Disabled for now. We want every call to start fresh and not reuse prior call context.
-  return "";
-}
+  function buildReturnCallerInstructions(ctx) {
+    // Disabled for now. We want every call to start fresh and not reuse prior call context.
+    return "";
+  }
 
   function startOpenAIRealtime() {
     if (!OPENAI_API_KEY) {
@@ -3925,102 +3926,12 @@ function buildReturnCallerInstructions(ctx) {
 
           console.log(nowIso(), "Parsed SCENARIO_PICK", { value: v });
 
+          // We are done waiting for the model's SCENARIO_PICK token for this turn.
           callState.scenarioCaptureInFlight = false;
 
           // If the model couldn't decide, ask again and stay in choose_scenario.
           if (v !== "yes" && v !== "no") {
-            callState.scenarioCaptureInFlight = false;
             setPhase("choose_scenario", "scenario_pick_unclear_retry");
-
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "Ask exactly one question and nothing else:\n" +
-                  "Do you already have a call in mind, or would you like me to pick one for you?",
-              },
-            });
-
-            return;
-          }
-
-          if (v === "yes") {
-            // HUMAN wants the system to pick a scenario.
-            // Default to doctor appointment for now.
-            const rawTag = "doctor_default";
-
-            awaitingScenarioTag = false;
-            callState.scenarioChosen = true;
-
-            setScenarioTag(rawTag, "auto_pick_default");
-            try {
-              if (callSid) setScenarioTagOnce(callSid, rawTag);
-            } catch (e) { }
-
-            setPhase("choose_scenario", "scenario_auto_pick_confirm");
-
-            callState.turnIndex = 0;
-
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "Say this exactly, then ask one question and stop:\n" +
-                  "\"Let’s try calling a doctor’s office to schedule an appointment.\"\n" +
-                  "\"Does that sound good?\"\n",
-
-              },
-            });
-
-            return;
-          }
-
-          if (v === "no") {
-            callState.scenarioChosen = false;
-            setPhase("choose_scenario", "scenario_user_has_one");
-
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "Ask exactly one question and nothing else:\n" +
-                  "What kind of call do you want to practice?",
-              },
-            });
-
-            return;
-          }
-        }
-
-        // Deterministic scenario tag selection menu (after SCENARIO_PICK: yes).
-        if (
-          callState.phase === "choose_scenario" &&
-          callState.subphase === "scenario_auto_pick_confirm" &&
-          sawCallerSpeechSinceLastAIDone
-        ) {
-          const text = (lastHumanTranscript || "").toLowerCase();
-
-          if (text.includes("yes")) {
-            setPhase("connecting", "auto_pick_confirmed");
-
-            callState.turnIndex = 0;
-
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions: buildScenarioIntro(),
-              },
-            });
-
-            return;
-          }
-
-          if (text.includes("no")) {
-            setPhase("choose_scenario", "scenario_pick_start");
 
             openaiResponseCreate({
               type: "response.create",
@@ -4034,6 +3945,46 @@ function buildReturnCallerInstructions(ctx) {
 
             return;
           }
+
+          // HUMAN wants the AI to pick.
+          if (v === "yes") {
+            callState.scenarioTag = "doctor_default";
+
+            // Do not mark scenarioChosen until the human confirms.
+            callState.scenarioChosen = false;
+
+            // We will listen for the human's yes/no confirmation next.
+            callState.scenarioConfirmCaptureInFlight = true;
+
+            setPhase("choose_scenario", "auto_pick_needs_confirm");
+
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "Ask exactly one question and nothing else.\n" +
+                  "Say: \"Okay. Let’s practice calling a doctor’s office to schedule an appointment. Does that sound good?\"\n",
+              },
+            });
+
+            return;
+          }
+
+          // HUMAN says they already have something in mind.
+          setPhase("choose_scenario", "scenario_pick_start");
+
+          openaiResponseCreate({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              instructions:
+                "Ask exactly one question and nothing else.\n" +
+                "Say: \"What kind of call do you want to practice?\"\n",
+            },
+          });
+
+          return;
         }
 
         if (awaitingScenarioTag && callState.phase === "choose_scenario" && sawCallerSpeechSinceLastAIDone) {
