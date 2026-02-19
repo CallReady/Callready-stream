@@ -2457,7 +2457,9 @@ wss.on("connection", (twilioWs) => {
     scenarioConfirmCaptureInFlight: false,
     lastUserUtterance: null,     // last transcript snippet we captured
     summary: null,               // short rolling summary (we will add later)
-    turnIndex: 0                 // increments each time we ask OpenAI to speak
+    turnIndex: 0,                // increments each time we ask OpenAI to speak
+    connectingStep: null,        // null | 'ring' | 'intro' | 'intro_done' - track connecting substep
+    connectingStartedAtMs: null  // milliseconds timestamp when entering connecting phase
   };
 
   LAST_CALL_STATE = callState;
@@ -2524,6 +2526,11 @@ wss.on("connection", (twilioWs) => {
 
     // Apply
     callState.phase = next;
+    // State hygiene: clear connectingStep when returning to gate or ending phases
+    if (next === "choose_call_type" || next === "choose_scenario" || next === "ending") {
+      callState.connectingStep = null;
+      try { console.log(nowIso(), "CONNECTING_STEP", "cleared"); } catch (e) { }
+    }
 
     try {
       console.log(
@@ -3910,6 +3917,9 @@ wss.on("connection", (twilioWs) => {
         if (callState && callState.phase === "connecting") {
           const cs = callState.connectingStep || null;
 
+          // Prevent duplicate transitions if intro_done has already been processed
+          if (callState.connectingStep === "intro_done") return;
+
           // If the ring just finished, start the scenario intro.
           if (cs === "ring") {
             callState.connectingStep = "intro";
@@ -4251,6 +4261,7 @@ wss.on("connection", (twilioWs) => {
           setPhase("connecting", "scenario_picked_menu");
 
           callState.turnIndex = 0;
+          callState.connectingStartedAtMs = Date.now();
 
           // Start connecting sequence: play a short ring first, then scenario intro.
           callState.connectingStep = "ring";
