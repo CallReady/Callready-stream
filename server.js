@@ -4224,7 +4224,7 @@ wss.on("connection", (twilioWs) => {
           // Done waiting for the model token for this turn.
           callState.scenarioCaptureInFlight = false;
 
-          if (v === "no") {
+          if (v === "yes") {
             awaitingScenarioTag = false;
 
             callState.scenarioTag = "doctor_default";
@@ -4246,7 +4246,7 @@ wss.on("connection", (twilioWs) => {
             return;
           }
 
-          if (v === "yes") {
+          if (v === "no") {
             awaitingScenarioTag = true;
             setPhase("choose_scenario", "scenario_menu");
 
