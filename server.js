@@ -2934,6 +2934,70 @@ wss.on("connection", (twilioWs) => {
     twilioWs.send(JSON.stringify(obj));
   }
 
+  function streamRingAudioToTwilio(streamSid) {
+    // Load and transcode cellphonering.mp3 to g711_ulaw for Twilio
+    try {
+      const ringPath = path.join(process.cwd(), "audio-fixed", "cellphonering.mp3");
+      
+      if (!fs.existsSync(ringPath)) {
+        console.log(nowIso(), "Ring file not found, skipping ring audio:", ringPath);
+        return;
+      }
+
+      console.log(nowIso(), "Streaming ring audio to Twilio from:", ringPath);
+
+      // Use ffmpeg to convert MP3 to g711_ulaw (8000Hz, mono)
+      const ffmpeg = spawn("ffmpeg", [
+        "-i", ringPath,
+        "-acodec", "pcm_mulaw",
+        "-ar", "8000",
+        "-ac", "1",
+        "-f", "mulaw",
+        "pipe:1"
+      ]);
+
+      let audioSent = 0;
+
+      ffmpeg.stdout.on("data", (chunk) => {
+        // Send audio in ~160 byte chunks (20ms at 8000Hz)
+        const chunkSize = 160;
+        for (let i = 0; i < chunk.length; i += chunkSize) {
+          const audioChunk = chunk.slice(i, i + chunkSize);
+          const payload = audioChunk.toString("base64");
+          
+          twilioSend({
+            event: "media",
+            streamSid: streamSid,
+            media: {
+              payload: payload
+            }
+          });
+          
+          audioSent += audioChunk.length;
+        }
+      });
+
+      ffmpeg.stderr.on("data", (data) => {
+        // ffmpeg logs go to stderr, mostly harmless
+      });
+
+      ffmpeg.on("close", (code) => {
+        if (code === 0) {
+          console.log(nowIso(), "Ring audio streaming complete", { audioSent });
+        } else {
+          console.log(nowIso(), "ffmpeg error code:", code);
+        }
+      });
+
+      ffmpeg.on("error", (err) => {
+        console.log(nowIso(), "ffmpeg error:", err && err.message);
+      });
+
+    } catch (e) {
+      console.log(nowIso(), "Error streaming ring audio:", e && e.message);
+    }
+  }
+
   function openaiSend(obj) {
     try {
       if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
@@ -3738,43 +3802,19 @@ wss.on("connection", (twilioWs) => {
                 callState.checklist = buildDoctorChecklist();
               }
 
-              // Skip both ring and intro steps: go directly to roleplay with the opening greeting
-              setPhase("roleplay", "scenario_confirmed_direct");
+              // Step 1: Transition message before ring
+              callState.connectingStep = "transition_message";
 
               cancelOpenAIResponseIfAnyOnce("confirm_yes_transition_to_connecting");
-
-              // Start line, scenario-specific. This is the first thing the AI says in the roleplay.
-              let startLine = "";
-
-              if (callState.scenarioTag === "doctor_default") {
-                if (ct === "outgoing") {
-                  startLine = "Thank you for calling Evergreen Family Clinic. How can I help you today?";
-                } else {
-                  startLine = "Hi, this is Evergreen Family Clinic calling. Are you available to talk for a moment?";
-                }
-              } else {
-                // Fallback if scenarioTag is missing or unknown.
-                if (ct === "outgoing") {
-                  startLine = "Hello, thanks for calling. How can I help you today?";
-                } else {
-                  startLine = "Hi, I am calling you about your request. Is now a good time?";
-                }
-              }
-
-              callState.turnIndex = 0;
 
               openaiResponseCreate({
                 type: "response.create",
                 response: {
                   modalities: ["audio", "text"],
-                  instructions:
-                    "Speak this exactly, then stop speaking and wait:\n" +
-                    startLine +
-                    "\n",
+                  instructions: "Speak this exactly, then stop speaking and wait: Great, I'll answer as the receptionist after the ring.\n",
                 },
               });
 
-              callState.turnIndex += 1;
               return;
             }
 
@@ -4177,108 +4217,54 @@ wss.on("connection", (twilioWs) => {
         if (callState && callState.phase === "connecting") {
           const cs = callState.connectingStep || null;
 
-          // Prevent duplicate transitions if intro_done has already been processed
-          if (callState.connectingStep === "intro_done") return;
+          // Step 1: Transition message (AI says "Great, I'll answer as the receptionist after the ring.")
+          if (cs === "transition_message") {
+            callState.connectingStep = "ring_audio";
+            try { console.log(nowIso(), "CONNECTING_STEP", "ring_audio"); } catch (e) { }
 
-          // If the scenario intro just finished, mark intro_done and transition to roleplay.
-          if (cs === "intro") {
-            callState.connectingStep = "intro_done";
-            try { console.log(nowIso(), "CONNECTING_STEP", "intro_done"); } catch (e) { }
-
-            // Move into roleplay and immediately start in character.
-            setPhase("roleplay", "scenario_intro_done");
-
+            // Stream the ring file (cellphonering.mp3) to Twilio
+            streamRingAudioToTwilio(streamSid);
+            
+            // Ring file is approximately 3 seconds, so schedule the roleplay greeting after that
             const ct = (callState.callType || "").toLowerCase();
-
-            // Lock roles correctly:
-            // Outgoing: HUMAN is the caller, AI is the one answering.
-            // Incoming: HUMAN is the one answering, AI is the caller.
-            if (ct === "outgoing") callState.role = "caller";
-            if (ct === "incoming") callState.role = "answerer";
-
-            // Initialize checklist for doctor_default scenario
-            if (callState.scenarioTag === "doctor_default") {
-              callState.checklist = buildDoctorChecklist();
-            }
-
-            // Start line, scenario-specific. Keep it simple and realistic.
-            // Ring already played in the previous step; do not repeat it here.
+            
             let startLine = "";
-
             if (callState.scenarioTag === "doctor_default") {
               if (ct === "outgoing") {
-                startLine = "Thank you for calling Evergreen Family Clinic. How can I help you today?";
+                startLine = "Thank you for calling Evergreen Medical Clinic. This is Denise. How can I help you?";
               } else {
-                startLine = "Hi, this is Evergreen Family Clinic calling. Are you available to talk for a moment?";
+                startLine = "Hi, this is Evergreen Medical Clinic calling. Are you available to talk for a moment?";
               }
             } else {
-              // Fallback if scenarioTag is missing or unknown.
               if (ct === "outgoing") {
-                startLine = "Hello, thanks for calling. How can I help you today?";
+                startLine = "Hello, thanks for calling. How can I help you?";
               } else {
                 startLine = "Hi, I am calling you about your request. Is now a good time?";
               }
             }
 
-            callState.turnIndex = 0;
+            setTimeout(() => {
+              if (callState && callState.connectingStep === "ring_audio" && callState.phase === "connecting") {
+                // Ring finished, move to roleplay with greeting
+                setPhase("roleplay", "after_ring");
+                
+                callState.turnIndex = 0;
+                openaiResponseCreate({
+                  type: "response.create",
+                  response: {
+                    modalities: ["audio", "text"],
+                    instructions: "Speak this exactly, then stop speaking and wait:\n" + startLine + "\n",
+                  },
+                });
+                callState.turnIndex += 1;
+              }
+            }, 3500); // Ring duration + small buffer
 
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "Speak this exactly, then stop speaking and wait:\n" +
-                  startLine +
-                  "\n",
-              },
-            });
-
-            callState.turnIndex += 1;
             return;
           }
 
-          // Fallback: if connectingStep not set, preserve previous behavior and transition to roleplay.
-          // Move into roleplay and immediately start in character.
-          setPhase("roleplay", "scenario_intro_done");
-
-          const ct = (callState.callType || "").toLowerCase();
-
-          if (ct === "outgoing") callState.role = "caller";
-          if (ct === "incoming") callState.role = "answerer";
-
-          let startLine = "Ring ring.";
-
-          if (callState.scenarioTag === "doctor_default") {
-            if (ct === "outgoing") {
-              startLine =
-                "Ring ring. Thank you for calling Evergreen Family Clinic. How can I help you today?";
-            } else {
-              startLine =
-                "Ring ring. Hi, this is Evergreen Family Clinic calling. Are you available to talk for a moment?";
-            }
-          } else {
-            if (ct === "outgoing") {
-              startLine = "Ring ring. Hello, thanks for calling. How can I help you today?";
-            } else {
-              startLine = "Ring ring. Hi, I am calling you about your request. Is now a good time?";
-            }
-          }
-
-          callState.turnIndex = 0;
-
-          openaiResponseCreate({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions:
-                "Speak this exactly, then stop speaking and wait:\n" +
-                startLine +
-                "\n",
-            },
-          });
-
-          callState.turnIndex += 1;
-          return;
+          // Prevent duplicate transitions
+          if (callState.connectingStep === "intro_done" || callState.connectingStep === "ring_audio") return;
         }
 
         if (scenarioTagCaptureInFlight && !scenarioTagAlreadyCaptured && callSid) {
