@@ -2463,7 +2463,7 @@ wss.on("connection", (twilioWs) => {
   LAST_CALL_STATE = callState;
 
   function setPhase(nextPhase, why) {
-    var prev = String(callState.phase || "unknown").trim();
+    var prev = String(callState.phase || "unknown").trim(); // Gate: previous phase for transition validation
     var next = String(nextPhase || "").trim();
 
     if (!next) return;
@@ -2534,6 +2534,7 @@ wss.on("connection", (twilioWs) => {
         "why=" + String(why || ""),
         "mode=forward"
       );
+      console.log(nowIso(), "PHASE_FLAGS", "prev=" + prev, "next=" + next, (callState && ('awaitingCallTypeChoice' in callState) ? "awaitingCallTypeChoice=" + String(!!callState.awaitingCallTypeChoice) : ""), (callState && ('lockedCallType' in callState) ? "lockedCallType=" + String(callState.lockedCallType) : ""), (callState && ('callTypeCaptureInFlight' in callState) ? "callTypeCaptureInFlight=" + String(!!callState.callTypeCaptureInFlight) : ""), (callState && ('awaitingScenarioTag' in callState) ? "awaitingScenarioTag=" + String(!!callState.awaitingScenarioTag) : ""), "scenarioChosen=" + String(!!(callState && callState.scenarioChosen)), "scenarioCaptureInFlight=" + String(!!(callState && callState.scenarioCaptureInFlight)), "scenarioConfirmCaptureInFlight=" + String(!!(callState && callState.scenarioConfirmCaptureInFlight)));
     } catch (e) { }
   }
 
@@ -2578,7 +2579,7 @@ wss.on("connection", (twilioWs) => {
   }
 
   function buildPhaseInstructions(why) {
-    var phase = String(callState.phase || "").trim();
+    var phase = String(callState.phase || "").trim(); // Log: current phase used to build AI instructions
 
     // A small header we can reuse for every turn.
     var header =
@@ -2917,7 +2918,7 @@ wss.on("connection", (twilioWs) => {
           const mods = obj && obj.response && Array.isArray(obj.response.modalities) ? obj.response.modalities : [];
           const hasAudio = mods.indexOf("audio") !== -1;
 
-          if (hasAudio && callState && String(callState.phase || "") === "roleplay") {
+          if (hasAudio && callState && String(callState.phase || "") === "roleplay") { // Roleplay: only count turns during roleplay audio
             callState.turnIndex = (typeof callState.turnIndex === "number" ? callState.turnIndex : 0) + 1;
             console.log(nowIso(), "turnIndex++ (roleplay audio)", { turnIndex: callState.turnIndex });
           }
@@ -2935,7 +2936,7 @@ wss.on("connection", (twilioWs) => {
       console.log(
         nowIso(),
         "RESPONSE_CREATE",
-        "phase=" + String(callState.phase || ""),
+        "phase=" + String(callState.phase || ""), // Log: include phase in RESPONSE_CREATE log
         "callType=" + String(callState.callType || ""),
         "scenarioTag=" + String(callState.scenarioTag || ""),
         "scenarioChosen=" + String(!!callState.scenarioChosen),
@@ -3086,10 +3087,10 @@ wss.on("connection", (twilioWs) => {
     });
   }
 
-  function sendScenarioStartOnce(label) {
+  function askCallTypeOnce(label) {
     console.log(nowIso(), "Asking call type question (post-opener)", label ? "(" + label + ")" : "");
 
-    setPhase("choose_call_type", "sendScenarioStartOnce");
+    setPhase("choose_call_type", "askCallTypeOnce");
     awaitingCallTypeChoice = true;
     lockedCallType = null;
     callTypeCaptureInFlight = false;
@@ -3674,14 +3675,14 @@ wss.on("connection", (twilioWs) => {
         if (endingRequested || endRedirectRequested) return;
 
         // In roleplay phase, do not auto-trigger AI unless the caller actually spoke
-        if (callState.phase === "roleplay" && !sawCallerSpeechSinceLastAIDone) {
+        if (callState.phase === "roleplay" && !sawCallerSpeechSinceLastAIDone) { // Roleplay: ignore speech_stopped unless caller actually spoke
           console.log(nowIso(), "Roleplay guard: ignoring speech_stopped because caller did not speak");
           return;
         }
 
         // Guard: do not auto-trigger AI in gate phases unless caller actually spoke
         if (
-          (awaitingCallTypeChoice || isGatePhase(callState.phase)) &&
+          (awaitingCallTypeChoice || isGatePhase(callState.phase)) && // Gate: treat phase as gate to require caller speech
           !sawCallerSpeechSinceLastAIDone
         ) {
           console.log(nowIso(), "Gate guard: ignoring speech_stopped because caller did not speak in gate phase");
@@ -3727,7 +3728,7 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-        if (turnDetectionEnabled && callState.phase === "choose_scenario" && !callState.scenarioChosen && !callState.scenarioCaptureInFlight) {
+        if (turnDetectionEnabled && callState.phase === "choose_scenario" && !callState.scenarioChosen && !callState.scenarioCaptureInFlight) { // Gate: parse SCENARIO_PICK in choose_scenario
           callState.scenarioCaptureInFlight = true;
 
           openaiResponseCreate({
@@ -3748,7 +3749,7 @@ wss.on("connection", (twilioWs) => {
         // If we are waiting for the HUMAN to confirm the auto-picked scenario, parse locally from caller transcript.
         if (
           turnDetectionEnabled &&
-          callState.phase === "choose_scenario" &&
+          callState.phase === "choose_scenario" && // Gate: scenario-confirm flow checks
           callState.scenarioConfirmCaptureInFlight &&
           sawCallerSpeechSinceLastAIDone
         ) {
@@ -3847,7 +3848,7 @@ wss.on("connection", (twilioWs) => {
 
         if (
           turnDetectionEnabled &&
-          callState.phase === "choose_scenario" &&
+          callState.phase === "choose_scenario" && // Gate: scenario confirm handling (auto-pick confirm)
           awaitingScenarioTag &&
           !scenarioTagCaptureInFlight &&
           !scenarioTagAlreadyCaptured
@@ -3906,7 +3907,7 @@ wss.on("connection", (twilioWs) => {
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
 
         // If we just finished the scenario intro, transition into roleplay instructions.
-        if (callState && callState.phase === "connecting") {
+        if (callState && callState.phase === "connecting") { // Gate: after scenario intro complete, transition to roleplay
           // Move into roleplay and immediately start in character.
           setPhase("roleplay", "scenario_intro_done");
 
@@ -4042,7 +4043,7 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-        if (callState.scenarioCaptureInFlight && callState.phase === "choose_scenario") {
+        if (callState.scenarioCaptureInFlight && callState.phase === "choose_scenario") { // Gate: retry/clarify SCENARIO_PICK while in choose_scenario
           const pick = extractTokenLineValue(text, "SCENARIO_PICK");
           const v = pick ? String(pick).trim().toLowerCase() : "unknown";
 
@@ -4118,13 +4119,13 @@ wss.on("connection", (twilioWs) => {
           return;
         }
 
-        if (awaitingScenarioTag && callState.phase === "choose_scenario" && sawCallerSpeechSinceLastAIDone) {
+        if (awaitingScenarioTag && callState.phase === "choose_scenario" && sawCallerSpeechSinceLastAIDone) { // Gate: parse SCENARIO_TAG when awaiting a tag
           const tag = extractTokenLineValue(text, "SCENARIO_TAG");
           const rawTag = tag ? String(tag).trim().toLowerCase() : "unknown";
 
           console.log(nowIso(), "Parsed SCENARIO_TAG", { value: rawTag });
           console.log(nowIso(), "Scenario menu gate check", {
-            phase: callState.phase,
+            phase: callState.phase, // Log: include phase in scenario menu gate log
             awaitingScenarioTag: awaitingScenarioTag,
             scenarioChosen: callState.scenarioChosen,
             rawTag,
@@ -4225,7 +4226,7 @@ wss.on("connection", (twilioWs) => {
           }, 50);
 
 
-          sendScenarioStartOnce("post-opener");
+          askCallTypeOnce("post-opener");
           return;
         }
 
