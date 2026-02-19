@@ -4148,7 +4148,9 @@ wss.on("connection", (twilioWs) => {
           if (callState.connectingStep === "intro_done") return;
 
           // If the ring just finished, start the scenario intro.
-          if (cs === "ring") {
+          // IMPORTANT: Only transition if we're not about to send ring, i.e., if there's no pending sendRing response
+          // Check: pendingResponseCreate should be empty when transitioning from ring to intro
+          if (cs === "ring" && !callState.pendingResponseCreate) {
             callState.connectingStep = "intro";
             try { console.log(nowIso(), "CONNECTING_STEP", "intro"); } catch (e) { }
 
