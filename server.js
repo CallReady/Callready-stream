@@ -3188,17 +3188,20 @@ wss.on("connection", (twilioWs) => {
 
   function buildDoctorChecklist() {
     return {
+      new_or_returning_patient
       birthdate: { required: true, done: false, value: null },
-      chief_complaint: { required: true, done: false, value: null },
+      patient_name: { required: true, done: false, value: null },
+      reason_for_appointment: { required: true, done: false, value: null },
+      insurance: { required: false, done: false, value: null },      
       appointment_preference: { required: true, done: false, value: null },
-      insurance: { required: false, done: false, value: null }
+      confirmation_preference: { required: false, done: false, value: null }
     };
   }
 
   function getDoctorChecklistOrder() {
     // Define the preferred order for collecting doctor appointment checklist items.
     // Edit this array to change the order in which the AI asks for information.
-    return ["birthdate", "chief_complaint", "appointment_preference", "insurance"];
+    return ["new_or_returning_patient", "birthdate", "patient_name", "reason_for_appointment", "insurance", "appointment_preference", "confirmation_preference"];
   }
 
   function sendOpenerOnce(label) {
