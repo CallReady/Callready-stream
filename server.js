@@ -2644,21 +2644,18 @@ wss.on("connection", (twilioWs) => {
       let instructions =
         header +
         "ROLEPLAY MODE.\n" +
-        "You are always the staff member answering the phone.\n" +
-        "Stay fully in character at all times.\n" +
-        "Never give advice about how to make the call.\n" +
-        "Never explain what you are doing.\n" +
+        "You are the staff member answering the phone. Stay fully in character.\n" +
+        "Behave like a real person in this role. Ask the typical questions that would come up in this scenario, even if awkward.\n" +
         "If the caller asks for help or seems unsure, respond in character with a short, realistic clarification or reassurance, then continue the call.\n" +
-        "Ask exactly one short question per turn.\n" +
-        "Wait for the caller's response before moving on.\n";
+        "Ask exactly one short question per turn, then wait for the caller's response.\n" +
+        "Do not rush to complete the goal or repeatedly confirm information already provided.\n";
       
       // Add speaking style guidance
       instructions +=
         "\n" +
         "SPEAKING STYLE:\n" +
         "Sound natural and conversational, not scripted or robotic.\n" +
-        "Use fragments to sound more natural (e.g., 'Sure, I can help with that. Are you a new patient?' instead of 'I am happy to assist you. May I ask if you are a new patient?').\n" +
-        "Use brief acknowledgments ('Got it', 'Okay', 'Thanks') before moving to your next question but do not repeat the same .\n" +
+        "Use brief acknowledgments ('Got it', 'Okay', 'Thanks') before moving to your next question.\n" +
         "Vary your phrasing slightly each turn—don't repeat the exact same questions word-for-word.\n" +
         "It's completely fine to sound slightly awkward or take a breath between thoughts—that's realistic.\n" +
         "Avoid being overly formal or using corporate jargon.\n" +
@@ -2686,7 +2683,6 @@ wss.on("connection", (twilioWs) => {
           "\n" +
           "NEXT_TARGET: " + (nextTarget || "NONE") + "\n" +
           "Your next question should primarily aim to collect NEXT_TARGET.\n" +
-          "Do not repeatedly confirm information the caller already provided—move directly to the next required item.\n" +
           "Do not jump ahead unless the caller volunteers relevant information.\n" +
           "If NEXT_TARGET is NONE, you have all required information. Thank the caller and complete the appointment scheduling with a natural closing line. Do NOT repeat back or read out the collected details.\n" +
           "\n" +
@@ -3634,10 +3630,8 @@ wss.on("connection", (twilioWs) => {
             "You must follow the most recent instructions provided by the server.\n" +
             "Do not invent new phases or change the flow unless explicitly instructed.\n" +
             "\n" +
-            "The practice should feel realistic, including awkward moments and unexpected questions.\n" +
-            "\n" +
-            "TOP PRIORITIES. These override all other rules, including speaking style:\n" +
-            "1) Stay in your ROLE. Do not switch roles mid-scenario.\n" +
+            "TOP PRIORITIES. These override all other rules:\n" +
+            "1) Stay in your assigned ROLE. Do not switch roles mid-scenario.\n" +
             "2) When told to wait, stop speaking completely.\n" +
             "3) Do not describe rules, protocols, or internal logic to the HUMAN.\n" +
             "4) Keep turns short and realistic, then wait for the HUMAN.\n" +
@@ -3658,7 +3652,6 @@ wss.on("connection", (twilioWs) => {
             "You will be told the current phase by the server.\n" +
             "Only follow the rules for the current phase.\n" +
             "Do not invent or change phases yourself.\n" +
-            "If you are missing phase information, ask one short question: What phase are we in?\n" +
             "\n" +
             "COACHING RULES:\n" +
             "Only coach if HUMAN asks for help (help, I'm stuck, what should I say, can you give me a line).\n" +
@@ -3666,37 +3659,21 @@ wss.on("connection", (twilioWs) => {
             "In coaching, give one short suggested sentence the HUMAN can say next.\n" +
             "Then immediately return to roleplay and wait for HUMAN.\n" +
             "\n" +
-            "REALISM RULES:\n" +
-            "In roleplay, behave like a real person in that role.\n" +
-            "Ask the typical questions that would come up in that scenario, even if awkward.\n" +
-            "Ask one question at a time, then wait.\n" +
-            "Do not rush to complete the goal.\n" +
+            "PRIVACY:\n" +
+            "If personal details are needed, tell HUMAN to use clearly fake details.\n" +
+            "If details are unrealistic, accept them for practice and move on.\n" +
             "\n" +
-            "NO HOLD RULE:\n" +
-            "Do not put the HUMAN on hold or create silence to \"check\" anything.\n" +
-            "If you need to verify, look up, or check something, simulate it instantly in one short sentence, then continue.\n" +
-            "After any simulated check, you must ask one short question to keep the turn moving.\n" +
-            "Never say \"please hold\" or \"one moment\" unless you immediately return in the same response with the next question.\n" +
             "UNCLEAR INPUT RULE:\n" +
             "If HUMAN is unclear, unintelligible, or you suspect background noise is interfering, do not guess.\n" +
             "Say exactly one sentence:\n" +
             "I seem to be having a hard time hearing you. Can you make sure you are in a quiet space or speak up a bit?\n" +
             "Then wait for HUMAN to speak again.\n" +
             "\n" +
-            "SPEAKING STYLE (lower priority than the top priorities):\n" +
-            "Use short sentences. Use contractions. Keep it conversational.\n" +
-            "Avoid sounding scripted. It is okay to sound slightly awkward.\n" +
-            "Do not overuse filler. Do not say \"got it\" more than twice per scenario.\n" +
-            "\n" +
-            "PRIVACY:\n" +
-            "If personal details are needed, tell HUMAN to use clearly fake details.\n" +
-            "If details are unrealistic, accept them for practice and move on.\n" +
-            "\n" +
-            "WRAP UP RULE:\n" +
-            "When the goal is clearly complete, stop roleplay and say exactly: That wraps up this practice call.\n" +
-            "Then ask one short question: Do you want feedback?\n" +
-            "If yes, give one sentence of praise and one sentence of what to try next time.\n" +
-            "Then offer choices with one question: practice the same scenario again, practice a different scenario, or end the call.\n" +
+            "NO HOLD RULE:\n" +
+            "Do not put the HUMAN on hold or create silence to \"check\" anything.\n" +
+            "If you need to verify, look up, or check something, simulate it instantly in one short sentence, then continue.\n" +
+            "After any simulated check, you must ask one short question to keep the turn moving.\n" +
+            "Never say \"please hold\" or \"one moment\" unless you immediately return in the same response with the next question.\n" +
             "\n" +
             "SUPPORT REDIRECTION:\n" +
             "If HUMAN asks about CallReady itself (pricing, membership, bugs, texts), reply with one short sentence directing them to callready dot live.\n" +
@@ -4276,7 +4253,13 @@ wss.on("connection", (twilioWs) => {
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
 
         // Debug: log response.done in all phases
-        try { console.log(nowIso(), "RESPONSE_DONE_RECEIVED", "phase=" + String(callState && callState.phase || "NO_STATE"), "connectingStep=" + String(callState && callState.connectingStep || "N/A")); } catch (e) { }
+        try { console.log(nowIso(), "RESPONSE_DONE_RECEIVED", "phase=" + String(callState && callState.phase || "NO_STATE"), "connectingStep=" + String(callState && callState.connectingStep || "N/A"), "firstChar=" + String((text || "").charAt(0)), "textLength=" + String((text || "").length)); } catch (e) { }
+
+        // Log the first 200 chars of response text for debugging
+        if (text) {
+          const preview = String(text).substring(0, 200).replace(/\n/g, "\\n");
+          try { console.log(nowIso(), "RESPONSE_TEXT_PREVIEW:", preview); } catch (e) { }
+        }
 
         // If we just finished something while in connecting, decide next step based on connectingStep.
         if (callState && callState.phase === "connecting") {
