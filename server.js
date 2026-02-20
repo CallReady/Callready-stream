@@ -2545,6 +2545,11 @@ wss.on("connection", (twilioWs) => {
       wrapUpAskedQuestion = false;
     }
 
+    // State hygiene: reset returning caller flag if they go back to choose_scenario
+    if (next === "choose_scenario") {
+      returningCallerAskedAboutLastScenario = false;
+    }
+
     try {
       console.log(
         nowIso(),
@@ -2801,6 +2806,8 @@ wss.on("connection", (twilioWs) => {
   let lastCancelAtMs = 0;
 
   let priorContext = null;
+
+  let returningCallerAskedAboutLastScenario = false;
 
   let scenarioTagAlreadyCaptured = false;
   let scenarioTagCaptureInFlight = false;
@@ -3192,6 +3199,15 @@ wss.on("connection", (twilioWs) => {
     return String(m);
   }
 
+  function scenarioTagToHumanFriendly(tag) {
+    const scenarios = {
+      doctor_default: "calling a doctor's office to schedule an appointment",
+      pharmacy_refill: "refilling a prescription at a pharmacy",
+      school_office: "calling a school office"
+    };
+    return scenarios[tag] || "a practice call";
+  }
+
   function buildDynamicOpenerSpeech() {
     const base =
       "Hi, this is CallReady dot live. " +
@@ -3208,38 +3224,41 @@ wss.on("connection", (twilioWs) => {
     const remainingMinutes = formatMinutesApprox(callerRuntime.remainingSeconds);
     const capMinutes = formatMinutesApprox(perCallCapSeconds);
 
+    let speech = "";
+
     if (totalCalls <= 1) {
       if (String(tier).toLowerCase() === "free") {
-        return base + "It looks like this is your first time here, you're on the free membership connected to this number. ";
+        speech = base + "It looks like this is your first time here, you're on the free membership connected to this number. ";
+      } else {
+        speech = "Welcome to CallReady dot live, a place to practice phone calls until they feel familiar. " +
+          "Your free membership is active for this number. " +
+          "When you're ready, we can start.";
+      }
+    } else {
+      // Returning caller - add sessions remaining
+      if (String(tier).toLowerCase() === "free") {
+        speech = "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. " +
+          "You have " +
+          String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
+          " practice sessions left this month on the free membership. " +
+          "If you want more sessions, you can check memberships at CallReady dot live. ";
+      } else {
+        speech = "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. " +
+          "You have " +
+          String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
+          " practice sessions left this month. ";
       }
 
-      return (
-        "Welcome to CallReady dot live, a place to practice phone calls until they feel familiar. " +
-        "Your free membership is active for this number. " +
-        "When you're ready, we can start."
-      );
+      // Add question about practicing last scenario if available
+      if (priorContext && priorContext.scenario_tag) {
+        const lastScenario = scenarioTagToHumanFriendly(priorContext.scenario_tag);
+        speech += "Last time you practiced " + lastScenario + ". Would you like to practice that again, or try something new?";
+      }
     }
 
-
-    if (String(tier).toLowerCase() === "free") {
-      return (
-        "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. " +
-        "You have " +
-        String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
-        " practice sessions left this month on the free membership. " +
-        "If you want more sessions, you can check memberships at CallReady dot live. "
-      );
-
-    }
-
-    return (
-      "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. " +
-      "You have " +
-      String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
-      " practice sessions left this month. "
-    );
-
+    return speech;
   }
+
 
   function buildRoleplayStartInstructions() {
     if (!callState.callType) {
@@ -4503,6 +4522,70 @@ wss.on("connection", (twilioWs) => {
           });
 
           return;
+        }
+
+        // Opener: parse response to returning caller's last scenario question
+        if (
+          msg.type === "conversation.item.input_audio_transcription.completed" &&
+          callState.phase === "opener" &&
+          priorContext &&
+          priorContext.scenario_tag &&
+          !returningCallerAskedAboutLastScenario
+        ) {
+          const againRe =
+            /\b(again|same|that|last|yes|yep|yeah|sure|okay|ok|repeat)\b/i;
+          const newRe =
+            /\b(new|different|something else|other|nope|no|try|change)\b/i;
+
+          if (againRe.test(u)) {
+            // Practice the same scenario
+            callState.scenarioTag = priorContext.scenario_tag;
+            callState.scenarioChosen = false;
+            callState.scenarioConfirmCaptureInFlight = true;
+
+            returningCallerAskedAboutLastScenario = true;
+            setPhase("choose_scenario", "returning_caller_confirmed_last_scenario");
+
+            const lastScenario = scenarioTagToHumanFriendly(priorContext.scenario_tag);
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "Say exactly: \"Okay, let's practice " + lastScenario + ". Does that sound good?\"\n" +
+                  "Then wait for the response.\n",
+              },
+            });
+
+            return;
+          }
+
+          if (newRe.test(u)) {
+            // Try something new - go to scenario selection
+            returningCallerAskedAboutLastScenario = true;
+            callState.scenarioChosen = false;
+            awaitingScenarioTag = false;
+            callState.scenarioCaptureInFlight = false;
+            callState.scenarioConfirmCaptureInFlight = false;
+            callState.scenarioTag = null;
+
+            setPhase("choose_scenario", "returning_caller_wants_new_scenario");
+
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "Ask exactly one question in a calm, natural way:\n" +
+                  "\"Do you already have a call in mind, or would you like me to pick one for you?\"\n" +
+                  "Wait for the response.\n" +
+                  "Do not output SCENARIO_PICK in this message.\n" +
+                  "Then stop speaking and wait.",
+              },
+            });
+
+            return;
+          }
         }
 
         if (turnDetectionEnabled) {
