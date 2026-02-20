@@ -3273,10 +3273,21 @@ wss.on("connection", (twilioWs) => {
           " practice sessions left this month. ";
       }
 
-      // Add question about practicing last scenario if available
+      // Add question about practicing last scenario if available (skip unknown)
       if (priorContext && (priorContext.scenario_label || priorContext.scenario_tag)) {
-        const lastScenario = priorContext.scenario_label || scenarioTagToHumanFriendly(priorContext.scenario_tag);
-        speech += "Last time you practiced " + lastScenario + ". Would you like to practice that again, or try something new?";
+        let lastScenario = "";
+        if (priorContext.scenario_label && priorContext.scenario_label !== "a practice call") {
+          lastScenario = priorContext.scenario_label;
+        } else if (priorContext.scenario_tag) {
+          const mapped = scenarioTagToHumanFriendly(priorContext.scenario_tag);
+          if (mapped !== "a practice call") {
+            lastScenario = mapped;
+          }
+        }
+
+        if (lastScenario) {
+          speech += "Last time you practiced " + lastScenario + ". Would you like to practice that again, or try something new?";
+        }
       }
     }
 
