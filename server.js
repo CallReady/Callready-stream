@@ -2451,7 +2451,8 @@ wss.on("connection", (twilioWs) => {
     connectingStep: null,        // null | 'ring' | 'intro' | 'intro_done' - track connecting substep
     connectingStartedAtMs: null, // milliseconds timestamp when entering connecting phase
     connectingTimeoutFired: false, // flag to fire connecting timeout only once
-    checklist: null              // { id: { required: bool, done: bool, value: string|null }, ... }
+    checklist: null,             // { id: { required: bool, done: bool, value: string|null }, ... }
+    roleplayTranscript: []       // Array of {speaker: "caller"|"ai", text: string, timestamp: number}
   };
 
   LAST_CALL_STATE = callState;
@@ -2533,6 +2534,11 @@ wss.on("connection", (twilioWs) => {
     // State hygiene: clear checklist when exiting roleplay
     if (prev === "roleplay" && next !== "roleplay") {
       callState.checklist = null;
+    }
+
+    // State hygiene: clear roleplay transcript when entering roleplay
+    if (next === "roleplay" && prev !== "roleplay") {
+      callState.roleplayTranscript = [];
     }
 
     // State hygiene: reset coaching flag when leaving coaching phase
@@ -2746,13 +2752,25 @@ wss.on("connection", (twilioWs) => {
           "Then wait for the caller's response.\n"
         );
       } else {
+        // Build transcript for AI to review
+        let transcriptText = "";
+        if (callState.roleplayTranscript && callState.roleplayTranscript.length > 0) {
+          transcriptText = "\n\nCONVERSATION TRANSCRIPT:\n";
+          callState.roleplayTranscript.forEach(entry => {
+            const speaker = entry.speaker === "caller" ? "CALLER" : "RECEPTIONIST";
+            transcriptText += `${speaker}: ${entry.text}\n`;
+          });
+          transcriptText += "\n";
+        }
+        
         return (
           header +
-          "The caller wants feedback. Provide exactly two sentences:\n" +
-          "1) One sentence about something they did well during the call.\n" +
-          "2) One sentence about what they might try next time.\n" +
+          "The caller wants feedback. Review the conversation transcript below and provide exactly two sentences:\n" +
+          "1) One sentence about something specific they did well during the call (e.g., clarity, asking questions, providing info).\n" +
+          "2) One sentence about what they might try next time to improve (be specific based on the conversation).\n" +
           "Then say: 'Great practice session!'\n" +
-          "Stop speaking after that.\n"
+          "Stop speaking after that.\n" +
+          transcriptText
         );
       }
     }
@@ -3801,7 +3819,14 @@ wss.on("connection", (twilioWs) => {
         if (utter) {
           callState.lastUserUtterance = utter;
 
-
+          // Capture roleplay transcript for coaching feedback
+          if (callState.phase === "roleplay" && msg.type === "conversation.item.input_audio_transcription.completed") {
+            callState.roleplayTranscript.push({
+              speaker: "caller",
+              text: utter,
+              timestamp: Date.now()
+            });
+          }
 
           var u = utter.toLowerCase();
 
@@ -4221,6 +4246,22 @@ wss.on("connection", (twilioWs) => {
         const text = extractTextFromResponseDone(msg);
         responseActive = false;
         callState.openaiResponseActive = false;
+        
+        // Capture roleplay transcript for coaching feedback (AI responses)
+        if (callState.phase === "roleplay" && text && text.trim()) {
+          // Remove JSON blocks and special tokens from the transcript
+          let cleanText = text.replace(/CHECKLIST_UPDATE_JSON[\s\S]*?END_CHECKLIST_UPDATE_JSON/g, '').trim();
+          cleanText = cleanText.replace(/CALLREADY_END:.*$/gm, '').trim();
+          
+          if (cleanText) {
+            callState.roleplayTranscript.push({
+              speaker: "ai",
+              text: cleanText,
+              timestamp: Date.now()
+            });
+          }
+        }
+        
         if ((callState.phase === "connecting" || callState.phase === "roleplay") && aiAudioBytesThisResponse === 0) {
           // Response completed with no audio
         }
