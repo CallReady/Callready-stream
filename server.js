@@ -3902,6 +3902,12 @@ wss.on("connection", (twilioWs) => {
               callState.scenarioConfirmCaptureInFlight = false;
               callState.scenarioChosen = true;
 
+              try {
+                if (callSid && callState.scenarioTag) {
+                  setScenarioTagOnce(callSid, callState.scenarioTag);
+                }
+              } catch (e) { }
+
               setPhase("connecting", "scenario_confirmed");
               callState.connectingStartedAtMs = Date.now();
 
