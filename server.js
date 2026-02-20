@@ -2413,6 +2413,8 @@ wss.on("connection", (twilioWs) => {
   let requireCallerSpeechBeforeNextAI = false;
   let awaitingScenarioTag = false;
   let coachingAskedForFeedback = false;
+  let wrapUpAskedQuestion = false;
+  let wrapUpTimeLimitExceeded = false;
 
   let sawCallerSpeechSinceLastAIDone = false;
 
@@ -2435,7 +2437,7 @@ wss.on("connection", (twilioWs) => {
 
   // Server-owned lightweight call state (we will start using this in the next steps)
   const callState = {
-    phase: "boot",               // boot, opener, choose_scenario, roleplay, coaching, wrap, ending
+    phase: "boot",               // boot, opener, choose_scenario, roleplay, coaching, wrap_up, ending
     callType: "outgoing",        // Always outgoing (user is caller, AI is receptionist/answerer)
     role: "answerer",            // Always answerer (AI answers as receptionist)
     scenarioTag: null,           // snake_case tag once known
@@ -2472,7 +2474,8 @@ wss.on("connection", (twilioWs) => {
       choose_scenario: ["connecting", "ending"],
       connecting: ["roleplay", "ending"],
       roleplay: ["coaching", "ending"],
-      coaching: ["ending"],
+      coaching: ["wrap_up", "ending"],
+      wrap_up: ["connecting", "ending"],
       ending: []
     };
 
@@ -2535,6 +2538,11 @@ wss.on("connection", (twilioWs) => {
     // State hygiene: reset coaching flag when leaving coaching phase
     if (prev === "coaching" && next !== "coaching") {
       coachingAskedForFeedback = false;
+    }
+
+    // State hygiene: reset wrap_up flag when leaving wrap_up phase
+    if (prev === "wrap_up" && next !== "wrap_up") {
+      wrapUpAskedQuestion = false;
     }
 
     try {
@@ -2741,6 +2749,35 @@ wss.on("connection", (twilioWs) => {
           "Then say: 'Great practice session!'\n" +
           "Stop speaking after that.\n"
         );
+      }
+    }
+
+    if (phase === "wrap_up") {
+      if (wrapUpTimeLimitExceeded) {
+        return (
+          header +
+          "TIME LIMIT REACHED.\n" +
+          "Speak this exactly:\n" +
+          "'We've reached the time limit for this session. I hope you've found it helpful. Come back and practice again soon!'\n" +
+          "Then stop speaking and wait.\n"
+        );
+      } else {
+        if (!wrapUpAskedQuestion) {
+          return (
+            header +
+            "SESSION WRAP-UP.\n" +
+            "Ask exactly: 'Are you ready to end this session, or would you like to practice that call again?'\n" +
+            "Then wait for the caller's response.\n"
+          );
+        } else {
+          return (
+            header +
+            "SESSION COMPLETE.\n" +
+            "Speak this exactly:\n" +
+            "'I hope you've found your practice session helpful. Come back and practice again soon!'\n" +
+            "Then stop speaking and wait.\n"
+          );
+        }
       }
     }
 
@@ -3870,21 +3907,101 @@ wss.on("connection", (twilioWs) => {
           }
 
           if (noRe.test(u)) {
-            setPhase("ending", "coaching_feedback_no");
+            // Check if time limit exceeded and set flag for wrap_up phase
+            const elapsedSeconds = (Date.now() - usageLog.startedAtMs) / 1000;
+            wrapUpTimeLimitExceeded = elapsedSeconds >= perCallCapSeconds;
+
+            setPhase("wrap_up", "coaching_feedback_no");
             openaiResponseCreate({
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
-                instructions: "Say exactly: No problem. Let's wrap up. Then in TEXT ONLY output exactly one line: CALLREADY_END: END_CALL_NOW\n",
+                instructions: buildPhaseInstructions("coaching_feedback_no_to_wrap_up")
               },
             });
             return;
           }
         }
 
-        // Transition from coaching to ending after feedback is given
+        // Transition from coaching to wrap_up after feedback is given
         if (callState.phase === "coaching" && coachingAskedForFeedback) {
-          setPhase("ending", "coaching_feedback_given");
+          // Check if time limit exceeded and set flag for wrap_up phase
+          const elapsedSeconds = (Date.now() - usageLog.startedAtMs) / 1000;
+          wrapUpTimeLimitExceeded = elapsedSeconds >= perCallCapSeconds;
+
+          setPhase("wrap_up", "coaching_feedback_given");
+          return;
+        }
+
+        // Wrap-up: parse response to "practice again or end session?" question
+        if (
+          msg.type === "conversation.item.input_audio_transcription.completed" &&
+          callState.phase === "wrap_up" &&
+          !wrapUpTimeLimitExceeded &&
+          wrapUpAskedQuestion
+        ) {
+          const againRe =
+            /\b(again|another|retry|repeat|try again|one more|more time|continue|practice|more)\b/i;
+          const endRe =
+            /\b(end|done|no|stop|quit|finish|nope|nah|that's all|thats all)\b/i;
+
+          if (againRe.test(u)) {
+            // Reset scenario state and return to connecting phase for another practice round
+            callState.scenarioChosen = true;
+            callState.scenarioConfirmCaptureInFlight = false;
+            callState.checklist = buildDoctorChecklist();
+            wrapUpAskedQuestion = false;
+            wrapUpTimeLimitExceeded = false;
+
+            setPhase("connecting", "wrap_up_practice_again");
+            callState.connectingStartedAtMs = Date.now();
+            callState.connectingStep = "transition_message";
+
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions: "Speak this exactly, then stop speaking and wait: Great, let's practice that call again. I'll answer as the receptionist after the ring. Remember, you can make up any details you're uncomfortable sharing.\n",
+              },
+            });
+
+            return;
+          }
+
+          if (endRe.test(u)) {
+            setPhase("ending", "wrap_up_end_session");
+            wrapUpAskedQuestion = false;
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions: "Say exactly: I hope you've found your practice session helpful. Come back and practice again soon! Then in TEXT ONLY output exactly one line: CALLREADY_END: END_CALL_NOW\n",
+              },
+            });
+            return;
+          }
+        }
+
+        // Wrap-up: transition to ending after time limit message is spoken
+        if (callState.phase === "wrap_up" && wrapUpTimeLimitExceeded) {
+          setPhase("ending", "wrap_up_time_limit_message_done");
+          return;
+        }
+
+        // Wrap-up: ask the wrap-up question on first turn
+        if (
+          callState.phase === "wrap_up" &&
+          !wrapUpTimeLimitExceeded &&
+          !wrapUpAskedQuestion
+        ) {
+          wrapUpAskedQuestion = true;
+          openaiResponseCreate({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              instructions: buildPhaseInstructions("wrap_up_ask_question")
+            },
+          });
           return;
         }
       }
