@@ -2756,7 +2756,7 @@ wss.on("connection", (twilioWs) => {
         return (
           header +
           "COACHING MODE.\n" +
-          "Ask exactly: 'That wraps this scenario. Would you like some feedback?'\n" +
+          "Ask exactly: 'That wraps up this roleplay. Would you like some feedback?'\n" +
           "Then wait for the caller's response.\n"
         );
       } else {
@@ -3686,6 +3686,17 @@ wss.on("connection", (twilioWs) => {
     return false;
   }
 
+  function userUtteranceRequestsEnd(utter, phase) {
+    if (!utter) return false;
+
+    const text = String(utter).toLowerCase().trim();
+    if (!text) return false;
+
+    // Strong intent only: avoids false positives like "end of next week" in roleplay.
+    const endRe = /\b(hang up|hangup|end (the )?(call|session|practice)|stop (this )?(call|session|practice)|quit|goodbye|i'm done|im done|that's all|thats all)\b/;
+    return endRe.test(text);
+  }
+
   function buildReturnCallerInstructions(ctx) {
     // Disabled for now. We want every call to start fresh and not reuse prior call context.
     return "";
@@ -3849,14 +3860,8 @@ wss.on("connection", (twilioWs) => {
 
           var u = utter.toLowerCase();
 
-          // Reroute: end
-          if (
-            u.indexOf("stop") >= 0 ||
-            u.indexOf("end") >= 0 ||
-            u.indexOf("hang up") >= 0 ||
-            u.indexOf("hangup") >= 0 ||
-            u.indexOf("quit") >= 0
-          ) {
+          // Reroute: end (strong intent only)
+          if (userUtteranceRequestsEnd(u, callState.phase)) {
             endingRequested = true;
             setPhase("ending", "reroute_user_end_phrase");
             cancelOpenAIResponseIfAnyOnce("reroute ending");
@@ -4651,7 +4656,7 @@ wss.on("connection", (twilioWs) => {
         if (turnDetectionEnabled) {
           // Detect natural scenario wrap-up and whether we crossed the soft threshold
           try {
-            const wrapPhrase = "That wraps up this practice call.";
+            const wrapPhrase = "That wraps up this roleplay.";
             const sawWrap = text && String(text).indexOf(wrapPhrase) !== -1;
 
             if (sawWrap && liveThresholdState && liveThresholdState.overSoftThresholdLive) {
