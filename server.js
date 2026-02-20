@@ -2412,6 +2412,7 @@ wss.on("connection", (twilioWs) => {
 
   let requireCallerSpeechBeforeNextAI = false;
   let awaitingScenarioTag = false;
+  let coachingAskedForFeedback = false;
 
   let sawCallerSpeechSinceLastAIDone = false;
 
@@ -2470,7 +2471,8 @@ wss.on("connection", (twilioWs) => {
       opener: ["choose_scenario", "ending"],
       choose_scenario: ["connecting", "ending"],
       connecting: ["roleplay", "ending"],
-      roleplay: ["ending"],
+      roleplay: ["coaching", "ending"],
+      coaching: ["ending"],
       ending: []
     };
 
@@ -2528,6 +2530,11 @@ wss.on("connection", (twilioWs) => {
     // State hygiene: clear checklist when exiting roleplay
     if (prev === "roleplay" && next !== "roleplay") {
       callState.checklist = null;
+    }
+
+    // State hygiene: reset coaching flag when leaving coaching phase
+    if (prev === "coaching" && next !== "coaching") {
+      coachingAskedForFeedback = false;
     }
 
     try {
@@ -2622,7 +2629,7 @@ wss.on("connection", (twilioWs) => {
       let instructions =
         header +
         "ROLEPLAY MODE.\n" +
-        "You are the staff member answering the phone. Stay fully in character.\n" +
+        "You are the person answering the phone. Stay fully in character.\n" +
         "Behave like a real person in this role. Ask the typical questions that would come up in this scenario, even if awkward.\n" +
         "If the caller asks for help or seems unsure, respond in character with a short, realistic clarification or reassurance, then continue the call.\n" +
         "Ask exactly one short question per turn, then wait for the caller's response.\n" +
@@ -2632,13 +2639,12 @@ wss.on("connection", (twilioWs) => {
       instructions +=
         "\n" +
         "SPEAKING STYLE:\n" +
-        "Speak like a real front-desk staff member on the phone.\n" +
-        "Use one or two short sentences per turn.\n" +
-        "Ask exactly one clear question at a time.\n" +
-        "Use brief acknowledgments like 'Okay' or 'Got it' when appropriate.\n" +
-        "Natural fragments are fine if they fit.\n" +
-        "Do not sound scripted, overly formal, or corporate.\n" +
-        "Do not repeat the same wording across turns.\n" +
+        "Sound like a real front-desk staff member.\n" +
+        "Use one or two short sentences.\n" +
+        "Ask exactly one clear question per turn.\n" +
+        "Brief acknowledgments are fine.\n" +
+        "Natural fragments are fine.\n" +
+        "Do not sound scripted or corporate.\n" +
         "Stay warm and professional.\n";
 
       // Add scenario context and goal reminder for every turn
@@ -2649,7 +2655,7 @@ wss.on("connection", (twilioWs) => {
           "You are a receptionist at Evergreen Medical Clinic.\n" +
           "The caller is scheduling a doctor appointment.\n" +
           "YOUR GOAL: Collect required information to complete the appointment booking.\n" +
-          "You must stay focused on gathering: new/returning patient status, name, birthdate, reason for visit, and preferred appointment time.\n";
+          "You must stay focused on gathering: new/returning patient status, name, birthdate, reason for visit, insurance or self-pay, preferred appointment time, caller questions\n";
       }
 
       // Add checklist tracking for doctor_default
@@ -2716,6 +2722,26 @@ wss.on("connection", (twilioWs) => {
       }
 
       return instructions;
+    }
+
+    if (phase === "coaching") {
+      if (!coachingAskedForFeedback) {
+        return (
+          header +
+          "COACHING MODE.\n" +
+          "Ask exactly: 'That wraps this scenario. Would you like some feedback?'\n" +
+          "Then wait for the caller's response.\n"
+        );
+      } else {
+        return (
+          header +
+          "The caller wants feedback. Provide exactly two sentences:\n" +
+          "1) One sentence about something they did well during the call.\n" +
+          "2) One sentence about what they might try next time.\n" +
+          "Then say: 'Great practice session!'\n" +
+          "Stop speaking after that.\n"
+        );
+      }
     }
 
     if (phase === "ending") {
@@ -3819,6 +3845,48 @@ wss.on("connection", (twilioWs) => {
             }
           }
         }
+
+        // Coaching: parse yes/no response for feedback request
+        if (
+          msg.type === "conversation.item.input_audio_transcription.completed" &&
+          callState.phase === "coaching" &&
+          !coachingAskedForFeedback
+        ) {
+          const yesRe =
+            /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|lets do it|let's do it|go ahead|whatever)\b/i;
+          const noRe =
+            /\b(no|nope|nah|not really|dont|don't|do not|not|skip|pass)\b/i;
+
+          if (yesRe.test(u)) {
+            coachingAskedForFeedback = true;
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions: buildPhaseInstructions("coaching_feedback_yes")
+              },
+            });
+            return;
+          }
+
+          if (noRe.test(u)) {
+            setPhase("ending", "coaching_feedback_no");
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions: "Say exactly: No problem. Let's wrap up. Then in TEXT ONLY output exactly one line: CALLREADY_END: END_CALL_NOW\n",
+              },
+            });
+            return;
+          }
+        }
+
+        // Transition from coaching to ending after feedback is given
+        if (callState.phase === "coaching" && coachingAskedForFeedback) {
+          setPhase("ending", "coaching_feedback_given");
+          return;
+        }
       }
 
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
@@ -4038,6 +4106,16 @@ wss.on("connection", (twilioWs) => {
                 }
               }
             }
+          }
+
+          // Check if all required checklist items are done
+          const allDone = Object.keys(callState.checklist).every(
+            id => !callState.checklist[id].required || callState.checklist[id].done
+          );
+          if (allDone) {
+            coachingAskedForFeedback = false;
+            setPhase("coaching", "roleplay_checklist_complete");
+            return;
           }
         }
 
