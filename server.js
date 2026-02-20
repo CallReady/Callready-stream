@@ -3226,9 +3226,9 @@ wss.on("connection", (twilioWs) => {
       birthdate: { required: true, done: false, value: null },
       patient_name: { required: true, done: false, value: null },
       reason_for_appointment: { required: true, done: false, value: null },
-      insurance: { required: false, done: false, value: null },
+      insurance: { required: true, done: false, value: null },
       appointment_preference: { required: true, done: false, value: null },
-      confirmation_preference: { required: false, done: false, value: null },
+      confirmation_preference: { required: true, done: false, value: null },
       questions_and_closing: { required: true, done: false, value: null }
     };
   }
@@ -3763,7 +3763,7 @@ wss.on("connection", (twilioWs) => {
             callState.scenarioConfirmCaptureInFlight
           ) {
             const yesRe =
-              /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|lets do it|let's do it|go ahead)\b/i;
+              /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|lets do it|let's do it|go ahead|whatever|yeah)\b/i;
             const noRe =
               /\b(no|nope|nah|not really|dont|don't|do not|different|something else|another)\b/i;
 
@@ -3965,85 +3965,7 @@ wss.on("connection", (twilioWs) => {
         ) {
         }
 
-        // OLD confirm handler - DISABLED because new transcription-based confirm handler (line 3783+) handles this
-        // This old speech_stopped based handler was conflicting with the new one
-        if (false && // DISABLED
-          turnDetectionEnabled &&
-          callState.phase === "choose_scenario" && // Gate: scenario-confirm flow checks
-          callState.scenarioConfirmCaptureInFlight &&
-          sawCallerSpeechSinceLastAIDone
-        ) {
-
-          const utter = (callState.lastUserUtterance || "").toLowerCase().trim();
-
-          const yesRe =
-            /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|lets do it|let's do it|go ahead)\b/i;
-          const noRe =
-            /\b(no|nope|nah|not really|dont|don't|do not|different|something else|another)\b/i;
-
-          if (yesRe.test(utter)) {
-            callState.scenarioConfirmCaptureInFlight = false;
-            callState.scenarioChosen = true;
-
-            setPhase("connecting", "scenario_confirmed");
-            callState.connectingStartedAtMs = Date.now();
-
-            // Always answerer role since we only do outgoing calls (human calls, AI answers)
-            callState.role = "answerer";
-
-            if (callState.scenarioTag === "doctor_default") {
-              callState.checklist = buildDoctorChecklist();
-            }
-
-            callState.connectingStep = "ring";
-
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions: "Speak this exactly, then stop speaking and wait:\nRing ring.\n",
-              },
-            });
-
-            return;
-          }
-
-
-          if (noRe.test(utter)) {
-            callState.scenarioConfirmCaptureInFlight = false;
-            callState.scenarioTag = null;
-            callState.scenarioChosen = false;
-
-            awaitingScenarioTag = true;
-            setPhase("choose_scenario", "scenario_menu");
-
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "Ask exactly one question and nothing else.\n" +
-                  "Say: \"Which do you want to practice? Say 1 for scheduling a doctor's appointment, 2 for a pharmacy refill, or 3 for calling a school office.\"\n",
-              },
-            });
-
-            return;
-          }
-
-          // Unclear, re-ask and keep waiting for confirmation.
-          openaiResponseCreate({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions:
-                "Ask exactly one question and nothing else.\n" +
-                "Say: \"Does that sound good?\"\n",
-            },
-          });
-
-          return;
-        }
-
+        // Scenario tag selection from menu
         if (
           turnDetectionEnabled &&
           callState.phase === "choose_scenario" && // Gate: scenario confirm handling (auto-pick confirm)
@@ -4146,21 +4068,11 @@ wss.on("connection", (twilioWs) => {
             streamRingAudioToTwilio(streamSid);
 
             // Ring file is approximately 3 seconds, so schedule the roleplay greeting after that
-            const ct = (callState.callType || "").toLowerCase();
-
             let startLine = "";
             if (callState.scenarioTag === "doctor_default") {
-              if (ct === "outgoing") {
-                startLine = "Thank you for calling Evergreen Medical Clinic. This is Denise. How can I help you?";
-              } else {
-                startLine = "Hi, this is Evergreen Medical Clinic calling. Are you available to talk for a moment?";
-              }
+              startLine = "Thank you for calling Evergreen Medical Clinic. This is Denise. How can I help you?";
             } else {
-              if (ct === "outgoing") {
-                startLine = "Hello, thanks for calling. How can I help you?";
-              } else {
-                startLine = "Hi, I am calling you about your request. Is now a good time?";
-              }
+              startLine = "Hello, thanks for calling. How can I help you?";
             }
 
             setTimeout(() => {
