@@ -955,7 +955,7 @@ async function fetchPriorCallContextByCallSid(callSid) {
     if (!phone) return null;
 
     const prev = await pool.query(
-      "select scenario_tag, last_focus_skill, last_coaching_note, started_at from calls where phone_e164 = $1 and call_sid <> $2 and started_at is not null order by started_at desc limit 1",
+      "select scenario_tag, scenario_label, last_focus_skill, last_coaching_note, started_at from calls where phone_e164 = $1 and call_sid <> $2 and started_at is not null order by started_at desc limit 1",
       [phone, callSid]
     );
 
@@ -964,6 +964,7 @@ async function fetchPriorCallContextByCallSid(callSid) {
 
     return {
       scenario_tag: row.scenario_tag || null,
+      scenario_label: row.scenario_label || null,
       last_focus_skill: row.last_focus_skill || null,
       last_coaching_note: row.last_coaching_note || null,
     };
@@ -1029,11 +1030,16 @@ async function setScenarioTagOnce(callSid, tag) {
   if (!tag) return;
 
   try {
-    await pool.query("update calls set scenario_tag = coalesce(scenario_tag, $2) where call_sid = $1", [
-      callSid,
-      tag,
-    ]);
-    console.log(nowIso(), "Set scenario_tag (once)", { callSid, scenario_tag: tag });
+    const friendlyLabel = scenarioTagToHumanFriendly(tag);
+    await pool.query(
+      "update calls set scenario_tag = coalesce(scenario_tag, $2), scenario_label = coalesce(scenario_label, $3) where call_sid = $1",
+      [
+        callSid,
+        tag,
+        friendlyLabel,
+      ]
+    );
+    console.log(nowIso(), "Set scenario_tag (once)", { callSid, scenario_tag: tag, scenario_label: friendlyLabel });
   } catch (e) {
     console.log(nowIso(), "DB update failed for scenario_tag:", e && e.message ? e.message : e);
   }
@@ -3268,8 +3274,8 @@ wss.on("connection", (twilioWs) => {
       }
 
       // Add question about practicing last scenario if available
-      if (priorContext && priorContext.scenario_tag) {
-        const lastScenario = scenarioTagToHumanFriendly(priorContext.scenario_tag);
+      if (priorContext && (priorContext.scenario_label || priorContext.scenario_tag)) {
+        const lastScenario = priorContext.scenario_label || scenarioTagToHumanFriendly(priorContext.scenario_tag);
         speech += "Last time you practiced " + lastScenario + ". Would you like to practice that again, or try something new?";
       }
     }
