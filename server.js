@@ -770,13 +770,13 @@ async function logAiUsageToDb(callSid, usageSummary) {
       "call_sid, phone_e164, tier, model, openai_session_id, started_at, ended_at, duration_seconds, turns, " +
       "total_tokens, input_tokens, output_tokens, " +
       "input_text_tokens, input_audio_tokens, output_text_tokens, output_audio_tokens, " +
-      "estimated_cost_usd" +
+      "estimated_cost_usd, cost_per_minute_usd" +
       ") values (" +
       "$1, $2, $3, $4, $5, " +
       "coalesce($6::timestamptz, now()), $7::timestamptz, $8, $9, " +
       "$10, $11, $12, " +
       "$13, $14, $15, $16, " +
-      "$17" +
+      "$17, $18" +
       ") on conflict (call_sid) do update set " +
       "tier = excluded.tier, " +
       "model = excluded.model, " +
@@ -792,7 +792,8 @@ async function logAiUsageToDb(callSid, usageSummary) {
       "input_audio_tokens = excluded.input_audio_tokens, " +
       "output_text_tokens = excluded.output_text_tokens, " +
       "output_audio_tokens = excluded.output_audio_tokens, " +
-      "estimated_cost_usd = excluded.estimated_cost_usd",
+      "estimated_cost_usd = excluded.estimated_cost_usd, " +
+      "cost_per_minute_usd = excluded.cost_per_minute_usd",
       [
         callSid,
         phone,
@@ -810,7 +811,8 @@ async function logAiUsageToDb(callSid, usageSummary) {
         (usageSummary.totals && usageSummary.totals.input_audio_tokens) || 0,
         (usageSummary.totals && usageSummary.totals.output_text_tokens) || 0,
         (usageSummary.totals && usageSummary.totals.output_audio_tokens) || 0,
-        typeof usageSummary.estimatedCostUSD === "number" ? usageSummary.estimatedCostUSD : null
+        typeof usageSummary.estimatedCostUSD === "number" ? usageSummary.estimatedCostUSD : null,
+        typeof usageSummary.estimatedCostPerMinuteUSD === "number" ? usageSummary.estimatedCostPerMinuteUSD : null
       ]
     );
 
