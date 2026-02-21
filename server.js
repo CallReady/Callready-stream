@@ -1910,7 +1910,7 @@ app.post("/voice", async (req, res) => {
     // Opener is just a greeting/welcome statement, no interaction
     // Immediately redirect to choose_scenario for the first real question
     vr.say({
-      voice: "Polly.Matthew-Neural"
+      voice: "Polly.Stephen-Generative"
     }, openerText);
 
     vr.redirect({ method: "POST" }, "/gather-choose-scenario");
@@ -1935,7 +1935,7 @@ app.post("/gather-choose-scenario", async (req, res) => {
     if (retryCount >= 2) {
       const VoiceResponse = twilio.twiml.VoiceResponse;
       const vr = new VoiceResponse();
-      vr.say({ voice: "Polly.Matthew-Neural" }, "It looks like I might be having trouble hearing you. Let's end this call and have you call back so we can try again. Thanks.");
+      vr.say({ voice: "Polly.Stephen-Generative" }, "It looks like I might be having trouble hearing you. Let's end this call and have you call back so we can try again. Thanks.");
       vr.hangup();
       res.type("text/xml").send(vr.toString());
       
@@ -1972,7 +1972,7 @@ app.post("/gather-choose-scenario", async (req, res) => {
       language: "en-US"
     });
 
-    gather.say({ voice: "Polly.Matthew-Neural" }, questionText);
+    gather.say({ voice: "Polly.Stephen-Generative" }, questionText);
 
     // Store current retry count so /process-choose-scenario can track it
     if (callSid) {
@@ -2025,7 +2025,7 @@ app.all("/gather-previous-scenario", async (req, res) => {
       language: "en-US"
     });
 
-    gather.say({ voice: "Polly.Matthew-Neural" }, questionText);
+    gather.say({ voice: "Polly.Stephen-Generative" }, questionText);
 
     // Fallback if no input
     vr.redirect({ method: "POST" }, "/gather-previous-scenario?retry=1");
@@ -2175,7 +2175,7 @@ app.post("/gather-scenario-menu", async (req, res) => {
       language: "en-US"
     });
 
-    gather.say({ voice: "Polly.Matthew-Neural" }, menuText);
+    gather.say({ voice: "Polly.Stephen-Generative" }, menuText);
 
     // Fallback if no input
     vr.redirect({ method: "POST" }, "/gather-scenario-menu?retry=1");
@@ -2274,7 +2274,7 @@ app.post("/gather-describe-call", async (req, res) => {
       maxSpeechTime: 10
     });
 
-    gather.say({ voice: "Polly.Matthew-Neural" }, questionText);
+    gather.say({ voice: "Polly.Stephen-Generative" }, questionText);
 
     // Fallback if no input
     vr.redirect({ method: "POST" }, "/gather-describe-call?retry=1");
@@ -2402,7 +2402,7 @@ app.post("/gather-confirm-suggested-scenario", async (req, res) => {
       language: "en-US"
     });
 
-    gather.say({ voice: "Polly.Matthew-Neural" }, questionText);
+    gather.say({ voice: "Polly.Stephen-Generative" }, questionText);
 
     // Fallback if no input
     vr.redirect({ method: "POST" }, `/gather-confirm-suggested-scenario?tag=${encodeURIComponent(scenarioTag)}&retry=1`);
@@ -2491,7 +2491,7 @@ app.post("/gather-custom-call-confirmation", async (req, res) => {
       language: "en-US"
     });
 
-    gather.say({ voice: "Polly.Matthew-Neural" }, questionText);
+    gather.say({ voice: "Polly.Stephen-Generative" }, questionText);
 
     // Fallback if no input
     vr.redirect({ method: "POST" }, "/gather-custom-call-confirmation?retry=1");
@@ -2581,7 +2581,7 @@ app.post("/gather-confirm-doctor", async (req, res) => {
       language: "en-US"
     });
 
-    gather.say({ voice: "Polly.Matthew-Neural" }, questionText);
+    gather.say({ voice: "Polly.Stephen-Generative" }, questionText);
 
     // Fallback if no input
     vr.redirect({ method: "POST" }, "/gather-confirm-doctor?retry=1");
@@ -2672,7 +2672,7 @@ app.post("/stream-roleplay", async (req, res) => {
     }
 
     // Transition message before starting roleplay
-    vr.say({ voice: "Polly.Matthew-Neural" }, 
+    vr.say({ voice: "Polly.Stephen-Generative" }, 
       "Great. You'll hear the receptionist after the ring. You can make up any details you'd rather not share.");
 
     // Connect WebSocket for roleplay
@@ -3588,7 +3588,7 @@ app.post("/gather-coaching-feedback", async (req, res) => {
     });
 
     gather.say(
-      { voice: "Polly.Matthew-Neural" },
+      { voice: "Polly.Stephen-Generative" },
       "That wraps up the roleplay. Would you like some feedback on how it went?"
     );
 
@@ -3649,12 +3649,12 @@ app.post("/process-coaching-feedback", async (req, res) => {
         twilioCoachingContexts.set(callSid, context);
 
         // Say the feedback and redirect to wrap-up
-        vr.say({ voice: "Polly.Matthew-Neural" }, "Here's some feedback. " + feedback);
+        vr.say({ voice: "Polly.Stephen-Generative" }, "Here's some feedback. " + feedback);
         vr.redirect({ method: "POST" }, "/gather-wrap-up");
       } else {
         // Feedback generation failed, skip to wrap-up
         console.log(nowIso(), "Feedback generation failed, going to wrap-up");
-        vr.say({ voice: "Polly.Matthew-Neural" }, "Okay. Let's wrap up.");
+        vr.say({ voice: "Polly.Stephen-Generative" }, "Okay. Let's wrap up.");
         vr.redirect({ method: "POST" }, "/gather-wrap-up");
       }
 
@@ -3664,7 +3664,7 @@ app.post("/process-coaching-feedback", async (req, res) => {
 
     // If response was unclear, ask again
     console.log(nowIso(), "Unclear coaching response, asking again");
-    vr.say({ voice: "Polly.Matthew-Neural" }, "I didn't catch that. Would you like feedback on the call we just practiced?");
+    vr.say({ voice: "Polly.Stephen-Generative" }, "I didn't catch that. Would you like feedback on the call we just practiced?");
     const gather = vr.gather({
       input: "speech dtmf",
       hints: "yes, no",
@@ -3706,7 +3706,7 @@ app.post("/gather-wrap-up", async (req, res) => {
     if (softThresholdExceeded) {
       console.log(nowIso(), "Soft threshold exceeded, ending session");
       vr.say(
-        { voice: "Polly.Matthew-Neural" },
+        { voice: "Polly.Stephen-Generative" },
         "We've reached the time available for this session. We'll wrap up here. Thanks for practicing with CallReady, and call again soon!"
       );
       vr.hangup();
@@ -3726,7 +3726,7 @@ app.post("/gather-wrap-up", async (req, res) => {
     });
 
     gather.say(
-      { voice: "Polly.Matthew-Neural" },
+      { voice: "Polly.Stephen-Generative" },
       "Would you like to practice that again, or end this session?"
     );
 
@@ -3762,7 +3762,7 @@ app.post("/process-wrap-up", async (req, res) => {
     if (userWantsEnd) {
       console.log(nowIso(), "User ended session");
       vr.say(
-        { voice: "Polly.Matthew-Neural" },
+        { voice: "Polly.Stephen-Generative" },
         "Thanks for practicing with CallReady. You can call back anytime."
       );
       vr.hangup();
@@ -3782,7 +3782,7 @@ app.post("/process-wrap-up", async (req, res) => {
       
       // Say the transition message and redirect to stream-roleplay
       vr.say(
-        { voice: "Polly.Matthew-Neural" },
+        { voice: "Polly.Stephen-Generative" },
         "Great. You'll hear the receptionist after the ring and we'll get some more practice."
       );
       vr.redirect({ method: "POST" }, `/stream-roleplay?scenario=${encodeURIComponent(scenarioTag)}`);
@@ -3792,7 +3792,7 @@ app.post("/process-wrap-up", async (req, res) => {
 
     // Unclear response, ask again
     console.log(nowIso(), "Unclear wrap-up response, asking again");
-    vr.say({ voice: "Polly.Matthew-Neural" }, "I didn't catch that. Would you like to practice again, or end the session?");
+    vr.say({ voice: "Polly.Stephen-Generative" }, "I didn't catch that. Would you like to practice again, or end the session?");
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
