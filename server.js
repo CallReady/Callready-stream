@@ -2836,9 +2836,13 @@ const twilioOpenerPlayedFlags = new Map();
 // Allows /gather-scenario-menu or /gather-confirm-doctor to pass scenario to WebSocket
 const twilioScenarioFlags = new Map();
 
-// In-memory store for coaching context (callSid => { transcript, feedback })
+// In-memory store for coaching context (callSid => { transcript, scenarioTag, feedback })
 // Allows coaching endpoints to generate and deliver feedback
 const twilioCoachingContexts = new Map();
+
+// In-memory store for threshold state (callSid => { overSoftThreshold, ... })
+// Allows wrap-up endpoints to check if soft threshold was exceeded
+const twilioThresholdContexts = new Map();
 
 // Helper function to generate coaching feedback via OpenAI REST API
 async function generateCoachingFeedback(transcript) {
@@ -3031,16 +3035,35 @@ app.post("/process-coaching-feedback", async (req, res) => {
 });
 
 // POST /gather-wrap-up
-// Asks if they want to practice again or end the session
+// Checks soft threshold. If exceeded, announces time limit. If not, asks if user wants to practice again.
 app.post("/gather-wrap-up", async (req, res) => {
   try {
     const callSid = req.body?.CallSid || "";
 
     console.log(nowIso(), "/gather-wrap-up", { callSid });
 
+    // Check if soft threshold was exceeded
+    const thresholdState = twilioThresholdContexts.get(callSid);
+    const softThresholdExceeded = thresholdState && thresholdState.overSoftThreshold;
+
+    console.log(nowIso(), "/gather-wrap-up threshold check", { callSid, softThresholdExceeded, thresholdState });
+
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
+    // If soft threshold exceeded, announce time limit and end
+    if (softThresholdExceeded) {
+      console.log(nowIso(), "Soft threshold exceeded, ending session");
+      vr.say(
+        { voice: "Polly.Matthew-Neural" },
+        "We've reached the session time available for you today. Your call will now end. Thanks for practicing with CallReady!"
+      );
+      vr.hangup();
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Otherwise, ask if they want to practice again
     const gather = vr.gather({
       input: "speech dtmf",
       hints: "practice again, end session",
@@ -3053,7 +3076,7 @@ app.post("/gather-wrap-up", async (req, res) => {
 
     gather.say(
       { voice: "Polly.Matthew-Neural" },
-      "Are you ready to end this session, or would you like to practice that call again?"
+      "Would you like to practice that call again, or are you ready to end this session?"
     );
 
     res.type("text/xml").send(vr.toString());
@@ -3067,7 +3090,7 @@ app.post("/gather-wrap-up", async (req, res) => {
 });
 
 // POST /process-wrap-up
-// Handle wrap-up response (end session or practice again)
+// Handle wrap-up response (practice again or end session)
 app.post("/process-wrap-up", async (req, res) => {
   try {
     const callSid = req.body?.CallSid || "";
@@ -3084,8 +3107,9 @@ app.post("/process-wrap-up", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
+    // User wants to end session
     if (userWantsEnd) {
-      // End the session
+      console.log(nowIso(), "User ended session");
       vr.say(
         { voice: "Polly.Matthew-Neural" },
         "Thanks for practicing with CallReady. See you next time!"
@@ -3095,14 +3119,22 @@ app.post("/process-wrap-up", async (req, res) => {
       return;
     }
 
+    // User wants to practice again
     if (userWantsAgain) {
-      // Redirect back to scenario selection or streaming
       console.log(nowIso(), "User wants to practice again");
+      
+      // Get the scenario from coaching context
+      const coachingContext = twilioCoachingContexts.get(callSid);
+      const scenarioTag = coachingContext && coachingContext.scenarioTag ? coachingContext.scenarioTag : "doctor_default";
+      
+      console.log(nowIso(), "Redirecting to stream-roleplay for practice again", { callSid, scenarioTag });
+      
+      // Say the transition message and redirect to stream-roleplay
       vr.say(
         { voice: "Polly.Matthew-Neural" },
-        "Great! Let's set up another practice call."
+        "Great, you'll hear the receptionist after the ring again."
       );
-      vr.redirect({ method: "POST" }, `/gather-choose-scenario`);
+      vr.redirect({ method: "POST" }, `/stream-roleplay?scenario=${encodeURIComponent(scenarioTag)}`);
       res.type("text/xml").send(vr.toString());
       return;
     }
@@ -3769,6 +3801,18 @@ wss.on("connection", (twilioWs, req) => {
       finalizeRealtimeUsageSummary(String(reason || "closeAll"));
     } catch { }
 
+    // Store threshold state for wrap-up endpoint to check
+    if (callSid && liveThresholdState) {
+      twilioThresholdContexts.set(callSid, {
+        overSoftThreshold: liveThresholdState.overSoftThresholdLive,
+        hitHardCeiling: liveThresholdState.hitHardCeilingLive
+      });
+      console.log(nowIso(), "Stored threshold state for wrap-up", {
+        callSid,
+        overSoftThreshold: liveThresholdState.overSoftThresholdLive,
+        hitHardCeiling: liveThresholdState.hitHardCeilingLive
+      });
+    }
 
     try {
       if (sessionTimer) clearTimeout(sessionTimer);
@@ -3783,7 +3827,6 @@ wss.on("connection", (twilioWs, req) => {
       if (endFallbackTimer) clearTimeout(endFallbackTimer);
     } catch { }
     endFallbackTimer = null;
-
 
     try {
       if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
@@ -4921,15 +4964,17 @@ wss.on("connection", (twilioWs, req) => {
             console.log(nowIso(), "Roleplay checklist complete, transitioning to coaching");
             callState.roleplayComplete = true;
             
-            // Store the transcript for the coaching endpoints to use
-            if (callSid && callState.roleplayTranscript) {
+            // Store the transcript and scenario for the coaching/wrap-up endpoints to use
+            if (callSid) {
               twilioCoachingContexts.set(callSid, {
-                transcript: callState.roleplayTranscript,
+                transcript: callState.roleplayTranscript || [],
+                scenarioTag: callState.scenarioTag,
                 feedbackRequested: false
               });
-              console.log(nowIso(), "Stored coaching context with transcript", {
+              console.log(nowIso(), "Stored coaching context with transcript and scenario", {
                 callSid,
-                transcriptLength: callState.roleplayTranscript.length
+                transcriptLength: callState.roleplayTranscript ? callState.roleplayTranscript.length : 0,
+                scenarioTag: callState.scenarioTag
               });
             }
             
