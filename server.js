@@ -135,8 +135,9 @@ const AI_END_CALL_TRIGGER = "END_CALL_NOW";
 
 const TWILIO_END_TRANSITION =
   "Thanks for practicing with CallReady. " +
-  "If you want more practice sessions each month, you can explore memberships at CallReady dot live. " +
-  "You did something important today by practicing, and that counts, even if it felt awkward or imperfect.";
+  "If you'd like more sessions each month, you can explore memberships at CallReady dot live. " +
+  "You did something important today by practicing. " +
+  "That counts, even if it felt awkward.";
 
 const TWILIO_HARD_LIMIT_MESSAGE =
   "Pardon the interruption, but we have reached the maximum time for this practice session, so we need to end the call now. " +
@@ -145,21 +146,22 @@ const TWILIO_HARD_LIMIT_MESSAGE =
 
 const TWILIO_OPTIN_PROMPT =
   "You can choose to receive text messages from CallReady. " +
-  "If you opt in, we can text you short reminders about what you practiced, what to work on next, and new features as we add them. " +
-  "To agree to receive text messages from CallReady, press 1 now. " +
-  "If you do not want text messages, press 2 now.";
+  "We'll send short reminders about what you practiced and what to try next. " +
+  "Press 1 to opt in. " +
+  "Press 2 to skip.";
 
 const GATHER_RETRY_PROMPT =
-  "I didn't get a response from you. Press 1 to receive texts, or press 2 to skip.";
+  "I didn't get a response. Press 1 to receive texts, or press 2 to skip.";
 
 const IN_CALL_CONFIRM_YES =
-  "Thanks. You are opted in to receive text messages from CallReady. " +
-  "Message and data rates may apply. You can opt out any time by replying STOP. " +
-  "Thanks for practicing today. Have a great day and call again soon!";
+  "You're opted in to receive text messages from CallReady. " +
+  "Message and data rates may apply. " +
+  "You can opt out anytime by replying STOP. " +
+  "Thanks for practicing today.";
 
 const IN_CALL_CONFIRM_NO =
-  "No problem. You will not receive text messages from CallReady. " +
-  "Thanks for practicing with us today. We hope to hear from you again soon. Have a great day and call again soon!";
+  "No problem. You won't receive text messages from CallReady. " +
+  "Thanks for practicing today. You can call back anytime.";
 
 const OPTIN_CONFIRM_SMS =
   "Welcome to CallReady.live, a place to practice phone calls until they feel familiar. You are opted in to receive texts. Msg and data rates may apply. " +
@@ -187,9 +189,9 @@ const TWILIO_NO_MINUTES_LEFT =
   "Thanks for calling, and we hope you will practice again soon!";
 
 const TWILIO_NO_SESSIONS_LEFT =
-  "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. It looks like you do not have any practice sessions remaining on your membership for this month. " +
-  "To get more sessions, please visit CallReady dot live. " +
-  "Thanks for calling, and we hope you will practice again soon!";
+  "Welcome back to CallReady dot live. It looks like you don't have any practice sessions left this month. " +
+  "If you'd like more, you can visit CallReady dot live. " +
+  "Thanks for calling and we hope to practice with you again soon!";
 
 const TWILIO_SERVICE_UNAVAILABLE =
   "CallReady dot live is temporarily unavailable right now. Please try again in a little bit. Goodbye.";
@@ -1736,10 +1738,8 @@ function scenarioTagToHumanFriendlyHelper(tag) {
 
 function buildOpenerSpeechForTwilio(priorContext, callerRuntime, perCallCapSeconds) {
   const base =
-    "Hi, this is CallReady dot live. " +
-    "We can practice a phone call together, no pressure. " +
-    "If you want a quick prompt, just say help me. " +
-    "When you're ready, we can start. ";
+    "Hi. This is CallReady dot live, where we can practice a phone call together in a calm, low pressure way. " +
+    "It looks like this is your first time here, so we've set you up with a free membership connected to your phone number. ";
 
   if (!callerRuntime) {
     return base;
@@ -1754,22 +1754,21 @@ function buildOpenerSpeechForTwilio(priorContext, callerRuntime, perCallCapSecon
 
   if (totalCalls <= 1) {
     if (String(tier).toLowerCase() === "free") {
-      speech = base + "It looks like this is your first time here, you're on the free membership connected to this number. ";
+      speech = base;
     } else {
-      speech = "Welcome to CallReady dot live, a place to practice phone calls until they feel familiar. " +
-        "Your free membership is active for this number. " +
-        "When you're ready, we can start.";
+      speech = "Welcome to CallReady dot live, a place to practice phone calls until they feel manageable. " +
+        "Your free membership is active for this number. ";
     }
   } else {
     // Returning caller - add sessions remaining
     if (String(tier).toLowerCase() === "free") {
-      speech = "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. " +
+      speech = "Welcome back to CallReady dot live. " +
         "You have " +
         String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
-        " practice sessions left this month on the free membership. " +
-        "If you want more sessions, you can check memberships at CallReady dot live. ";
+        " practice sessions left this month on your free membership. " +
+        "If you ever need more, you can explore memberships at CallReady dot live. ";
     } else {
-      speech = "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. " +
+      speech = "Welcome back to CallReady dot live. " +
         "You have " +
         String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
         " practice sessions left this month. ";
@@ -1788,7 +1787,7 @@ function buildOpenerSpeechForTwilio(priorContext, callerRuntime, perCallCapSecon
       }
 
       if (lastScenario) {
-        speech += "Last time you practiced " + lastScenario + ". Would you like to practice that again, or try something new?";
+        speech += "Last time you practiced " + lastScenario + ". Would you like to try that again, or practice something new?";
       }
     }
   }
@@ -1885,6 +1884,15 @@ app.post("/voice", async (req, res) => {
     // REFACTORED: Use Twilio voice for opener instead of OpenAI
     const priorContext = await fetchPriorCallContextByCallSid(callSid);
     const callerRuntime = await fetchCallerRuntimeContextByCallSid(callSid);
+    
+    // Store prior context for /gather-choose-scenario to offer re-practice of previous scenario
+    if (priorContext && priorContext.scenario_tag) {
+      twilioReturningCallerContexts.set(callSid, {
+        scenario_tag: priorContext.scenario_tag,
+        scenario_label: priorContext.scenario_label
+      });
+    }
+    
     const openerText = buildOpenerSpeechForTwilio(priorContext, callerRuntime, FREE_PER_CALL_SECONDS);
 
     console.log(nowIso(), "Opener phase: using Twilio voice", {
@@ -1914,14 +1922,22 @@ app.post("/gather-choose-scenario", async (req, res) => {
   try {
     const callSid = req.body?.CallSid || "";
     const retry = req.query?.retry === "1";
+    const skipPrevious = req.query?.skipPrevious === "1";
     
-    console.log(nowIso(), "/gather-choose-scenario", { callSid, retry });
+    console.log(nowIso(), "/gather-choose-scenario", { callSid, retry, skipPrevious });
+
+    // Check if this is a returning caller with prior scenario context
+    if (!skipPrevious && twilioReturningCallerContexts.has(callSid)) {
+      // Redirect to ask about re-practicing the previous scenario
+      res.redirect(307, "/gather-previous-scenario");
+      return;
+    }
 
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
     const questionText = retry
-      ? "Do you have a specific call you want to practice, or should I pick one for you?"
+      ? "What call would you like to practice, or would you like a suggestion?"
       : "Do you already have a call in mind, or would you like me to pick one for you?";
 
     const gather = vr.gather({
@@ -1941,6 +1957,106 @@ app.post("/gather-choose-scenario", async (req, res) => {
     res.type("text/xml").send(vr.toString());
   } catch (err) {
     console.error("/gather-choose-scenario ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+// PREVIOUS_SCENARIO PHASE: Ask returning caller if they want to re-practice their previous scenario
+app.post("/gather-previous-scenario", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const retry = req.query?.retry === "1";
+
+    console.log(nowIso(), "/gather-previous-scenario", { callSid, retry });
+
+    const context = twilioReturningCallerContexts.get(callSid);
+    if (!context || !context.scenario_tag) {
+      console.log(nowIso(), "/gather-previous-scenario: No context found, skipping to main choice", { callSid });
+      res.redirect(307, "/gather-choose-scenario?skipPrevious=1");
+      return;
+    }
+
+    const scenarioFriendlyName = scenarioTagToHumanFriendlyHelper(context.scenario_tag);
+    const questionText = retry
+      ? `Would you like to try that again, or choose something different?`
+      : `It looks like you were working on ${scenarioFriendlyName} in a previous session. Would you like to practice that again?`;
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const gather = vr.gather({
+      input: "speech",
+      timeout: 3,
+      speechTimeout: "auto",
+      action: "/process-previous-scenario",
+      method: "POST",
+      language: "en-US"
+    });
+
+    gather.say({ voice: "Polly.Matthew-Neural" }, questionText);
+
+    // Fallback if no input
+    vr.redirect({ method: "POST" }, "/gather-previous-scenario?retry=1");
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/gather-previous-scenario ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+// Process response to previous scenario question (yes/no)
+app.post("/process-previous-scenario", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const speechResult = (req.body?.SpeechResult || "").toLowerCase();
+    const confidence = parseFloat(req.body?.Confidence || "0");
+
+    console.log(nowIso(), "/process-previous-scenario", { callSid, speechResult, confidence });
+
+    const context = twilioReturningCallerContexts.get(callSid);
+    if (!context || !context.scenario_tag) {
+      // Context lost, fall through to main choice
+      res.redirect(307, "/gather-choose-scenario?skipPrevious=1");
+      return;
+    }
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    // Determine if response is affirmative (yes, yeah, sure, etc.)
+    const isAffirmative = /\b(yes|yeah|yep|sure|definitely|absolutely|ok|okay|let\'s|let's|go|proceed|start)\b/i.test(speechResult);
+    const isNegative = /\b(no|nope|different|something else|other|change)\b/i.test(speechResult);
+
+    if (confidence < 0.5) {
+      // Low confidence, retry
+      vr.redirect({ method: "POST" }, "/gather-previous-scenario?retry=1");
+    } else if (isAffirmative) {
+      // User wants to re-practice previous scenario
+      console.log(nowIso(), "/process-previous-scenario: User accepted re-practice", {
+        callSid,
+        scenario_tag: context.scenario_tag
+      });
+
+      // Set the scenario flag for WebSocket handler
+      twilioScenarioFlags.set(callSid, context.scenario_tag);
+
+      // Redirect to connecting phase
+      res.redirect(307, `/stream-roleplay?scenario=${context.scenario_tag}`);
+    } else if (isNegative) {
+      // User wants to pick something different
+      console.log(nowIso(), "/process-previous-scenario: User declined, moving to main choice", { callSid });
+      res.redirect(307, "/gather-choose-scenario?skipPrevious=1");
+    } else {
+      // Unclear response, retry
+      vr.redirect({ method: "POST" }, "/gather-previous-scenario?retry=1");
+    }
+
+    if (!isAffirmative && !isNegative) {
+      res.type("text/xml").send(vr.toString());
+    }
+  } catch (err) {
+    console.error("/process-previous-scenario ERROR:", err);
     res.status(500).send("Error");
   }
 });
@@ -1998,8 +2114,8 @@ app.post("/gather-scenario-menu", async (req, res) => {
     const vr = new VoiceResponse();
 
     const menuText = retry
-      ? "Please choose one of these three options: Say 1 for scheduling a doctor appointment, 2 for a pharmacy refill, or 3 for calling a school office."
-      : "Which do you want to practice? Say 1 for scheduling a doctor's appointment, 2 for a pharmacy refill, or 3 for calling a school office.";
+      ? "Would you like to practice calling a doctor's office, a pharmacy for a refill, or a school office?"
+      : "Which would you like to practice? Scheduling a doctor's appointment, calling for a pharmacy refill, or calling a school office.";
 
     const gather = vr.gather({
       input: "speech dtmf",
@@ -2096,8 +2212,8 @@ app.post("/gather-confirm-doctor", async (req, res) => {
     const vr = new VoiceResponse();
 
     const questionText = retry
-      ? "Does calling a doctor's office to schedule an appointment sound good?"
-      : "Okay. Let's practice calling a doctor's office to schedule an appointment. Does that sound good?";
+      ? "Does that sound good?"
+      : "Okay. We'll practice calling a doctor's office to schedule an appointment. Does that sound good?";
 
     const gather = vr.gather({
       input: "speech",
@@ -2200,7 +2316,7 @@ app.post("/stream-roleplay", async (req, res) => {
 
     // Transition message before starting roleplay
     vr.say({ voice: "Polly.Matthew-Neural" }, 
-      "Great, the receptionist will answer after the ring. You can make up any details you're uncomfortable sharing during our call.");
+      "Great. You'll hear the receptionist after the ring. You can make up any details you'd rather not share.");
 
     // Connect WebSocket for roleplay
     const wsUrl = PUBLIC_WSS_URL;
@@ -2705,7 +2821,7 @@ app.post("/end", async (req, res) => {
 
     if (!isRetry && isSoftEnd) {
       vr.say(
-        "Quick note, that last scenario took us just past the usual practice session time, so we're going to wrap things up here for this session. You can call back any time and keep practicing, though!"
+        "That last scenario ran a little over our usual session time, so we'll wrap up here. You can call back anytime to keep practicing."
       );
     }
 
@@ -2722,7 +2838,7 @@ app.post("/end", async (req, res) => {
           vr.say(TWILIO_END_TRANSITION);
         }
 
-        vr.say("We hope you found your practice session helpful. If you have feeback for us, please don't hesitate to email us at callready dot live at gmail dot com. We'd love to hear from you! Have a great day!");
+        vr.say("We hope your practice session was helpful. If you'd like to share feedback, email us at callready dot live at gmail dot com. We'd love to hear from you. Have a great day.");
         vr.hangup();
         res.type("text/xml").send(vr.toString());
         return;
@@ -2844,6 +2960,10 @@ const twilioCoachingContexts = new Map();
 // Allows wrap-up endpoints to check if soft threshold was exceeded
 const twilioThresholdContexts = new Map();
 
+// In-memory store for returning caller context (callSid => { scenario_tag, scenario_label })
+// Allows /gather-choose-scenario to offer re-practicing previous scenario
+const twilioReturningCallerContexts = new Map();
+
 // Helper function to generate coaching feedback via OpenAI REST API
 async function generateCoachingFeedback(transcript) {
   if (!OPENAI_API_KEY) {
@@ -2938,7 +3058,7 @@ app.post("/gather-coaching-feedback", async (req, res) => {
 
     gather.say(
       { voice: "Polly.Matthew-Neural" },
-      "That wraps up this roleplay. Would you like some feedback about how you did?"
+      "That wraps up the roleplay. Would you like some feedback on how it went?"
     );
 
     res.type("text/xml").send(vr.toString());
@@ -2998,12 +3118,12 @@ app.post("/process-coaching-feedback", async (req, res) => {
         twilioCoachingContexts.set(callSid, context);
 
         // Say the feedback and redirect to wrap-up
-        vr.say({ voice: "Polly.Matthew-Neural" }, "Here's some feedback: " + feedback);
+        vr.say({ voice: "Polly.Matthew-Neural" }, "Here's some feedback. " + feedback);
         vr.redirect({ method: "POST" }, "/gather-wrap-up");
       } else {
         // Feedback generation failed, skip to wrap-up
         console.log(nowIso(), "Feedback generation failed, going to wrap-up");
-        vr.say({ voice: "Polly.Matthew-Neural" }, "Let me move on to wrapping up.");
+        vr.say({ voice: "Polly.Matthew-Neural" }, "Okay. Let's wrap up.");
         vr.redirect({ method: "POST" }, "/gather-wrap-up");
       }
 
@@ -3013,7 +3133,7 @@ app.post("/process-coaching-feedback", async (req, res) => {
 
     // If response was unclear, ask again
     console.log(nowIso(), "Unclear coaching response, asking again");
-    vr.say({ voice: "Polly.Matthew-Neural" }, "I didn't catch that. Would you like feedback about how the call went?");
+    vr.say({ voice: "Polly.Matthew-Neural" }, "I didn't catch that. Would you like feedback on the call we just practiced?");
     const gather = vr.gather({
       input: "speech dtmf",
       hints: "yes, no",
@@ -3056,7 +3176,7 @@ app.post("/gather-wrap-up", async (req, res) => {
       console.log(nowIso(), "Soft threshold exceeded, ending session");
       vr.say(
         { voice: "Polly.Matthew-Neural" },
-        "We've reached the session time available for you today. Your call will now end. Thanks for practicing with CallReady!"
+        "We've reached the time available for this session. We'll wrap up here. Thanks for practicing with CallReady, and call again soon!"
       );
       vr.hangup();
       res.type("text/xml").send(vr.toString());
@@ -3076,7 +3196,7 @@ app.post("/gather-wrap-up", async (req, res) => {
 
     gather.say(
       { voice: "Polly.Matthew-Neural" },
-      "Would you like to practice that call again, or are you ready to end this session?"
+      "Would you like to practice that again, or end this session?"
     );
 
     res.type("text/xml").send(vr.toString());
@@ -3112,7 +3232,7 @@ app.post("/process-wrap-up", async (req, res) => {
       console.log(nowIso(), "User ended session");
       vr.say(
         { voice: "Polly.Matthew-Neural" },
-        "Thanks for practicing with CallReady. See you next time!"
+        "Thanks for practicing with CallReady. You can call back anytime."
       );
       vr.hangup();
       res.type("text/xml").send(vr.toString());
@@ -3132,7 +3252,7 @@ app.post("/process-wrap-up", async (req, res) => {
       // Say the transition message and redirect to stream-roleplay
       vr.say(
         { voice: "Polly.Matthew-Neural" },
-        "Great, you'll hear the receptionist after the ring again."
+        "Great. You'll hear the receptionist after the ring and we'll get some more practice."
       );
       vr.redirect({ method: "POST" }, `/stream-roleplay?scenario=${encodeURIComponent(scenarioTag)}`);
       res.type("text/xml").send(vr.toString());
@@ -3141,17 +3261,7 @@ app.post("/process-wrap-up", async (req, res) => {
 
     // Unclear response, ask again
     console.log(nowIso(), "Unclear wrap-up response, asking again");
-    vr.say({ voice: "Polly.Matthew-Neural" }, "I didn't catch that.");
-    const gather = vr.gather({
-      input: "speech dtmf",
-      hints: "practice again, end session",
-      numDigits: 1,
-      timeout: 5,
-      speechTimeout: "auto",
-      action: "/process-wrap-up",
-      method: "POST",
-    });
-    gather.say("Would you like to practice again, or end the session?");
+    vr.say({ voice: "Polly.Matthew-Neural" }, "I didn't catch that. Would you like to practice again, or end the session?");
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
@@ -5296,6 +5406,11 @@ wss.on("connection", (twilioWs, req) => {
       if (callSid && twilioScenarioFlags.has(callSid)) {
         const selectedScenario = twilioScenarioFlags.get(callSid);
         twilioScenarioFlags.delete(callSid); // Clean up after use
+        
+        // Also clean up returning caller context if it was used
+        if (twilioReturningCallerContexts.has(callSid)) {
+          twilioReturningCallerContexts.delete(callSid);
+        }
         
         console.log(nowIso(), "WS: Scenario selected via Twilio Gather", { callSid, selectedScenario });
         
