@@ -1795,6 +1795,11 @@ function buildOpenerSpeechForTwilio(priorContext, callerRuntime, perCallCapSecon
   return speech;
 }
 
+// Health check endpoint for testing/monitoring
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
 
 app.post("/stream", (req, res) => {
