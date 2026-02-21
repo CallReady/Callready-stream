@@ -1718,6 +1718,84 @@ app.get("/subscribe/cancel", (req, res) => {
   res.status(200).send(html);
 });
 
+// Helper functions for opener (used by both TwiML and WebSocket)
+function formatMinutesApprox(seconds) {
+  const s = typeof seconds === "number" && seconds >= 0 ? seconds : 0;
+  const m = Math.max(0, Math.ceil(s / 60));
+  return String(m);
+}
+
+function scenarioTagToHumanFriendlyHelper(tag) {
+  const scenarios = {
+    doctor_default: "calling a doctor's office to schedule an appointment",
+    pharmacy_refill: "refilling a prescription at a pharmacy",
+    school_office: "calling a school office"
+  };
+  return scenarios[tag] || "a practice call";
+}
+
+function buildOpenerSpeechForTwilio(priorContext, callerRuntime, perCallCapSeconds) {
+  const base =
+    "Hi, this is CallReady dot live. " +
+    "We can practice a phone call together, no pressure. " +
+    "If you want a quick prompt, just say help me. " +
+    "When you're ready, we can start. ";
+
+  if (!callerRuntime) {
+    return base;
+  }
+
+  const totalCalls = callerRuntime.totalCalls || 1;
+  const tier = String(callerRuntime.tier || "free");
+  const remainingMinutes = formatMinutesApprox(callerRuntime.remainingSeconds);
+  const capMinutes = formatMinutesApprox(perCallCapSeconds);
+
+  let speech = "";
+
+  if (totalCalls <= 1) {
+    if (String(tier).toLowerCase() === "free") {
+      speech = base + "It looks like this is your first time here, you're on the free membership connected to this number. ";
+    } else {
+      speech = "Welcome to CallReady dot live, a place to practice phone calls until they feel familiar. " +
+        "Your free membership is active for this number. " +
+        "When you're ready, we can start.";
+    }
+  } else {
+    // Returning caller - add sessions remaining
+    if (String(tier).toLowerCase() === "free") {
+      speech = "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. " +
+        "You have " +
+        String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
+        " practice sessions left this month on the free membership. " +
+        "If you want more sessions, you can check memberships at CallReady dot live. ";
+    } else {
+      speech = "Welcome back to CallReady dot live, a place to practice phone calls until they feel familiar. " +
+        "You have " +
+        String(Math.max(0, (callerRuntime.cycle_sessions_cap || 0) - (callerRuntime.cycle_sessions_used || 0))) +
+        " practice sessions left this month. ";
+    }
+
+    // Add question about practicing last scenario if available (skip unknown)
+    if (priorContext && (priorContext.scenario_label || priorContext.scenario_tag)) {
+      let lastScenario = "";
+      if (priorContext.scenario_label && priorContext.scenario_label !== "a practice call") {
+        lastScenario = priorContext.scenario_label;
+      } else if (priorContext.scenario_tag) {
+        const mapped = scenarioTagToHumanFriendlyHelper(priorContext.scenario_tag);
+        if (mapped !== "a practice call") {
+          lastScenario = mapped;
+        }
+      }
+
+      if (lastScenario) {
+        speech += "Last time you practiced " + lastScenario + ". Would you like to practice that again, or try something new?";
+      }
+    }
+  }
+
+  return speech;
+}
+
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
 
 app.post("/stream", (req, res) => {
@@ -1794,6 +1872,100 @@ app.post("/voice", async (req, res) => {
         sessions_cap: tierDecision.cycle_sessions_cap
       });
 
+      if (callSid) {
+        fireAndForgetCallEndLog(callSid, "no_sessions_remaining");
+      }
+
+      vr.say(TWILIO_NO_SESSIONS_LEFT);
+      vr.hangup();
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // REFACTORED: Use Twilio voice for opener instead of OpenAI
+    const priorContext = await fetchPriorCallContextByCallSid(callSid);
+    const callerRuntime = await fetchCallerRuntimeContextByCallSid(callSid);
+    const openerText = buildOpenerSpeechForTwilio(priorContext, callerRuntime, FREE_PER_CALL_SECONDS);
+
+    console.log(nowIso(), "Opener phase: using Twilio voice", {
+      callSid,
+      from,
+      hasValidPriorContext: !!(priorContext && priorContext.scenario_tag),
+      hasValidRuntime: !!callerRuntime
+    });
+
+    vr.say({
+      voice: "man",
+      loop: 1
+    }, openerText);
+
+    const gather = vr.gather({
+      input: "speech transcription",
+      timeout: 10,
+      action: "/voice-opener-result",
+      actionOnEmptyResult: false,
+      method: "POST",
+      speechTimeout: 3
+    });
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("Error building TwiML:", err);
+    res.status(500).send("Error");
+  }
+});
+
+app.post("/voice", async (req, res) => {
+  if (String(process.env.CALLREADY_UNAVAILABLE || "") === "1") {
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    vr.redirect({ method: "POST" }, "/unavailable");
+
+    res.type("text/xml").send(vr.toString());
+    return;
+  }
+
+  try {
+    const forceUnavailable =
+      req.query &&
+      String(req.query.force_unavailable || "") === "1";
+
+    if (forceUnavailable) {
+      const VoiceResponse = twilio.twiml.VoiceResponse;
+      const vr = new VoiceResponse();
+
+      vr.redirect({ method: "POST" }, "/unavailable");
+
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+    const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
+    const from = req.body && req.body.From ? String(req.body.From) : "";
+
+    if (callSid) {
+      await logCallStartToDb(callSid, from);
+    }
+
+    const tierDecision = await applyTierForIncomingCall(from, callSid);
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    // TEMP TEST OVERRIDE: allow all calls regardless of tier
+    const FORCE_ALLOW_FOR_TESTING = true;
+    if (FORCE_ALLOW_FOR_TESTING) {
+      tierDecision.allowed = true;
+    }
+
+    if (!tierDecision.allowed) {
+      console.log(nowIso(), "Blocking call due to no remaining sessions", {
+        from,
+        callSid,
+        tier: tierDecision.tier,
+        sessions_used: tierDecision.cycle_sessions_used,
+        sessions_cap: tierDecision.cycle_sessions_cap
+      });
 
       if (callSid) {
         fireAndForgetCallEndLog(callSid, "no_sessions_remaining");
@@ -1805,20 +1977,137 @@ app.post("/voice", async (req, res) => {
       return;
     }
 
+    // REFACTORED: Use Twilio voice for opener instead of OpenAI
+    const priorContext = await fetchPriorCallContextByCallSid(callSid);
+    const callerRuntime = await fetchCallerRuntimeContextByCallSid(callSid);
+    const openerText = buildOpenerSpeechForTwilio(priorContext, callerRuntime, FREE_PER_CALL_SECONDS);
+
+    console.log(nowIso(), "Opener phase: using Twilio voice", {
+      callSid,
+      from,
+      hasValidPriorContext: !!(priorContext && priorContext.scenario_tag),
+      hasValidRuntime: !!callerRuntime
+    });
+
+    vr.say({
+      voice: "man",
+      loop: 1
+    }, openerText);
+
+    const gather = vr.gather({
+      input: "speech transcription",
+      timeout: 10,
+      action: "/voice-opener-result",
+      actionOnEmptyResult: false,
+      method: "POST",
+      speechTimeout: 3
+    });
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("Error building TwiML:", err);
+    res.status(500).send("Error");
+  }
+});
+
+app.post("/voice-opener-result", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const speechResult = req.body?.SpeechResult?.toLowerCase().trim() || "";
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    console.log(nowIso(), "Opener result", { callSid, speechResult });
+
+    // Pattern-match responses
+    const isReady = /\b(ready|start|go|begin|yes|yeah|okay|ok|let's go|lets go|practice)\b/i.test(speechResult);
+    const isHelp = /\b(help|help me|i need help|not sure|unclear|confused|what)\b/i.test(speechResult);
+    const isPracticeAgain = /\b(again|previous|last|repeat|retry)\b/i.test(speechResult);
+    const isPracticeNew = /\b(new|something else|different)\b/i.test(speechResult);
+
+    if (isPracticeAgain) {
+      // Returning caller said "again" - go directly to connecting with prior scenario
+      vr.redirect({ method: "POST", url: "/stream-choose-scenario?action=practice_again" }, "/stream-choose-scenario");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    if (isPracticeNew || isHelp) {
+      // "new"/"help" - go to choose_scenario
+      vr.redirect({ method: "POST", url: "/stream-choose-scenario" }, "/stream-choose-scenario");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    if (isReady) {
+      // "ready" or similar - go to choose_scenario
+      vr.redirect({ method: "POST", url: "/stream-choose-scenario" }, "/stream-choose-scenario");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Unclear or silence: retry
+    console.log(nowIso(), "Opener result unclear, retrying", { speechResult });
+    vr.say({
+      voice: "man"
+    }, "I didn't catch that. Say ready when you want to start practicing.");
+
+    const gather = vr.gather({
+      input: "speech transcription",
+      timeout: 10,
+      action: "/voice-opener-result",
+      method: "POST",
+      speechTimeout: 3
+    });
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("Error in /voice-opener-result:", err);
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+    vr.say("An error occurred. Goodbye.");
+    vr.hangup();
+    res.type("text/xml").send(vr.toString());
+  }
+});
+
+app.post("/stream-choose-scenario", (req, res) => {
+  try {
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
     if (!PUBLIC_WSS_URL) {
-      vr.say("Server is missing PUBLIC W S S U R L.");
+      vr.say("Server is missing WSS URL.");
       vr.hangup();
       res.type("text/xml").send(vr.toString());
       return;
     }
 
-    const connect = vr.connect();
-    connect.stream({ url: PUBLIC_WSS_URL });
+    const action = req.query?.action || "";
+    
+    // Determine which phase to start with based on action
+    let wsUrl;
+    if (action === "practice_again") {
+      // Returning caller choosing to practice the same scenario again
+      wsUrl = PUBLIC_WSS_URL + (PUBLIC_WSS_URL.includes("?") ? "&" : "?") + "startPhase=connecting&returnToPrior=true";
+    } else {
+      // New caller or returning caller choosing a new scenario
+      wsUrl = PUBLIC_WSS_URL + (PUBLIC_WSS_URL.includes("?") ? "&" : "?") + "startPhase=choose_scenario";
+    }
 
+    console.log(nowIso(), "Redirecting to /stream-choose-scenario", {
+      action,
+      wsUrlPrefix: wsUrl.substring(0, 80) // truncate for logs
+    });
+
+    const connect = vr.connect();
+    connect.stream({
+      url: wsUrl
+    });
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
-    console.error("Error building TwiML:", err);
+    console.error("Error building /stream-choose-scenario TwiML:", err);
     res.status(500).send("Error");
   }
 });
@@ -2396,8 +2685,19 @@ app.post("/gather-result", async (req, res) => {
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: "/media" });
 
-wss.on("connection", (twilioWs) => {
+wss.on("connection", (twilioWs, req) => {
   console.log(nowIso(), "WS CONNECT /media", "version:", CALLREADY_VERSION);
+  
+  // Extract startPhase from URL query parameters (default to "boot" for backward compatibility)
+  let startPhase = "boot";
+  if (req && req.url) {
+    const urlParams = new URL(req.url, "http://localhost");
+    const requestedPhase = urlParams.searchParams.get("startPhase");
+    if (requestedPhase && ["boot", "opener", "choose_scenario", "connecting", "roleplay", "coaching", "wrap_up", "ending"].includes(requestedPhase)) {
+      startPhase = requestedPhase;
+    }
+  }
+
   let streamSid = null;
   let callSid = null;
 
@@ -2405,7 +2705,8 @@ wss.on("connection", (twilioWs) => {
   let openaiReady = false;
   let closing = false;
 
-  let openerSent = false;
+  // Mark opener as sent if we're starting from a phase after opener (TwiML handled it)
+  let openerSent = startPhase !== "boot" && startPhase !== "opener";
   let responseActive = false;
 
   let openerAudioDeltaCount = 0;
@@ -2445,7 +2746,7 @@ wss.on("connection", (twilioWs) => {
 
   // Server-owned lightweight call state (we will start using this in the next steps)
   const callState = {
-    phase: "boot",               // boot, opener, choose_scenario, roleplay, coaching, wrap_up, ending
+    phase: startPhase,           // boot, opener, choose_scenario, roleplay, coaching, wrap_up, ending
     callType: "outgoing",        // Always outgoing (user is caller, AI is receptionist/answerer)
     role: "answerer",            // Always answerer (AI answers as receptionist)
     scenarioTag: null,           // snake_case tag once known
