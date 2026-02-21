@@ -1949,7 +1949,10 @@ app.post("/gather-choose-scenario", async (req, res) => {
     // Check if this is a returning caller with prior scenario context
     if (!skipPrevious && twilioReturningCallerContexts.has(callSid)) {
       // Redirect to ask about re-practicing the previous scenario
-      res.redirect(307, "/gather-previous-scenario");
+      const VoiceResponse = twilio.twiml.VoiceResponse;
+      const vr = new VoiceResponse();
+      vr.redirect({ method: "POST" }, "/gather-previous-scenario");
+      res.type("text/xml").send(vr.toString());
       return;
     }
 
@@ -1998,7 +2001,10 @@ app.all("/gather-previous-scenario", async (req, res) => {
     const context = twilioReturningCallerContexts.get(callSid);
     if (!context || !context.scenario_tag) {
       console.log(nowIso(), "/gather-previous-scenario: No context found, skipping to main choice", { callSid });
-      res.redirect(307, "/gather-choose-scenario?skipPrevious=1");
+      const VoiceResponse = twilio.twiml.VoiceResponse;
+      const vr = new VoiceResponse();
+      vr.redirect({ method: "POST" }, "/gather-choose-scenario?skipPrevious=1");
+      res.type("text/xml").send(vr.toString());
       return;
     }
 
@@ -2044,7 +2050,10 @@ app.all("/process-previous-scenario", async (req, res) => {
     const context = twilioReturningCallerContexts.get(callSid);
     if (!context || !context.scenario_tag) {
       // Context lost, fall through to main choice
-      res.redirect(307, "/gather-choose-scenario?skipPrevious=1");
+      const VoiceResponse = twilio.twiml.VoiceResponse;
+      const vr = new VoiceResponse();
+      vr.redirect({ method: "POST" }, "/gather-choose-scenario?skipPrevious=1");
+      res.type("text/xml").send(vr.toString());
       return;
     }
 
@@ -2069,11 +2078,13 @@ app.all("/process-previous-scenario", async (req, res) => {
       twilioScenarioFlags.set(callSid, context.scenario_tag);
 
       // Redirect to connecting phase
-      res.redirect(307, `/stream-roleplay?scenario=${context.scenario_tag}`);
+      vr.redirect({ method: "POST" }, `/stream-roleplay?scenario=${context.scenario_tag}`);
+      res.type("text/xml").send(vr.toString());
     } else if (isNegative) {
       // User wants to pick something different
       console.log(nowIso(), "/process-previous-scenario: User declined, moving to main choice", { callSid });
-      res.redirect(307, "/gather-choose-scenario?skipPrevious=1");
+      vr.redirect({ method: "POST" }, "/gather-choose-scenario?skipPrevious=1");
+      res.type("text/xml").send(vr.toString());
     } else {
       // Unclear response, retry
       vr.redirect({ method: "POST" }, "/gather-previous-scenario?retry=1");
