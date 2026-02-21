@@ -2527,6 +2527,8 @@ wss.on("connection", (twilioWs, req) => {
     }
   }
 
+  console.log(nowIso(), "WS startPhase extracted", { startPhase, urlFull: req?.url || "N/A" });
+
   let streamSid = null;
   let callSid = null;
 
@@ -2536,7 +2538,7 @@ wss.on("connection", (twilioWs, req) => {
 
   // Mark opener as sent if we're starting from a phase after opener (TwiML handled it)
   let openerSent = startPhase !== "boot" && startPhase !== "opener";
-  let responseActive = false;
+  console.log(nowIso(), "WS openerSent flag set", { startPhase, openerSent });
 
   let openerAudioDeltaCount = 0;
   let openerResent = false;
@@ -3922,6 +3924,7 @@ wss.on("connection", (twilioWs, req) => {
       });
 
       if (!openerSent) {
+        console.log(nowIso(), "Sending opener because openerSent was false", { callState: callState.phase });
         openerSent = true;
         openerAudioDeltaCount = 0;
         openerResent = false;
@@ -3930,6 +3933,8 @@ wss.on("connection", (twilioWs, req) => {
           sendOpenerOnce("initial");
           armOpenerRetryTimer();
         }, 250);
+      } else {
+        console.log(nowIso(), "Skipping opener because openerSent is already true", { callState: callState.phase });
       }
     });
 
