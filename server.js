@@ -1897,7 +1897,7 @@ app.post("/voice", async (req, res) => {
     // Opener is just a greeting/welcome statement, no interaction
     // Immediately redirect to choose_scenario for the first real question
     vr.say({
-      voice: "Polly.Matthew-Neural"
+      voice: "Polly.Joey-Neural"
     }, openerText);
 
     vr.redirect({ method: "POST" }, "/gather-choose-scenario");
@@ -1933,7 +1933,7 @@ app.post("/gather-choose-scenario", async (req, res) => {
       language: "en-US"
     });
 
-    gather.say({ voice: "Polly.Matthew-Neural" }, questionText);
+    gather.say({ voice: "Polly.Joey-Neural" }, questionText);
 
     // Fallback if no input
     vr.redirect({ method: "POST" }, "/gather-choose-scenario?retry=1");
@@ -2011,7 +2011,7 @@ app.post("/gather-scenario-menu", async (req, res) => {
       language: "en-US"
     });
 
-    gather.say({ voice: "Polly.Matthew-Neural" }, menuText);
+    gather.say({ voice: "Polly.Joey-Neural" }, menuText);
 
     // Fallback if no input
     vr.redirect({ method: "POST" }, "/gather-scenario-menu?retry=1");
@@ -2108,7 +2108,7 @@ app.post("/gather-confirm-doctor", async (req, res) => {
       language: "en-US"
     });
 
-    gather.say({ voice: "Polly.Matthew-Neural" }, questionText);
+    gather.say({ voice: "Polly.Joey-Neural" }, questionText);
 
     // Fallback if no input
     vr.redirect({ method: "POST" }, "/gather-confirm-doctor?retry=1");
@@ -2199,7 +2199,7 @@ app.post("/stream-roleplay", async (req, res) => {
     }
 
     // Transition message before starting roleplay
-    vr.say({ voice: "Polly.Matthew-Neural" }, 
+    vr.say({ voice: "Polly.Joey-Neural" }, 
       "Great, the receptionist will answer after the ring. You can make up any details you're uncomfortable sharing during our call.");
 
     // Connect WebSocket for roleplay
@@ -4643,7 +4643,7 @@ wss.on("connection", (twilioWs, req) => {
         if (callState && callState.phase === "connecting") {
           const cs = callState.connectingStep || null;
 
-          // Step 1: Transition message (AI says "Great, I'll answer as the receptionist after the ring.")
+          // Step 1: Transition message (AI says "Great, the receptionist will answer after the ring.")
           if (cs === "transition_message") {
             callState.connectingStep = "ring_audio";
             try { console.log(nowIso(), "CONNECTING_STEP", "ring_audio"); } catch (e) { }
