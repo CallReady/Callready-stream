@@ -2200,7 +2200,7 @@ app.post("/stream-roleplay", async (req, res) => {
 
     // Transition message before starting roleplay
     vr.say({ voice: "Polly.Matthew-Neural" }, 
-      "Great, I'll answer as the receptionist after the ring. You can make up any details you're uncomfortable sharing during our call.");
+      "Great, the receptionist will answer after the ring. You can make up any details you're uncomfortable sharing during our call.");
 
     // Connect WebSocket for roleplay
     const wsUrl = PUBLIC_WSS_URL;
@@ -2912,7 +2912,7 @@ wss.on("connection", (twilioWs, req) => {
     // Allowed phase transitions (server-owned gates)
     // Anything not listed here is blocked.
     var allowed = {
-      boot: ["opener"],
+      boot: ["opener", "connecting"],  // connecting allowed when scenario pre-selected via Twilio
       opener: ["choose_scenario", "ending"],
       choose_scenario: ["connecting", "ending"],
       connecting: ["roleplay", "ending"],
@@ -4412,7 +4412,7 @@ wss.on("connection", (twilioWs, req) => {
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
-                instructions: "Speak this exactly, then stop speaking and wait: Great, let's practice that call again. I'll answer as the receptionist after the ring. Remember, you can make up any details you're uncomfortable sharing.\n",
+                instructions: "Speak this exactly, then stop speaking and wait: Great, let's practice that call again. The receptionist will answer after the ring. Remember, you can make up any details you're uncomfortable sharing.\n",
               },
             });
 
