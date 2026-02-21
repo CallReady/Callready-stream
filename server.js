@@ -1919,13 +1919,15 @@ app.post("/stream-choose-scenario", async (req, res) => {
       console.log(nowIso(), "/stream-choose-scenario set twilio_opener_played flag", { callSid });
       
       // Also update DB for persistence/logging (non-blocking)
-      db.none(
-        `UPDATE calls SET custom_state = COALESCE(custom_state, '{}')::jsonb || 
-         '{"twilio_opener_played": true}'::jsonb WHERE call_sid = $1`,
-        [callSid]
-      ).catch(err => {
-        console.error(nowIso(), "/stream-choose-scenario error updating DB flag", { err: err.message, callSid });
-      });
+      if (pool) {
+        pool.query(
+          `UPDATE calls SET custom_state = COALESCE(custom_state, '{}')::jsonb || 
+           '{"twilio_opener_played": true}'::jsonb WHERE call_sid = $1`,
+          [callSid]
+        ).catch(err => {
+          console.error(nowIso(), "/stream-choose-scenario error updating DB flag", { err: err.message, callSid });
+        });
+      }
     }
 
     const VoiceResponse = twilio.twiml.VoiceResponse;
