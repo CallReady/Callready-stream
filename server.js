@@ -1915,6 +1915,7 @@ app.post("/stream-choose-scenario", (req, res) => {
     const vr = new VoiceResponse();
 
     if (!PUBLIC_WSS_URL) {
+      console.log(nowIso(), "/stream-choose-scenario ERROR: PUBLIC_WSS_URL is missing");
       vr.say("Server is missing WSS URL.");
       vr.hangup();
       res.type("text/xml").send(vr.toString());
@@ -1924,9 +1925,10 @@ app.post("/stream-choose-scenario", (req, res) => {
     // Start WebSocket at choose_scenario phase
     const wsUrl = PUBLIC_WSS_URL + (PUBLIC_WSS_URL.includes("?") ? "&" : "?") + "startPhase=choose_scenario";
 
-    console.log(nowIso(), "Streaming to choose_scenario phase", {
-      wsUrlPrefix: wsUrl.substring(0, 100),
-      wsUrlValid: !!wsUrl
+    console.log(nowIso(), "/stream-choose-scenario building TwiML", {
+      PUBLIC_WSS_URL,
+      paramToAdd: "startPhase=choose_scenario",
+      finalWsUrl: wsUrl.substring(0, 150)
     });
 
     const connect = vr.connect();
@@ -1934,9 +1936,10 @@ app.post("/stream-choose-scenario", (req, res) => {
       url: wsUrl
     });
 
+    console.log(nowIso(), "/stream-choose-scenario sending TwiML redirect to WebSocket");
     res.type("text/xml").send(vr.toString());
   } catch (err) {
-    console.error("Error building /stream-choose-scenario TwiML:", err);
+    console.error("/stream-choose-scenario ERROR:", err);
     res.status(500).send("Error");
   }
 });
@@ -2519,15 +2522,26 @@ wss.on("connection", (twilioWs, req) => {
   
   // Extract startPhase from URL query parameters (default to "boot" for backward compatibility)
   let startPhase = "boot";
-  if (req && req.url) {
-    const urlParams = new URL(req.url, "http://localhost");
-    const requestedPhase = urlParams.searchParams.get("startPhase");
-    if (requestedPhase && ["boot", "opener", "choose_scenario", "connecting", "roleplay", "coaching", "wrap_up", "ending"].includes(requestedPhase)) {
-      startPhase = requestedPhase;
+  let debugUrl = "N/A";
+  
+  try {
+    if (req && req.url) {
+      debugUrl = req.url;
+      const urlParams = new URL(req.url, "http://localhost");
+      const requestedPhase = urlParams.searchParams.get("startPhase");
+      console.log(nowIso(), "WS URL parsing", { rawUrl: req.url, requestedPhase });
+      if (requestedPhase && ["boot", "opener", "choose_scenario", "connecting", "roleplay", "coaching", "wrap_up", "ending"].includes(requestedPhase)) {
+        startPhase = requestedPhase;
+        console.log(nowIso(), "WS startPhase SET from URL", { startPhase });
+      }
+    } else {
+      console.log(nowIso(), "WS req not available or no URL", { hasReq: !!req, hasUrl: req?.url ? true : false });
     }
+  } catch (err) {
+    console.error(nowIso(), "WS error parsing URL", { err: err.message, debugUrl });
   }
 
-  console.log(nowIso(), "WS startPhase extracted", { startPhase, urlFull: req?.url || "N/A" });
+  console.log(nowIso(), "WS connection initialized", { startPhase, openerSentWillBe: startPhase !== "boot" && startPhase !== "opener" });
 
   let streamSid = null;
   let callSid = null;
