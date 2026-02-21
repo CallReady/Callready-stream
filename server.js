@@ -1895,7 +1895,7 @@ app.post("/voice", async (req, res) => {
     });
 
     vr.say({
-      voice: "man",
+      voice: "Polly.Matthew-Neural",
       loop: 1
     }, openerText);
 
@@ -1954,7 +1954,7 @@ app.post("/voice-opener-result", async (req, res) => {
     // Unclear or silence: retry
     console.log(nowIso(), "Opener result unclear, retrying", { speechResult });
     vr.say({
-      voice: "man"
+      voice: "Polly.Matthew-Neural"
     }, "I didn't catch that. Say ready when you want to start practicing.");
 
     const gather = vr.gather({
