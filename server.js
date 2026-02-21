@@ -4607,23 +4607,39 @@ wss.on("connection", (twilioWs, req) => {
         if (elapsedMs > 20000) {
           try {
             callState.connectingTimeoutFired = true;
-            // Transition to ending phase first so state is correct
-            setPhase("ending", "connecting_timeout");
             console.log(nowIso(), "CONNECTING_TIMEOUT", { elapsedMs });
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio"],
-                instructions: "Speak this exactly, then stop speaking and wait:\nSorry, something got stuck. Let's end the practice call and try again.",
-              },
-            });
+            
+            // Transition to ending phase and redirect via Twilio
+            setPhase("ending", "connecting_timeout");
+            
+            // Close the WebSocket and redirect to /end via Twilio REST API
+            if (callSid && hasTwilioRest()) {
+              try {
+                const client = twilioClient();
+                (async () => {
+                  try {
+                    await client.calls(callSid).update({
+                      twiml: `<Response><Redirect method="POST">/end?soft_end=1</Redirect></Response>`
+                    });
+                  } catch (e) {
+                    console.log(nowIso(), "Failed to redirect call on timeout:", e && e.message ? e.message : e);
+                  }
+                })();
+              } catch (e) {
+                console.log(nowIso(), "Error setting up ending redirect on timeout:", e && e.message ? e.message : e);
+              }
+            }
+            
+            // Close WebSocket
+            closeAll("connecting_timeout");
             endingRequested = true;
+            return;
           } catch (e) {
-            console.log(nowIso(), "Connecting timeout handler error:", e && e.message ? e.message : e);
+            console.log(nowIso(), "Error in connecting timeout handler:", e && e.message ? e.message : e);
           }
-          return;
         }
       }
+      
       // Capture caller transcript (from OpenAI transcription) and handle reroute phrases.
       if (
         msg.type === "conversation.item.input_audio_transcription.completed" ||
@@ -4655,6 +4671,28 @@ wss.on("connection", (twilioWs, req) => {
           if (userUtteranceRequestsEnd(u, callState.phase)) {
             endingRequested = true;
             setPhase("ending", "reroute_user_end_phrase");
+            console.log(nowIso(), "User requested end", { utterance: u });
+            
+            // Close the WebSocket and redirect to /end via Twilio REST API
+            if (callSid && hasTwilioRest()) {
+              try {
+                const client = twilioClient();
+                (async () => {
+                  try {
+                    await client.calls(callSid).update({
+                      twiml: `<Response><Redirect method="POST">/end</Redirect></Response>`
+                    });
+                  } catch (e) {
+                    console.log(nowIso(), "Failed to redirect call on user end phrase:", e && e.message ? e.message : e);
+                  }
+                })();
+              } catch (e) {
+                console.log(nowIso(), "Error setting up ending redirect on user end phrase:", e && e.message ? e.message : e);
+              }
+            }
+            
+            // Close WebSocket
+            closeAll("reroute_user_end_phrase");
             cancelOpenAIResponseIfAnyOnce("reroute ending");
             sawCallerSpeechSinceLastAIDone = false;
             sawSpeechStarted = false;
