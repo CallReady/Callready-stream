@@ -2836,6 +2836,301 @@ const twilioOpenerPlayedFlags = new Map();
 // Allows /gather-scenario-menu or /gather-confirm-doctor to pass scenario to WebSocket
 const twilioScenarioFlags = new Map();
 
+// In-memory store for coaching context (callSid => { transcript, feedback })
+// Allows coaching endpoints to generate and deliver feedback
+const twilioCoachingContexts = new Map();
+
+// Helper function to generate coaching feedback via OpenAI REST API
+async function generateCoachingFeedback(transcript) {
+  if (!OPENAI_API_KEY) {
+    console.log(nowIso(), "ERROR: Missing OPENAI_API_KEY for feedback generation");
+    return null;
+  }
+
+  try {
+    const transcriptText = transcript
+      .map(entry => {
+        const speaker = entry.speaker === "caller" ? "CALLER" : "RECEPTIONIST";
+        return `${speaker}: ${entry.text}`;
+      })
+      .join("\n");
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a coaching assistant for phone call practice. Review the conversation transcript and provide exactly two sentences of feedback:\n" +
+              "1) One sentence about something specific the caller did well during the call (e.g., clarity, asking questions, providing information clearly).\n" +
+              "2) One sentence about what they might try next time to improve (be specific and constructive based on the conversation).\n" +
+              "Format: [Positive feedback sentence] [Improvement suggestion sentence]\n" +
+              "Be encouraging and specific. Do not include introductions or explanations.",
+          },
+          {
+            role: "user",
+            content: `Here is the conversation transcript:\n\n${transcriptText}`,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 200,
+      }),
+    });
+
+    if (!response.ok) {
+      const errData = await response.json();
+      console.log(nowIso(), "OpenAI feedback generation error:", errData);
+      return null;
+    }
+
+    const data = await response.json();
+    const feedback = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    
+    if (feedback) {
+      console.log(nowIso(), "Generated coaching feedback:", feedback);
+      return feedback;
+    }
+
+    return null;
+  } catch (e) {
+    console.log(nowIso(), "Error generating coaching feedback:", e && e.message ? e.message : e);
+    return null;
+  }
+}
+
+// POST /gather-coaching-feedback
+// Asks if the caller wants feedback about the call
+app.post("/gather-coaching-feedback", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const transcript = req.body?.transcript ? JSON.parse(req.body.transcript) : [];
+
+    console.log(nowIso(), "/gather-coaching-feedback", { callSid, transcriptLength: transcript.length });
+
+    // Store transcript for feedback generation if user says yes
+    if (callSid) {
+      twilioCoachingContexts.set(callSid, { transcript, feedbackRequested: false });
+    }
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    // Ask if they want feedback with Gather for yes/no
+    const gather = vr.gather({
+      input: "speech dtmf",
+      hints: "yes, no",
+      numDigits: 1,
+      timeout: 5,
+      speechTimeout: "auto",
+      action: "/process-coaching-feedback",
+      method: "POST",
+    });
+
+    gather.say(
+      { voice: "Polly.Matthew-Neural" },
+      "That wraps up this roleplay. Would you like some feedback about how you did?"
+    );
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/gather-coaching-feedback ERROR:", err);
+    const vr = new (twilio.twiml.VoiceResponse)();
+    vr.say("An error occurred. The call will end.");
+    vr.hangup();
+    res.type("text/xml").send(vr.toString());
+  }
+});
+
+// POST /process-coaching-feedback
+// Handles yes/no response. If yes, generates feedback and voices it. If no, goes to wrap-up.
+app.post("/process-coaching-feedback", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    let speechResult = req.body?.SpeechResult || "";
+    const digits = req.body?.Digits || "";
+
+    // Normalize response
+    const input = speechResult ? speechResult.toLowerCase().trim() : digits;
+    const userSaysYes =
+      input === "yes" || input === "1" || input.startsWith("yes");
+    const userSaysNo = input === "no" || input === "2" || input.startsWith("no");
+
+    console.log(nowIso(), "/process-coaching-feedback", { callSid, input, userSaysYes, userSaysNo });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    // If user says no, skip feedback and go to wrap-up
+    if (userSaysNo) {
+      console.log(nowIso(), "User declined feedback, going to wrap-up");
+      vr.redirect({ method: "POST" }, "/gather-wrap-up");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // If user says yes, generate feedback and voice it
+    if (userSaysYes) {
+      const context = twilioCoachingContexts.get(callSid);
+      if (!context) {
+        console.log(nowIso(), "No coaching context found, redirecting to wrap-up");
+        vr.redirect({ method: "POST" }, "/gather-wrap-up");
+        res.type("text/xml").send(vr.toString());
+        return;
+      }
+
+      // Generate feedback via OpenAI
+      const feedback = await generateCoachingFeedback(context.transcript);
+
+      if (feedback) {
+        // Update context with feedback
+        context.feedbackRequested = true;
+        context.feedback = feedback;
+        twilioCoachingContexts.set(callSid, context);
+
+        // Say the feedback and redirect to wrap-up
+        vr.say({ voice: "Polly.Matthew-Neural" }, "Here's some feedback: " + feedback);
+        vr.redirect({ method: "POST" }, "/gather-wrap-up");
+      } else {
+        // Feedback generation failed, skip to wrap-up
+        console.log(nowIso(), "Feedback generation failed, going to wrap-up");
+        vr.say({ voice: "Polly.Matthew-Neural" }, "Let me move on to wrapping up.");
+        vr.redirect({ method: "POST" }, "/gather-wrap-up");
+      }
+
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // If response was unclear, ask again
+    console.log(nowIso(), "Unclear coaching response, asking again");
+    vr.say({ voice: "Polly.Matthew-Neural" }, "I didn't catch that. Would you like feedback about how the call went?");
+    const gather = vr.gather({
+      input: "speech dtmf",
+      hints: "yes, no",
+      numDigits: 1,
+      timeout: 5,
+      speechTimeout: "auto",
+      action: "/process-coaching-feedback",
+      method: "POST",
+    });
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/process-coaching-feedback ERROR:", err);
+    const vr = new (twilio.twiml.VoiceResponse)();
+    vr.say("An error occurred. The call will end.");
+    vr.hangup();
+    res.type("text/xml").send(vr.toString());
+  }
+});
+
+// POST /gather-wrap-up
+// Asks if they want to practice again or end the session
+app.post("/gather-wrap-up", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+
+    console.log(nowIso(), "/gather-wrap-up", { callSid });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const gather = vr.gather({
+      input: "speech dtmf",
+      hints: "practice again, end session",
+      numDigits: 1,
+      timeout: 5,
+      speechTimeout: "auto",
+      action: "/process-wrap-up",
+      method: "POST",
+    });
+
+    gather.say(
+      { voice: "Polly.Matthew-Neural" },
+      "Are you ready to end this session, or would you like to practice that call again?"
+    );
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/gather-wrap-up ERROR:", err);
+    const vr = new (twilio.twiml.VoiceResponse)();
+    vr.say("An error occurred. The call will end.");
+    vr.hangup();
+    res.type("text/xml").send(vr.toString());
+  }
+});
+
+// POST /process-wrap-up
+// Handle wrap-up response (end session or practice again)
+app.post("/process-wrap-up", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    let speechResult = req.body?.SpeechResult || "";
+    const digits = req.body?.Digits || "";
+
+    const input = speechResult ? speechResult.toLowerCase().trim() : digits;
+    const userWantsAgain =
+      input === "1" || input.includes("again") || input.includes("practice");
+    const userWantsEnd = input === "2" || input.includes("end") || input.includes("done");
+
+    console.log(nowIso(), "/process-wrap-up", { callSid, input, userWantsAgain, userWantsEnd });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    if (userWantsEnd) {
+      // End the session
+      vr.say(
+        { voice: "Polly.Matthew-Neural" },
+        "Thanks for practicing with CallReady. See you next time!"
+      );
+      vr.hangup();
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    if (userWantsAgain) {
+      // Redirect back to scenario selection or streaming
+      console.log(nowIso(), "User wants to practice again");
+      vr.say(
+        { voice: "Polly.Matthew-Neural" },
+        "Great! Let's set up another practice call."
+      );
+      vr.redirect({ method: "POST" }, `/gather-choose-scenario`);
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Unclear response, ask again
+    console.log(nowIso(), "Unclear wrap-up response, asking again");
+    vr.say({ voice: "Polly.Matthew-Neural" }, "I didn't catch that.");
+    const gather = vr.gather({
+      input: "speech dtmf",
+      hints: "practice again, end session",
+      numDigits: 1,
+      timeout: 5,
+      speechTimeout: "auto",
+      action: "/process-wrap-up",
+      method: "POST",
+    });
+    gather.say("Would you like to practice again, or end the session?");
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/process-wrap-up ERROR:", err);
+    const vr = new (twilio.twiml.VoiceResponse)();
+    vr.say("An error occurred. The call will end.");
+    vr.hangup();
+    res.type("text/xml").send(vr.toString());
+  }
+});
+
 const wss = new WebSocket.Server({ server, path: "/media" });
 
 wss.on("connection", (twilioWs, req) => {
@@ -4622,8 +4917,44 @@ wss.on("connection", (twilioWs, req) => {
             id => !callState.checklist[id].required || callState.checklist[id].done
           );
           if (allDone) {
-            coachingAskedForFeedback = false;
-            setPhase("coaching", "roleplay_checklist_complete");
+            // Roleplay complete: transition to Twilio-based coaching
+            console.log(nowIso(), "Roleplay checklist complete, transitioning to coaching");
+            callState.roleplayComplete = true;
+            
+            // Store the transcript for the coaching endpoints to use
+            if (callSid && callState.roleplayTranscript) {
+              twilioCoachingContexts.set(callSid, {
+                transcript: callState.roleplayTranscript,
+                feedbackRequested: false
+              });
+              console.log(nowIso(), "Stored coaching context with transcript", {
+                callSid,
+                transcriptLength: callState.roleplayTranscript.length
+              });
+            }
+            
+            // Redirect the call to the coaching feedback gathering endpoint via Twilio REST API
+            if (callSid && hasTwilioRest()) {
+              try {
+                const client = twilioClient();
+                console.log(nowIso(), "Redirecting call to /gather-coaching-feedback", { callSid });
+                
+                (async () => {
+                  try {
+                    await client.calls(callSid).update({
+                      twiml: `<Response><Redirect method="POST">/gather-coaching-feedback</Redirect></Response>`
+                    });
+                  } catch (e) {
+                    console.log(nowIso(), "Failed to redirect call:", e && e.message ? e.message : e);
+                  }
+                })();
+              } catch (e) {
+                console.log(nowIso(), "Error setting up coaching redirect:", e && e.message ? e.message : e);
+              }
+            }
+            
+            // Close the WebSocket
+            closeAll("roleplay_checklist_complete");
             return;
           }
         }
