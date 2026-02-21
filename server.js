@@ -2108,12 +2108,13 @@ app.post("/process-choose-scenario", async (req, res) => {
     const pickForMeRe = /\b(pick|choose|select|you pick|you choose|surprise|don't care|doesn't matter|whatever|go ahead)\b/i;
     
     // Check if user has one in mind
-    const haveOneRe = /\b(have|yes|got|specific|mind|already know|know what|particular)\b/i;
+    const haveOneRe = /\b(have|yes|got|specific|mind|already know|know what|particular|i have|i do|mine)\b/i;
 
     if (pickForMeRe.test(text) && !haveOneRe.test(text)) {
-      // AI should auto-pick doctor_default and confirm
+      // User wants AI to pick - auto-pick doctor_default and confirm
       if (callSid) {
         twilioChooseScenarioRetries.delete(callSid);
+        twilioScenarioFlags.set(callSid, "doctor_default");
       }
       vr.redirect({ method: "POST" }, "/gather-confirm-doctor");
       res.type("text/xml").send(vr.toString());
@@ -2121,11 +2122,11 @@ app.post("/process-choose-scenario", async (req, res) => {
     }
 
     if (haveOneRe.test(text) || /\b(no|nope|i do|i have)\b/i.test(text)) {
-      // User has a scenario in mind, show menu
+      // User has a scenario in mind - ask them to describe it
       if (callSid) {
         twilioChooseScenarioRetries.delete(callSid);
       }
-      vr.redirect({ method: "POST" }, "/gather-scenario-menu");
+      vr.redirect({ method: "POST" }, "/gather-describe-call");
       res.type("text/xml").send(vr.toString());
       return;
     }
@@ -2233,6 +2234,315 @@ app.post("/process-scenario-menu", async (req, res) => {
     res.type("text/xml").send(vr.toString());
   } catch (err) {
     console.error("/process-scenario-menu ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+// SCENARIO MATCHING FLOW: Ask user to describe what call they want to practice
+app.post("/gather-describe-call", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const retry = req.query?.retry === "1";
+    
+    console.log(nowIso(), "/gather-describe-call", { callSid, retry });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const questionText = retry
+      ? "Tell me again, what kind of call would you like to practice?"
+      : "Tell me, what kind of call would you like to practice? For example, calling a salon to reschedule, or calling to check on an order.";
+
+    const gather = vr.gather({
+      input: "speech",
+      timeout: 4,
+      speechTimeout: "auto",
+      action: "/process-describe-call",
+      method: "POST",
+      language: "en-US",
+      maxSpeechTime: 10
+    });
+
+    gather.say({ voice: "Polly.Matthew-Neural" }, questionText);
+
+    // Fallback if no input
+    vr.redirect({ method: "POST" }, "/gather-describe-call?retry=1");
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/gather-describe-call ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+// SCENARIO MATCHING FLOW: Process description and match with AI
+app.post("/process-describe-call", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const speechResult = req.body?.SpeechResult || "";
+    const confidence = parseFloat(req.body?.Confidence || "0");
+
+    console.log(nowIso(), "/process-describe-call", { callSid, speechResult, confidence });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    // If very low confidence, ask them to repeat
+    if (confidence < 0.4 || !speechResult.trim()) {
+      vr.redirect({ method: "POST" }, "/gather-describe-call?retry=1");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Try to match the user's description to an existing scenario
+    const matchResult = await matchScenarioByDescription(speechResult);
+
+    if (matchResult.matched && matchResult.confidence >= 75) {
+      // Found matching scenario, store context and confirm with user
+      if (callSid) {
+        twilioScenarioFlags.set(callSid, matchResult.scenario_tag);
+        // Store the user's description for future reference
+        const userDescription = speechResult.trim();
+        try {
+          if (pool) {
+            await pool.query(
+              `UPDATE calls SET user_custom_description = $1 WHERE call_sid = $2`,
+              [userDescription, callSid]
+            );
+          }
+        } catch (err) {
+          console.log(nowIso(), "Note: Could not store user description in DB", err.message);
+        }
+      }
+
+      // Redirect to confirmation
+      vr.redirect({ method: "POST" }, `/gather-confirm-suggested-scenario?tag=${encodeURIComponent(matchResult.scenario_tag)}`);
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // No clear match found - offer custom scenario
+    console.log(nowIso(), "/process-describe-call: No matching scenario, offering custom call", {
+      callSid,
+      userDescription: speechResult,
+      matchConfidence: matchResult.confidence
+    });
+
+    if (callSid) {
+      // Store the description temporarily
+      const customHash = simpleHash(speechResult);
+      const customTag = `custom_${customHash}`;
+      twilioScenarioFlags.set(callSid, customTag);
+      
+      // Store the user's description
+      try {
+        if (pool) {
+          await pool.query(
+            `UPDATE calls SET user_custom_description = $1 WHERE call_sid = $2`,
+            [speechResult.trim(), callSid]
+          );
+        }
+      } catch (err) {
+        console.log(nowIso(), "Note: Could not store user description in DB", err.message);
+      }
+    }
+
+    // Redirect to custom call confirmation
+    vr.redirect({ method: "POST" }, `/gather-custom-call-confirmation?description=${encodeURIComponent(speechResult)}`);
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/process-describe-call ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+// SCENARIO MATCHING FLOW: Confirm the matched scenario with user
+app.post("/gather-confirm-suggested-scenario", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const scenarioTag = req.query?.tag || "";
+    const retry = req.query?.retry === "1";
+    
+    console.log(nowIso(), "/gather-confirm-suggested-scenario", { callSid, scenarioTag, retry });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    // Get the scenario label
+    let scenarioLabel = "";
+    if (scenarioTag === "doctor_default") {
+      scenarioLabel = "calling a doctor's office to schedule an appointment";
+    } else if (scenarioTag === "pharmacy_refill") {
+      scenarioLabel = "calling a pharmacy to refill a prescription";
+    } else if (scenarioTag === "school_office") {
+      scenarioLabel = "calling a school office";
+    }
+
+    const questionText = retry
+      ? `Does that sound right?`
+      : `Okay, I found a scenario for you. We'll practice ${scenarioLabel}. Does that sound right?`;
+
+    const gather = vr.gather({
+      input: "speech",
+      timeout: 3,
+      speechTimeout: "auto",
+      action: "/process-confirm-suggested-scenario",
+      method: "POST",
+      language: "en-US"
+    });
+
+    gather.say({ voice: "Polly.Matthew-Neural" }, questionText);
+
+    // Fallback if no input
+    vr.redirect({ method: "POST" }, `/gather-confirm-suggested-scenario?tag=${encodeURIComponent(scenarioTag)}&retry=1`);
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/gather-confirm-suggested-scenario ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+// SCENARIO MATCHING FLOW: Process confirmation response
+app.post("/process-confirm-suggested-scenario", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const speechResult = req.body?.SpeechResult || "";
+    const confidence = parseFloat(req.body?.Confidence || "0");
+    const scenarioTag = req.query?.tag || "";
+
+    console.log(nowIso(), "/process-confirm-suggested-scenario", { callSid, scenarioTag, speechResult, confidence });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const text = speechResult.toLowerCase().trim();
+
+    const yesRe = /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|let's do it|lets do it|go ahead|whatever|fine|alright|right|correct|exact)\b/i;
+    const noRe = /\b(no|nope|nah|not really|don't|dont|different|something else|another|change|wrong|no thanks)\b/i;
+
+    if (yesRe.test(text)) {
+      // User confirmed the suggested scenario
+      if (callSid && pool) {
+        try {
+          await pool.query(
+            `UPDATE calls SET scenario_tag = $1 WHERE call_sid = $2`,
+            [scenarioTag, callSid]
+          );
+          console.log(nowIso(), "/process-confirm-suggested-scenario set scenario_tag in DB", { callSid, scenarioTag });
+        } catch (err) {
+          console.error(nowIso(), "/process-confirm-suggested-scenario DB error", err);
+        }
+      }
+
+      vr.redirect({ method: "POST" }, `/stream-roleplay?scenario=${encodeURIComponent(scenarioTag)}`);
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    if (noRe.test(text)) {
+      // User rejected the suggestion, offer custom call
+      vr.redirect({ method: "POST" }, "/gather-custom-call-confirmation");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Unclear response, retry confirmation
+    vr.redirect({ method: "POST" }, `/gather-confirm-suggested-scenario?tag=${encodeURIComponent(scenarioTag)}&retry=1`);
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/process-confirm-suggested-scenario ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+// SCENARIO MATCHING FLOW: Offer custom call practice
+app.post("/gather-custom-call-confirmation", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const retry = req.query?.retry === "1";
+    
+    console.log(nowIso(), "/gather-custom-call-confirmation", { callSid, retry });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const questionText = retry
+      ? "Do you want to try a custom call?"
+      : "Okay, let's try a custom call. It may not be perfect since we're creating it on the fly, but we're up to try it if you are. Ready?";
+
+    const gather = vr.gather({
+      input: "speech",
+      timeout: 3,
+      speechTimeout: "auto",
+      action: "/process-custom-call-confirmation",
+      method: "POST",
+      language: "en-US"
+    });
+
+    gather.say({ voice: "Polly.Matthew-Neural" }, questionText);
+
+    // Fallback if no input
+    vr.redirect({ method: "POST" }, "/gather-custom-call-confirmation?retry=1");
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/gather-custom-call-confirmation ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+// SCENARIO MATCHING FLOW: Process custom call confirmation
+app.post("/process-custom-call-confirmation", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const speechResult = req.body?.SpeechResult || "";
+    const confidence = parseFloat(req.body?.Confidence || "0");
+
+    console.log(nowIso(), "/process-custom-call-confirmation", { callSid, speechResult, confidence });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const text = speechResult.toLowerCase().trim();
+
+    const yesRe = /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|let's do it|lets do it|go ahead|fine|alright|right|ready)\b/i;
+    const noRe = /\b(no|nope|nah|not really|don't|dont|no thanks|pass|end|stop|hang up|goodbye)\b/i;
+
+    if (yesRe.test(text)) {
+      // User agreed to custom call
+      // The scenario tag was already set (custom_${hash}) in /process-describe-call
+      const customTag = twilioScenarioFlags.get(callSid) || "custom_unknown";
+      
+      if (callSid && pool) {
+        try {
+          await pool.query(
+            `UPDATE calls SET scenario_tag = $1 WHERE call_sid = $2`,
+            [customTag, callSid]
+          );
+          console.log(nowIso(), "/process-custom-call-confirmation set custom scenario_tag in DB", { callSid, scenarioTag: customTag });
+        } catch (err) {
+          console.error(nowIso(), "/process-custom-call-confirmation DB error", err);
+        }
+      }
+
+      vr.redirect({ method: "POST" }, `/stream-roleplay?scenario=${encodeURIComponent(customTag)}`);
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    if (noRe.test(text)) {
+      // User declined, show main menu again
+      vr.redirect({ method: "POST" }, "/gather-scenario-menu");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Unclear response, retry
+    vr.redirect({ method: "POST" }, "/gather-custom-call-confirmation?retry=1");
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/process-custom-call-confirmation ERROR:", err);
     res.status(500).send("Error");
   }
 });
@@ -3004,6 +3314,152 @@ const twilioReturningCallerContexts = new Map();
 // Tracks how many times user has been silent in the "do you have a call" question
 const twilioChooseScenarioRetries = new Map();
 
+// Helper function to create hash from string
+function simpleHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(36);
+}
+
+// Helper function to match user description to existing scenarios via OpenAI
+async function matchScenarioByDescription(userDescription) {
+  if (!OPENAI_API_KEY) {
+    console.log(nowIso(), "ERROR: Missing OPENAI_API_KEY for scenario matching");
+    return { matched: false, reason: "No OpenAI API key" };
+  }
+
+  const existingScenarios = [
+    { scenario_tag: "doctor_default", scenario_label: "calling a doctor's office to schedule an appointment" },
+    { scenario_tag: "pharmacy_refill", scenario_label: "calling a pharmacy to refill a prescription" },
+    { scenario_tag: "school_office", scenario_label: "calling a school office" }
+  ];
+
+  const scenarioList = existingScenarios.map(s => s.scenario_label).join(", ");
+
+  const prompt = `You are a scenario matcher for phone call practice. 
+User said they want to practice: "${userDescription}"
+
+We have these existing scenarios:
+${scenarioList}
+
+Respond in JSON format:
+{
+  "matched": true/false,
+  "best_match_label": "the scenario_label if matched, null if no match",
+  "confidence": 0-100,
+  "reasoning": "brief explanation"
+}
+
+Only match if confidence >= 75. Prioritize scenarios like 'calling a salon to reschedule' over generic matches.`;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "You are a JSON response generator. Always respond with valid JSON only."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.3
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error(nowIso(), "OpenAI scenario matching failed:", error);
+      return { matched: false, reason: "OpenAI API error" };
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content.trim();
+    const result = JSON.parse(content);
+
+    if (result.matched && result.confidence >= 75) {
+      // Find the full scenario_tag from the matched label
+      const matchedScenario = existingScenarios.find(s => s.scenario_label === result.best_match_label);
+      if (matchedScenario) {
+        return {
+          matched: true,
+          scenario_tag: matchedScenario.scenario_tag,
+          scenario_label: matchedScenario.scenario_label,
+          confidence: result.confidence,
+          reasoning: result.reasoning
+        };
+      }
+    }
+
+    return { matched: false, confidence: result.confidence, reasoning: result.reasoning };
+  } catch (err) {
+    console.error(nowIso(), "Error matching scenario:", err.message);
+    return { matched: false, reason: err.message };
+  }
+}
+
+// Helper function to transform user description to "calling X to Y" format
+async function transformToScenarioLabel(userDescription) {
+  if (!OPENAI_API_KEY) {
+    // Fallback to simple transformation
+    return `calling to ${userDescription.toLowerCase()}`;
+  }
+
+  const prompt = `Transform this into proper phone call scenario language: "${userDescription}"
+
+Format: "calling [business/entity] to [purpose]"
+Examples:
+- "reschedule my haircut" → "calling a salon to reschedule a haircut"
+- "ask about my bill" → "calling to ask about my bill"
+- "order pizza" → "calling a pizza place to order pizza"
+
+Respond with just the transformed text, nothing else.`;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 50
+      })
+    });
+
+    if (!response.ok) {
+      console.error(nowIso(), "OpenAI transformation failed");
+      return `calling to ${userDescription.toLowerCase()}`;
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content.trim();
+  } catch (err) {
+    console.error(nowIso(), "Error transforming scenario label:", err.message);
+    return `calling to ${userDescription.toLowerCase()}`;
+  }
+}
+
 // Helper function to generate coaching feedback via OpenAI REST API
 async function generateCoachingFeedback(transcript) {
   if (!OPENAI_API_KEY) {
@@ -3066,6 +3522,30 @@ async function generateCoachingFeedback(transcript) {
     console.log(nowIso(), "Error generating coaching feedback:", e && e.message ? e.message : e);
     return null;
   }
+}
+
+// Build checklist for doctor scenario
+function buildDoctorChecklist() {
+  return [
+    "OPENING: Introduced self clearly and stated reason for calling",
+    "INFORMATION: Provided appointment type (annual checkup, follow-up, etc.) and availability preferences",
+    "QUESTIONS: Asked about any available time slots",
+    "DETAILS: Mentioned insurance or mentioned patient ID if applicable",
+    "CLOSING: Confirmed appointment date, time, and any required preparation",
+    "TONE: Remained calm, polite, and professional throughout"
+  ];
+}
+
+// Build checklist for custom scenarios
+function buildCustomChecklist(userDescription) {
+  return [
+    "GATE 1 - ESTABLISH IDENTITY: Asked for caller's name and confirmed spelling if unclear",
+    "GATE 2 - CLARIFY PURPOSE: Asked what the caller is calling about and restated briefly to confirm understanding",
+    "GATE 3 - COLLECT REQUIRED DETAILS: Asked for at least one necessary detail, requested clarification if unclear",
+    "GATE 4 - INTRODUCE MILD FRICTION: Presented one realistic constraint, limitation, or follow-up question",
+    "GATE 5 - RESOLVE OR DEFINE NEXT STEP: Offered resolution, appointment, action, or escalation and confirmed agreement",
+    "GATE 6 - CLOSE PROFESSIONALLY: Ended call politely"
+  ];
 }
 
 // POST /gather-coaching-feedback
@@ -5458,8 +5938,36 @@ wss.on("connection", (twilioWs, req) => {
         callState.scenarioTag = selectedScenario;
         callState.scenarioChosen = true;
         
-        // Initialize checklist for doctor scenario
-        if (selectedScenario === "doctor_default") {
+        // Initialize checklist based on scenario type
+        if (selectedScenario.startsWith("custom_")) {
+          // Custom scenario - fetch user description from DB and use custom checklist
+          if (callSid && pool) {
+            try {
+              const result = await pool.query(
+                `SELECT user_custom_description FROM calls WHERE call_sid = $1`,
+                [callSid]
+              );
+              if (result.rows && result.rows[0] && result.rows[0].user_custom_description) {
+                callState.userCustomDescription = result.rows[0].user_custom_description;
+                callState.checklist = buildCustomChecklist(callState.userCustomDescription);
+                console.log(nowIso(), "WS: Loaded custom scenario with user description", {
+                  callSid,
+                  customTag: selectedScenario,
+                  description: callState.userCustomDescription
+                });
+              } else {
+                // Fallback to generic custom checklist
+                callState.checklist = buildCustomChecklist("a phone call");
+              }
+            } catch (err) {
+              console.error(nowIso(), "WS: Error fetching custom description from DB", err.message);
+              callState.checklist = buildCustomChecklist("a phone call");
+            }
+          } else {
+            callState.checklist = buildCustomChecklist("a phone call");
+          }
+        } else {
+          // Built-in scenario - use doctor checklist (covers all standard scenarios for now)
           callState.checklist = buildDoctorChecklist();
         }
         
