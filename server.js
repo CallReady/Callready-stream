@@ -1894,85 +1894,18 @@ app.post("/voice", async (req, res) => {
       hasValidRuntime: !!callerRuntime
     });
 
+    // Opener is just a greeting/welcome statement, no interaction
+    // Immediately redirect to choose_scenario for the first real question
     vr.say({
-      voice: "Polly.Matthew-Neural",
-      loop: 1
+      voice: "Polly.Matthew-Neural"
     }, openerText);
 
-    const gather = vr.gather({
-      input: "speech transcription",
-      timeout: 10,
-      action: "/voice-opener-result",
-      actionOnEmptyResult: false,
-      method: "POST",
-      speechTimeout: 3
-    });
+    vr.redirect({ method: "POST" }, "/stream-choose-scenario");
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
     console.error("Error building TwiML:", err);
     res.status(500).send("Error");
-  }
-});
-
-app.post("/voice-opener-result", async (req, res) => {
-  try {
-    const callSid = req.body?.CallSid || "";
-    const speechResult = req.body?.SpeechResult?.toLowerCase().trim() || "";
-    const VoiceResponse = twilio.twiml.VoiceResponse;
-    const vr = new VoiceResponse();
-
-    console.log(nowIso(), "Opener result", { callSid, speechResult });
-
-    // Pattern-match responses
-    const isReady = /\b(ready|start|go|begin|yes|yeah|okay|ok|let's go|lets go|practice)\b/i.test(speechResult);
-    const isHelp = /\b(help|help me|i need help|not sure|unclear|confused|what)\b/i.test(speechResult);
-    const isPracticeAgain = /\b(again|previous|last|repeat|retry)\b/i.test(speechResult);
-    const isPracticeNew = /\b(new|something else|different)\b/i.test(speechResult);
-
-    if (isPracticeAgain) {
-      // Returning caller said "again" - go directly to connecting with prior scenario
-      vr.redirect({ method: "POST", url: "/stream-choose-scenario?action=practice_again" }, "/stream-choose-scenario");
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
-    if (isPracticeNew || isHelp) {
-      // "new"/"help" - go to choose_scenario
-      vr.redirect({ method: "POST", url: "/stream-choose-scenario" }, "/stream-choose-scenario");
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
-    if (isReady) {
-      // "ready" or similar - go to choose_scenario
-      vr.redirect({ method: "POST", url: "/stream-choose-scenario" }, "/stream-choose-scenario");
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
-    // Unclear or silence: retry
-    console.log(nowIso(), "Opener result unclear, retrying", { speechResult });
-    vr.say({
-      voice: "Polly.Matthew-Neural"
-    }, "I didn't catch that. Say ready when you want to start practicing.");
-
-    const gather = vr.gather({
-      input: "speech transcription",
-      timeout: 10,
-      action: "/voice-opener-result",
-      method: "POST",
-      speechTimeout: 3
-    });
-
-    res.type("text/xml").send(vr.toString());
-  } catch (err) {
-    console.error("Error in /voice-opener-result:", err);
-    const VoiceResponse = twilio.twiml.VoiceResponse;
-    const vr = new VoiceResponse();
-    vr.say("An error occurred. Goodbye.");
-    vr.hangup();
-    res.type("text/xml").send(vr.toString());
   }
 });
 
@@ -1988,21 +1921,12 @@ app.post("/stream-choose-scenario", (req, res) => {
       return;
     }
 
-    const action = req.query?.action || "";
-    
-    // Determine which phase to start with based on action
-    let wsUrl;
-    if (action === "practice_again") {
-      // Returning caller choosing to practice the same scenario again
-      wsUrl = PUBLIC_WSS_URL + (PUBLIC_WSS_URL.includes("?") ? "&" : "?") + "startPhase=connecting&returnToPrior=true";
-    } else {
-      // New caller or returning caller choosing a new scenario
-      wsUrl = PUBLIC_WSS_URL + (PUBLIC_WSS_URL.includes("?") ? "&" : "?") + "startPhase=choose_scenario";
-    }
+    // Start WebSocket at choose_scenario phase
+    const wsUrl = PUBLIC_WSS_URL + (PUBLIC_WSS_URL.includes("?") ? "&" : "?") + "startPhase=choose_scenario";
 
-    console.log(nowIso(), "Redirecting to /stream-choose-scenario", {
-      action,
-      wsUrlPrefix: wsUrl.substring(0, 80) // truncate for logs
+    console.log(nowIso(), "Streaming to choose_scenario phase", {
+      wsUrlPrefix: wsUrl.substring(0, 100),
+      wsUrlValid: !!wsUrl
     });
 
     const connect = vr.connect();
