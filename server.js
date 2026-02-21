@@ -2539,6 +2539,7 @@ wss.on("connection", (twilioWs, req) => {
   // Mark opener as sent if we're starting from a phase after opener (TwiML handled it)
   let openerSent = startPhase !== "boot" && startPhase !== "opener";
   console.log(nowIso(), "WS openerSent flag set", { startPhase, openerSent });
+  let responseActive = false;
 
   let openerAudioDeltaCount = 0;
   let openerResent = false;
