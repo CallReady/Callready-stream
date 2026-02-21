@@ -1926,10 +1926,25 @@ app.post("/voice", async (req, res) => {
 app.post("/gather-choose-scenario", async (req, res) => {
   try {
     const callSid = req.body?.CallSid || "";
-    const retry = req.query?.retry === "1";
+    const retryCount = parseInt(req.query?.retryCount || "0", 10);
     const skipPrevious = req.query?.skipPrevious === "1";
     
-    console.log(nowIso(), "/gather-choose-scenario", { callSid, retry, skipPrevious });
+    console.log(nowIso(), "/gather-choose-scenario", { callSid, retryCount, skipPrevious });
+
+    // If user has been silent 3 times (retryCount >= 2), end the call
+    if (retryCount >= 2) {
+      const VoiceResponse = twilio.twiml.VoiceResponse;
+      const vr = new VoiceResponse();
+      vr.say({ voice: "Polly.Matthew-Neural" }, "It looks like I might be having trouble hearing you. Let's end this call and have you call back so we can try again. Thanks.");
+      vr.hangup();
+      res.type("text/xml").send(vr.toString());
+      
+      // Cleanup
+      if (callSid) {
+        twilioChooseScenarioRetries.delete(callSid);
+      }
+      return;
+    }
 
     // Check if this is a returning caller with prior scenario context
     if (!skipPrevious && twilioReturningCallerContexts.has(callSid)) {
@@ -1941,7 +1956,7 @@ app.post("/gather-choose-scenario", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    const questionText = retry
+    const questionText = retryCount === 1
       ? "What call would you like to practice, or would you like a suggestion?"
       : "Do you already have a call in mind, or would you like me to pick one for you?";
 
@@ -1956,8 +1971,13 @@ app.post("/gather-choose-scenario", async (req, res) => {
 
     gather.say({ voice: "Polly.Matthew-Neural" }, questionText);
 
-    // Fallback if no input
-    vr.redirect({ method: "POST" }, "/gather-choose-scenario?retry=1");
+    // Store current retry count so /process-choose-scenario can track it
+    if (callSid) {
+      twilioChooseScenarioRetries.set(callSid, retryCount);
+    }
+
+    // Fallback if no input - increment retry count
+    vr.redirect({ method: "POST" }, `/gather-choose-scenario?retryCount=${retryCount + 1}`);
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
@@ -2076,6 +2096,9 @@ app.post("/process-choose-scenario", async (req, res) => {
 
     console.log(nowIso(), "/process-choose-scenario", { callSid, speechResult, confidence });
 
+    // Get current retry count from Map
+    const currentRetryCount = twilioChooseScenarioRetries.get(callSid) || 0;
+
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
@@ -2089,6 +2112,9 @@ app.post("/process-choose-scenario", async (req, res) => {
 
     if (pickForMeRe.test(text) && !haveOneRe.test(text)) {
       // AI should auto-pick doctor_default and confirm
+      if (callSid) {
+        twilioChooseScenarioRetries.delete(callSid);
+      }
       vr.redirect({ method: "POST" }, "/gather-confirm-doctor");
       res.type("text/xml").send(vr.toString());
       return;
@@ -2096,13 +2122,16 @@ app.post("/process-choose-scenario", async (req, res) => {
 
     if (haveOneRe.test(text) || /\b(no|nope|i do|i have)\b/i.test(text)) {
       // User has a scenario in mind, show menu
+      if (callSid) {
+        twilioChooseScenarioRetries.delete(callSid);
+      }
       vr.redirect({ method: "POST" }, "/gather-scenario-menu");
       res.type("text/xml").send(vr.toString());
       return;
     }
 
-    // Unclear response, retry
-    vr.redirect({ method: "POST" }, "/gather-choose-scenario?retry=1");
+    // Unclear response, retry with incremented count
+    vr.redirect({ method: "POST" }, `/gather-choose-scenario?retryCount=${currentRetryCount + 1}`);
     res.type("text/xml").send(vr.toString());
   } catch (err) {
     console.error("/process-choose-scenario ERROR:", err);
@@ -2970,6 +2999,10 @@ const twilioThresholdContexts = new Map();
 // In-memory store for returning caller context (callSid => { scenario_tag, scenario_label })
 // Allows /gather-choose-scenario to offer re-practicing previous scenario
 const twilioReturningCallerContexts = new Map();
+
+// In-memory store for choose-scenario retry count (callSid => retryCount)
+// Tracks how many times user has been silent in the "do you have a call" question
+const twilioChooseScenarioRetries = new Map();
 
 // Helper function to generate coaching feedback via OpenAI REST API
 async function generateCoachingFeedback(transcript) {
