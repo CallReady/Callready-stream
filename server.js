@@ -1900,7 +1900,7 @@ app.post("/voice", async (req, res) => {
       voice: "Polly.Matthew-Neural"
     }, openerText);
 
-    vr.redirect({ method: "POST" }, "/stream-choose-scenario");
+    vr.redirect({ method: "POST" }, "/gather-choose-scenario");
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
@@ -1909,6 +1909,319 @@ app.post("/voice", async (req, res) => {
   }
 });
 
+// CHOOSE_SCENARIO PHASE: Twilio Gather approach (replaces OpenAI for this phase)
+app.post("/gather-choose-scenario", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const retry = req.query?.retry === "1";
+    
+    console.log(nowIso(), "/gather-choose-scenario", { callSid, retry });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const questionText = retry
+      ? "Do you have a specific call you want to practice, or should I pick one for you?"
+      : "Do you already have a call in mind, or would you like me to pick one for you?";
+
+    const gather = vr.gather({
+      input: "speech",
+      timeout: 3,
+      speechTimeout: "auto",
+      action: "/process-choose-scenario",
+      method: "POST",
+      language: "en-US"
+    });
+
+    gather.say({ voice: "Polly.Matthew-Neural" }, questionText);
+
+    // Fallback if no input
+    vr.redirect({ method: "POST" }, "/gather-choose-scenario?retry=1");
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/gather-choose-scenario ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+app.post("/process-choose-scenario", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const speechResult = req.body?.SpeechResult || "";
+    const confidence = parseFloat(req.body?.Confidence || "0");
+
+    console.log(nowIso(), "/process-choose-scenario", { callSid, speechResult, confidence });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const text = speechResult.toLowerCase().trim();
+
+    // Check if user wants AI to pick
+    const pickForMeRe = /\b(pick|choose|select|you pick|you choose|surprise|don't care|doesn't matter|whatever|go ahead)\b/i;
+    
+    // Check if user has one in mind
+    const haveOneRe = /\b(have|yes|got|specific|mind|already know|know what|particular)\b/i;
+
+    if (pickForMeRe.test(text) && !haveOneRe.test(text)) {
+      // AI should auto-pick doctor_default and confirm
+      vr.redirect({ method: "POST" }, "/gather-confirm-doctor");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    if (haveOneRe.test(text) || /\b(no|nope|i do|i have)\b/i.test(text)) {
+      // User has a scenario in mind, show menu
+      vr.redirect({ method: "POST" }, "/gather-scenario-menu");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Unclear response, retry
+    vr.redirect({ method: "POST" }, "/gather-choose-scenario?retry=1");
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/process-choose-scenario ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+app.post("/gather-scenario-menu", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const retry = req.query?.retry === "1";
+    
+    console.log(nowIso(), "/gather-scenario-menu", { callSid, retry });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const menuText = retry
+      ? "Please choose one of these three options: Say 1 for scheduling a doctor appointment, 2 for a pharmacy refill, or 3 for calling a school office."
+      : "Which do you want to practice? Say 1 for scheduling a doctor's appointment, 2 for a pharmacy refill, or 3 for calling a school office.";
+
+    const gather = vr.gather({
+      input: "speech dtmf",
+      timeout: 5,
+      numDigits: 1,
+      speechTimeout: "auto",
+      action: "/process-scenario-menu",
+      method: "POST",
+      language: "en-US"
+    });
+
+    gather.say({ voice: "Polly.Matthew-Neural" }, menuText);
+
+    // Fallback if no input
+    vr.redirect({ method: "POST" }, "/gather-scenario-menu?retry=1");
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/gather-scenario-menu ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+app.post("/process-scenario-menu", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const speechResult = req.body?.SpeechResult || "";
+    const digits = req.body?.Digits || "";
+    const confidence = parseFloat(req.body?.Confidence || "0");
+
+    console.log(nowIso(), "/process-scenario-menu", { callSid, speechResult, digits, confidence });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    let scenarioTag = null;
+
+    // Check DTMF first (most reliable)
+    if (digits === "1") {
+      scenarioTag = "doctor_default";
+    } else if (digits === "2") {
+      scenarioTag = "pharmacy_refill";
+    } else if (digits === "3") {
+      scenarioTag = "school_office";
+    } else if (speechResult) {
+      // Parse speech result
+      const text = speechResult.toLowerCase();
+      
+      if (/\b(one|1|first|doctor|appointment|medical)\b/i.test(text)) {
+        scenarioTag = "doctor_default";
+      } else if (/\b(two|2|second|pharmacy|prescription|refill|medicine)\b/i.test(text)) {
+        scenarioTag = "pharmacy_refill";
+      } else if (/\b(three|3|third|school|office)\b/i.test(text)) {
+        scenarioTag = "school_office";
+      }
+    }
+
+    if (scenarioTag) {
+      // Valid scenario chosen, save to DB and redirect to roleplay
+      if (callSid && pool) {
+        try {
+          await pool.query(
+            `UPDATE calls SET scenario_tag = $1 WHERE call_sid = $2`,
+            [scenarioTag, callSid]
+          );
+          console.log(nowIso(), "/process-scenario-menu set scenario_tag in DB", { callSid, scenarioTag });
+        } catch (err) {
+          console.error(nowIso(), "/process-scenario-menu DB error", err);
+        }
+      }
+
+      vr.redirect({ method: "POST" }, `/stream-roleplay?scenario=${encodeURIComponent(scenarioTag)}`);
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Invalid input, retry menu
+    vr.redirect({ method: "POST" }, "/gather-scenario-menu?retry=1");
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/process-scenario-menu ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+app.post("/gather-confirm-doctor", async (req, res) => {
+ try {
+    const callSid = req.body?.CallSid || "";
+    const retry = req.query?.retry === "1";
+    
+    console.log(nowIso(), "/gather-confirm-doctor", { callSid, retry });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const questionText = retry
+      ? "Does calling a doctor's office to schedule an appointment sound good?"
+      : "Okay. Let's practice calling a doctor's office to schedule an appointment. Does that sound good?";
+
+    const gather = vr.gather({
+      input: "speech",
+      timeout: 3,
+      speechTimeout: "auto",
+      action: "/process-confirm-doctor",
+      method: "POST",
+      language: "en-US"
+    });
+
+    gather.say({ voice: "Polly.Matthew-Neural" }, questionText);
+
+    // Fallback if no input
+    vr.redirect({ method: "POST" }, "/gather-confirm-doctor?retry=1");
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/gather-confirm-doctor ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+app.post("/process-confirm-doctor", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const speechResult = req.body?.SpeechResult || "";
+    const confidence = parseFloat(req.body?.Confidence || "0");
+
+    console.log(nowIso(), "/process-confirm-doctor", { callSid, speechResult, confidence });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const text = speechResult.toLowerCase().trim();
+
+    const yesRe = /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|let's do it|lets do it|go ahead|whatever|fine|alright)\b/i;
+    const noRe = /\b(no|nope|nah|not really|don't|dont|different|something else|another|change)\b/i;
+
+    if (yesRe.test(text)) {
+      // User confirmed, save scenario and redirect to roleplay
+      const scenarioTag = "doctor_default";
+      
+      if (callSid && pool) {
+        try {
+          await pool.query(
+            `UPDATE calls SET scenario_tag = $1 WHERE call_sid = $2`,
+            [scenarioTag, callSid]
+          );
+          console.log(nowIso(), "/process-confirm-doctor set scenario_tag in DB", { callSid, scenarioTag });
+        } catch (err) {
+          console.error(nowIso(), "/process-confirm-doctor DB error", err);
+        }
+      }
+
+      vr.redirect({ method: "POST" }, `/stream-roleplay?scenario=${encodeURIComponent(scenarioTag)}`);
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    if (noRe.test(text)) {
+      // User wants different scenario, show menu
+      vr.redirect({ method: "POST" }, "/gather-scenario-menu");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Unclear response, retry
+    vr.redirect({ method: "POST" }, "/gather-confirm-doctor?retry=1");
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/process-confirm-doctor ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+// ROLEPLAY PHASE: WebSocket connection (starts at connecting phase)
+app.post("/stream-roleplay", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const scenarioTag = req.query?.scenario || "";
+    
+    console.log(nowIso(), "/stream-roleplay", { callSid, scenarioTag });
+
+    // Store scenario in session state for WebSocket to pick up
+    if (callSid && scenarioTag) {
+      twilioScenarioFlags.set(callSid, scenarioTag);
+      console.log(nowIso(), "/stream-roleplay set scenario flag", { callSid, scenarioTag });
+    }
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    if (!PUBLIC_WSS_URL) {
+      console.log(nowIso(), "/stream-roleplay ERROR: PUBLIC_WSS_URL is missing");
+      vr.say("Server is missing WSS URL.");
+      vr.hangup();
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Transition message before starting roleplay
+    vr.say({ voice: "Polly.Matthew-Neural" }, 
+      "Great, I'll answer as the receptionist after the ring. You can make up any details you're uncomfortable sharing during our call.");
+
+    // Connect WebSocket for roleplay
+    const wsUrl = PUBLIC_WSS_URL;
+
+    console.log(nowIso(), "/stream-roleplay building WebSocket connection", {
+      callSid,
+      scenarioTag,
+      wsUrl: wsUrl.substring(0, 100)
+    });
+
+    const connect = vr.connect();
+    connect.stream({ url: wsUrl });
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/stream-roleplay ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+// Keep old endpoint name as alias for backward compatibility during transition
 app.post("/stream-choose-scenario", async (req, res) => {
   try {
     const callSid = req.body?.CallSid || "";
@@ -2212,7 +2525,6 @@ app.post("/debug/gate-step", (req, res) => {
 
     // Flags supplied by caller so we can simulate state.
     const awaitingCallTypeChoice = String(req.body && req.body.awaitingCallTypeChoice).toLowerCase() === "true";
-    const awaitingScenarioTag = String(req.body && req.body.awaitingScenarioTag).toLowerCase() === "true";
 
     const ct = extractTokenLineValue(text, "CALL_TYPE");
     const sp = extractTokenLineValue(text, "SCENARIO_PICK");
@@ -2224,30 +2536,12 @@ app.post("/debug/gate-step", (req, res) => {
 
     const result = {
       ok: true,
-      input: { phase, awaitingCallTypeChoice, awaitingScenarioTag },
+      input: { phase, awaitingCallTypeChoice },
       parsed: { CALL_TYPE: vCt, SCENARIO_PICK: vSp, SCENARIO_TAG: vSt },
-      next: { phase, flags: { awaitingCallTypeChoice, awaitingScenarioTag }, note: "no change" },
+      next: { phase, flags: { awaitingCallTypeChoice }, note: "no change" },
     };
 
-    // Gate 2: SCENARIO_PICK yes triggers menu requirement
-    if (phase === "choose_scenario" && vSp === "yes") {
-      result.next.phase = "choose_scenario";
-      result.next.flags.awaitingScenarioTag = true;
-      result.next.note = "scenario pick yes, require SCENARIO_TAG next";
-      return res.json(result);
-    }
-
-    // Gate 3: scenario tag accepted advances
-    if (phase === "choose_scenario" && awaitingScenarioTag) {
-      if (vSt === "doctor_default" || vSt === "pharmacy_refill" || vSt === "school_office") {
-        result.next.phase = "connecting";
-        result.next.flags.awaitingScenarioTag = false;
-        result.next.note = "scenario tag accepted, advance to connecting";
-        return res.json(result);
-      }
-      result.next.note = "scenario tag missing/unknown, stay in choose_scenario";
-      return res.json(result);
-    }
+    // NOTE: SCENARIO_PICK and SCENARIO_TAG gates removed - now handled by Twilio Gather
 
     return res.json(result);
   } catch (e) {
@@ -2538,6 +2832,10 @@ const server = http.createServer(app);
 // Allows /stream-choose-scenario to signal that Twilio already played the opener
 const twilioOpenerPlayedFlags = new Map();
 
+// In-memory store for scenario selection (callSid => scenarioTag)
+// Allows /gather-scenario-menu or /gather-confirm-doctor to pass scenario to WebSocket
+const twilioScenarioFlags = new Map();
+
 const wss = new WebSocket.Server({ server, path: "/media" });
 
 wss.on("connection", (twilioWs, req) => {
@@ -2558,7 +2856,6 @@ wss.on("connection", (twilioWs, req) => {
   let sawSpeechStarted = false;
 
   let requireCallerSpeechBeforeNextAI = false;
-  let awaitingScenarioTag = false;
   let coachingAskedForFeedback = false;
   let wrapUpAskedQuestion = false;
   let wrapUpTimeLimitExceeded = false;
@@ -2590,8 +2887,6 @@ wss.on("connection", (twilioWs, req) => {
     scenarioTag: null,           // snake_case tag once known
     goal: null,                  // short goal text once known
     scenarioChosen: false,
-    scenarioCaptureInFlight: false,
-    scenarioConfirmCaptureInFlight: false,
     lastUserUtterance: null,     // last transcript snippet we captured
     summary: null,               // short rolling summary (we will add later)
     turnIndex: 0,                // increments each time we ask OpenAI to speak
@@ -2974,10 +3269,6 @@ wss.on("connection", (twilioWs, req) => {
 
   let returningCallerAskedAboutLastScenario = false;
 
-  let scenarioTagAlreadyCaptured = false;
-  let scenarioTagCaptureInFlight = false;
-  let scenarioTagCaptureResolve = null;
-
   let callerRuntime = null;
   let perCallCapSeconds = FREE_PER_CALL_SECONDS;
 
@@ -3334,7 +3625,6 @@ wss.on("connection", (twilioWs, req) => {
         "callType=" + String(callState.callType || ""),
         "scenarioTag=" + String(callState.scenarioTag || ""),
         "scenarioChosen=" + String(!!callState.scenarioChosen),
-        "awaitingScenarioTag=" + String(!!awaitingScenarioTag),
         "why=" + String(why || "")
       );
     } catch (e) { }
@@ -3506,45 +3796,6 @@ wss.on("connection", (twilioWs, req) => {
 
     openaiSend({ type: "input_audio_buffer.clear" });
     openaiSend({ type: "session.update", session: { turn_detection: null } });
-  }
-
-  async function requestScenarioTagTextOnlyOnce(reason) {
-    if (scenarioTagAlreadyCaptured) return;
-    if (scenarioTagCaptureInFlight) return;
-    if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
-
-    scenarioTagCaptureInFlight = true;
-
-    console.log(nowIso(), "Requesting end-only scenario tag", reason);
-    console.log(nowIso(), "Scenario tag capture state set true", { reason: reason, callSid: callSid || null });
-
-    const p = new Promise((resolve) => {
-      scenarioTagCaptureResolve = resolve;
-      setTimeout(() => {
-        if (scenarioTagCaptureResolve) {
-          scenarioTagCaptureResolve();
-          scenarioTagCaptureResolve = null;
-        }
-      }, 900);
-    });
-
-    openaiResponseCreate({
-      type: "response.create",
-      response: {
-        modalities: ["text"],
-        instructions:
-          "Output exactly one line and nothing else.\n" +
-          "The line must start with SCENARIO_TAG: followed by one short snake_case tag.\n" +
-          "Example: SCENARIO_TAG: pharmacy_refill_outgoing\n" +
-          "If you are unsure, output exactly: SCENARIO_TAG: unknown\n" +
-          "Do not output JSON.\n" +
-          "Do not include quotes.\n" +
-          "Do not include any extra words before or after the line.",
-      },
-    });
-
-    await p;
-    scenarioTagCaptureInFlight = false;
   }
 
   function clearEndFallbackTimer() {
@@ -3883,9 +4134,11 @@ wss.on("connection", (twilioWs, req) => {
         },
       });
 
-      // Opener is always played by Twilio TwiML now, so enable VAD and transition directly to choose_scenario
+      // Opener is always played by Twilio TwiML now
+      // Choose_scenario is also handled by Twilio Gather now
+      // So we either start at choose_scenario (if not done) or connecting (if scenario already selected)
       setTimeout(() => {
-        console.log(nowIso(), "Twilio opener completed, enabling VAD and transitioning to choose_scenario");
+        console.log(nowIso(), "Post-opener setup", { scenarioChosen: callState.scenarioChosen, scenarioTag: callState.scenarioTag });
         
         // Clear audio buffer
         openaiSend({ type: "input_audio_buffer.clear" });
@@ -3923,21 +4176,80 @@ wss.on("connection", (twilioWs, req) => {
             } catch { }
           }, 50);
           
-          // Transition to choose_scenario phase
-          setPhase("choose_scenario", "post-twilio-opener");
-          callState.scenarioChosen = false;
-          awaitingScenarioTag = false;
-          callState.scenarioCaptureInFlight = false;
-          callState.scenarioConfirmCaptureInFlight = false;
-          
-          // Send choose_scenario question
-          openaiResponseCreate({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions: buildPhaseInstructions("twilio_opener_skip"),
-            },
-          });
+          // Check if scenario was already chosen via Twilio Gather
+          if (callState.scenarioChosen && callState.scenarioTag) {
+            // Scenario selected, start connecting phase
+            // Transition message already spoken in TwiML, so stream ring audio and start roleplay
+            console.log(nowIso(), "Scenario pre-selected, starting ring audio", { scenarioTag: callState.scenarioTag });
+            
+            setPhase("connecting", "twilio_scenario_selected");
+            callState.connectingStartedAtMs = Date.now();
+            callState.connectingStep = "ring_audio"; // Mark as ring audio phase
+            
+            // Always answerer role since we only do outgoing calls
+            callState.role = "answerer";
+            callState.turnIndex = 0;
+            
+            try { 
+              console.log(nowIso(), "CONNECTING_BEGIN", 
+                "scenarioTag=" + String(callState.scenarioTag || ""), 
+                "callType=" + String(callState.callType || ""), 
+                "role=" + String(callState.role || "")); 
+            } catch (e) { }
+            
+            try { console.log(nowIso(), "CONNECTING_STEP", "ring_audio"); } catch (e) { }
+            
+            // Stream ring audio file to Twilio
+            if (streamSid) {
+              streamRingAudioToTwilio(streamSid);
+            }
+            
+            // Ring file is ~3 seconds, schedule roleplay greeting after
+            let startLine = "";
+            if (callState.scenarioTag === "doctor_default") {
+              startLine = "Thank you for calling Evergreen Medical Clinic. This is Denise. How can I help you?";
+            } else if (callState.scenarioTag === "pharmacy_refill") {
+              startLine = "Thank you for calling Central Pharmacy. This is Alex. How can I help you?";
+            } else if (callState.scenarioTag === "school_office") {
+              startLine = "Good morning, this is Oak Ridge Elementary. This is Sarah. How may I help you?";
+            } else {
+              startLine = "Hello, thanks for calling. How can I help you?";
+            }
+            
+            setTimeout(() => {
+              if (callState && callState.connectingStep === "ring_audio" && callState.phase === "connecting") {
+                // Ring finished, move to roleplay with greeting
+                setPhase("roleplay", "after_ring_twilio_flow");
+                callState.turnIndex = 0;
+                
+                openaiResponseCreate({
+                  type: "response.create",
+                  response: {
+                    modalities: ["audio", "text"],
+                    instructions: "Speak this exactly, then stop speaking and wait:\n" + startLine + "\n",
+                  },
+                });
+                callState.turnIndex += 1;
+              }
+            }, 3500); // Ring duration + buffer
+          } else {
+            // Scenario not selected yet, transition to choose_scenario phase
+            // Note: This should NOT happen in the new flow since Twilio handles choose_scenario
+            // But keeping as fallback for compatibility
+            console.log(nowIso(), "WARNING: Scenario not selected, this should not happen with Twilio Gather flow");
+            
+            setPhase("choose_scenario", "fallback_no_scenario");
+            callState.scenarioChosen = false;
+            
+            // Send choose_scenario question
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions: buildPhaseInstructions("twilio_opener_skip"),
+              },
+            });
+          }
         }, 250);
     });
 
@@ -4009,89 +4321,17 @@ wss.on("connection", (twilioWs, req) => {
             return;
           }
 
-          // Reroute: change scenario
+          // Reroute: change scenario (restart choose_scenario via Twilio redirect)
           if (u.indexOf("change scenario") >= 0 || u.indexOf("different scenario") >= 0) {
             callState.scenarioChosen = false;
             callState.scenarioTag = null;
             callState.goal = null;
-            callState.scenarioCaptureInFlight = false;
-            awaitingScenarioTag = false;
-            setPhase("choose_scenario", "reroute_change_scenario");
-            cancelOpenAIResponseIfAnyOnce("reroute choose_scenario");
-            sawCallerSpeechSinceLastAIDone = false;
-            sawSpeechStarted = false;
-
+            endingRequested = true;
+            console.log(nowIso(), "User requested scenario change, ending call (redirect to Twilio not yet implemented)");
+            
+            // TODO: Implement Twilio REST API redirect to /gather-choose-scenario
+            // For now, just end the call
             return;
-          }
-
-          // Confirm auto-picked scenario directly from transcription (no speech_stopped needed).
-          // Only process USER transcriptions (not AI output transcriptions)
-          if (
-            msg.type === "conversation.item.input_audio_transcription.completed" &&
-            callState.phase === "choose_scenario" &&
-            callState.scenarioConfirmCaptureInFlight
-          ) {
-            const yesRe =
-              /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|lets do it|let's do it|go ahead|whatever|yeah)\b/i;
-            const noRe =
-              /\b(no|nope|nah|not really|dont|don't|do not|different|something else|another)\b/i;
-
-            if (yesRe.test(u)) {
-              callState.scenarioConfirmCaptureInFlight = false;
-              callState.scenarioChosen = true;
-
-              try {
-                if (callSid && callState.scenarioTag) {
-                  setScenarioTagOnce(callSid, callState.scenarioTag);
-                }
-              } catch (e) { }
-
-              setPhase("connecting", "scenario_confirmed");
-              callState.connectingStartedAtMs = Date.now();
-
-              // Always answerer role since we only do outgoing calls (human calls, AI answers)
-              callState.role = "answerer";
-
-              if (callState.scenarioTag === "doctor_default") {
-                callState.checklist = buildDoctorChecklist();
-              }
-
-              // Step 1: Transition message before ring
-              callState.connectingStep = "transition_message";
-
-              cancelOpenAIResponseIfAnyOnce("confirm_yes_transition_to_connecting");
-
-              openaiResponseCreate({
-                type: "response.create",
-                response: {
-                  modalities: ["audio", "text"],
-                  instructions: "Speak this exactly, then stop speaking and wait: Great, I'll answer as the receptionist after the ring. You can make up any details you're uncomfortable sharing during our call.\n",
-                },
-              });
-
-              return;
-            }
-
-            if (noRe.test(u)) {
-              callState.scenarioConfirmCaptureInFlight = false;
-              callState.scenarioTag = null;
-              callState.scenarioChosen = false;
-
-              awaitingScenarioTag = true;
-              setPhase("choose_scenario", "scenario_menu");
-
-              openaiResponseCreate({
-                type: "response.create",
-                response: {
-                  modalities: ["audio", "text"],
-                  instructions:
-                    "Ask exactly one question and nothing else.\n" +
-                    "Say: \"Which do you want to practice? Say 1 for scheduling a doctor's appointment, 2 for a pharmacy refill, or 3 for calling a school office.\"\n",
-                },
-              });
-
-              return;
-            }
           }
         }
 
@@ -4160,7 +4400,6 @@ wss.on("connection", (twilioWs, req) => {
           if (againRe.test(u)) {
             // Reset scenario state and return to connecting phase for another practice round
             callState.scenarioChosen = true;
-            callState.scenarioConfirmCaptureInFlight = false;
             callState.checklist = buildDoctorChecklist();
             wrapUpAskedQuestion = false;
             wrapUpTimeLimitExceeded = false;
@@ -4311,72 +4550,6 @@ wss.on("connection", (twilioWs, req) => {
         requireCallerSpeechBeforeNextAI = false;
         sawCallerSpeechSinceLastAIDone = true;
 
-        // GATE: During scenario confirm, do NOT send a generic response - let the transcription handler take over
-        if (callState.phase === "choose_scenario" && callState.scenarioConfirmCaptureInFlight) {
-          console.log(nowIso(), "Confirm: returning early from speech_stopped to let transcription handler process");
-          return;
-        }
-
-        if (
-          turnDetectionEnabled &&
-          callState.phase === "choose_scenario" &&
-          !callState.scenarioChosen &&
-          !callState.scenarioCaptureInFlight &&
-          !awaitingScenarioTag &&
-          !callState.scenarioConfirmCaptureInFlight
-        ) { // Gate: parse SCENARIO_PICK in choose_scenario
-          callState.scenarioCaptureInFlight = true;
-
-          openaiResponseCreate({
-            type: "response.create",
-            response: {
-              modalities: ["text"],
-              instructions:
-                "Output exactly one line and nothing else.\n" +
-                "If the HUMAN wants you to pick, output: SCENARIO_PICK: yes\n" +
-                "If the HUMAN already has a call in mind, output: SCENARIO_PICK: no\n" +
-                "If unclear, output: SCENARIO_PICK: unknown\n",
-            },
-          });
-
-          return;
-        }
-
-        if (
-          turnDetectionEnabled &&
-          callState.phase === "choose_scenario" &&
-          callState.scenarioConfirmCaptureInFlight &&
-          !sawCallerSpeechSinceLastAIDone
-        ) {
-        }
-
-        // Scenario tag selection from menu
-        if (
-          turnDetectionEnabled &&
-          callState.phase === "choose_scenario" && // Gate: scenario confirm handling (auto-pick confirm)
-          awaitingScenarioTag &&
-          !scenarioTagCaptureInFlight &&
-          !scenarioTagAlreadyCaptured
-        ) {
-          scenarioTagCaptureInFlight = true;
-
-          openaiResponseCreate({
-            type: "response.create",
-            response: {
-              modalities: ["text"],
-              instructions:
-                "Output exactly one line and nothing else.\n" +
-                "Choose the tag based on the HUMAN's most recent choice.\n" +
-                "If they chose option 1, output: SCENARIO_TAG: doctor_default\n" +
-                "If they chose option 2, output: SCENARIO_TAG: pharmacy_refill\n" +
-                "If they chose option 3, output: SCENARIO_TAG: school_office\n" +
-                "If unclear, output: SCENARIO_TAG: unknown\n",
-            },
-          });
-
-          return;
-        }
-
         // Ask OpenAI to respond now, but ALWAYS include phase instructions.
         openaiResponseCreate({
           type: "response.create",
@@ -4508,146 +4681,6 @@ wss.on("connection", (twilioWs, req) => {
 
           // Prevent duplicate transitions
           if (callState.connectingStep === "intro_done" || callState.connectingStep === "ring_audio") return;
-        }
-
-        if (scenarioTagCaptureInFlight && !scenarioTagAlreadyCaptured && callSid) {
-          if (!sawCallerSpeechSinceLastAIDone) {
-            console.log(nowIso(), "Skipping SCENARIO_TAG capture because caller has not spoken yet");
-          } else {
-
-            const scenarioTag = extractTokenLineValue(text, "SCENARIO_TAG");
-
-            if (scenarioTag) {
-              scenarioTagAlreadyCaptured = true;
-              setScenarioTagOnce(callSid, scenarioTag);
-            }
-
-            if (scenarioTagCaptureResolve) {
-              scenarioTagCaptureResolve();
-              scenarioTagCaptureResolve = null;
-            }
-          }
-        }
-
-        if (callState.scenarioCaptureInFlight && callState.phase === "choose_scenario") { // Gate: retry/clarify SCENARIO_PICK while in choose_scenario
-          const pick = extractTokenLineValue(text, "SCENARIO_PICK");
-          const v = pick ? String(pick).trim().toLowerCase() : "unknown";
-
-          console.log(nowIso(), "SCENARIO_PICK:", v);
-
-          // Done waiting for the model token for this turn.
-          callState.scenarioCaptureInFlight = false;
-
-          if (v === "yes") {
-            awaitingScenarioTag = false;
-
-            callState.scenarioTag = "doctor_default";
-            callState.scenarioChosen = false;
-            callState.scenarioConfirmCaptureInFlight = true;
-
-            setPhase("choose_scenario", "auto_pick_needs_confirm");
-
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "Ask exactly one question and nothing else.\n" +
-                  "Say: \"Okay. Let's practice calling a doctor's office to schedule an appointment. Does that sound good?\"\n",
-              },
-            });
-
-            return;
-          }
-
-          if (v === "no") {
-            awaitingScenarioTag = true;
-            setPhase("choose_scenario", "scenario_menu");
-
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "Ask exactly one question and nothing else.\n" +
-                  "Say: \"Which do you want to practice? Say 1 for scheduling a doctor's appointment, 2 for a pharmacy refill, or 3 for calling a school office.\"\n",
-              },
-            });
-
-            return;
-          }
-
-          setPhase("choose_scenario", "scenario_pick_unclear_retry");
-
-          openaiResponseCreate({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions:
-                "Ask exactly one question and nothing else.\n" +
-                "Say: \"Do you have a specific call you want to practice, or should I pick one for you?\"\n",
-            },
-          });
-
-          return;
-        }
-
-        if (awaitingScenarioTag && callState.phase === "choose_scenario" && sawCallerSpeechSinceLastAIDone) { // Gate: parse SCENARIO_TAG when awaiting a tag
-          const tag = extractTokenLineValue(text, "SCENARIO_TAG");
-          const rawTag = tag ? String(tag).trim().toLowerCase() : "unknown";
-
-          console.log(nowIso(), "SCENARIO_TAG:", rawTag);
-
-          // Only allow known tags.
-          if (rawTag !== "doctor_default" && rawTag !== "pharmacy_refill" && rawTag !== "school_office") {
-            setPhase("choose_scenario", "scenario_tag_unclear_retry");
-
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "Ask exactly one question and nothing else.\n" +
-                  "Offer exactly these three options, in this order:\n" +
-                  "1) Scheduling a doctor appointment\n" +
-                  "2) Refilling a prescription at a pharmacy\n" +
-                  "3) Calling a school office\n" +
-                  "Then stop.\n" +
-                  "Do not output SCENARIO_TAG in this message.\n",
-              },
-            });
-
-            return;
-          }
-
-          // Valid scenario tag.
-          awaitingScenarioTag = false;
-          callState.scenarioChosen = true;
-
-          setScenarioTag(rawTag, "menu_pick");
-          try {
-            if (callSid) setScenarioTagOnce(callSid, rawTag);
-          } catch (e) { }
-
-          setPhase("connecting", "scenario_picked_menu");
-
-          callState.turnIndex = 0;
-          callState.connectingStartedAtMs = Date.now();
-          try { console.log(nowIso(), "CONNECTING_BEGIN", "scenarioTag=" + String(callState.scenarioTag || ""), "callType=" + String(callState.callType || ""), "role=" + String(callState.role || "")); } catch (e) { }
-
-          // Start connecting sequence: play a short ring first, then scenario intro.
-          callState.connectingStep = "ring";
-          try { console.log(nowIso(), "CONNECTING_STEP", "ring"); } catch (e) { }
-
-          openaiResponseCreate({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions: "Speak this exactly, then stop speaking and wait:\nRing ring.\n",
-            },
-          });
-
-          return;
         }
 
         if (turnDetectionEnabled) {
@@ -4840,6 +4873,25 @@ wss.on("connection", (twilioWs, req) => {
         } catch (e) {
           console.log(nowIso(), "Failed to start live threshold timers (non-fatal)", e && e.message ? e.message : e);
         }
+      }
+
+      // Check if scenario was already selected via Twilio Gather (in choose_scenario phase)
+      if (callSid && twilioScenarioFlags.has(callSid)) {
+        const selectedScenario = twilioScenarioFlags.get(callSid);
+        twilioScenarioFlags.delete(callSid); // Clean up after use
+        
+        console.log(nowIso(), "WS: Scenario selected via Twilio Gather", { callSid, selectedScenario });
+        
+        // Set scenario state
+        callState.scenarioTag = selectedScenario;
+        callState.scenarioChosen = true;
+        
+        // Initialize checklist for doctor scenario
+        if (selectedScenario === "doctor_default") {
+          callState.checklist = buildDoctorChecklist();
+        }
+        
+        console.log(nowIso(), "WS: Starting at connecting phase (scenario pre-selected)", { scenarioTag: selectedScenario });
       }
 
       startOpenAIRealtime();
