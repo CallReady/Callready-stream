@@ -4076,6 +4076,32 @@ wss.on("connection", (twilioWs, req) => {
           "You must stay focused on gathering: new/returning patient status, name, birthdate, reason for visit, insurance or self-pay, preferred appointment time, caller questions\n";
       }
 
+      // Add checklist tracking for CUSTOM scenarios (gate-based)
+      if (callState.scenarioTag && callState.scenarioTag.startsWith("custom_") && callState.checklist) {
+        instructions +=
+          "\n" +
+          "SCENARIO CONTEXT (reminder for this turn):\n" +
+          "Scenario: " + (callState.userCustomDescription || "a phone call") + "\n" +
+          "You are the person answering the phone.\n" +
+          "Progress through the 6 gates naturally:\n" +
+          "1. ESTABLISH IDENTITY - Get caller name, confirm spelling\n" +
+          "2. CLARIFY PURPOSE - Ask why they're calling, restate to confirm\n" +
+          "3. COLLECT REQUIRED DETAILS - Ask for necessary information\n" +
+          "4. INTRODUCE MILD FRICTION - Present one realistic constraint/question\n" +
+          "5. RESOLVE OR DEFINE NEXT STEP - Offer resolution/action and confirm\n" +
+          "6. CLOSE PROFESSIONALLY - End politely\n" +
+          "\n" +
+          "Progress naturally through the gates without announcing them.\n" +
+          "After Gate 6, say: 'That wraps up this practice call.'\n" +
+          "Then output the completion JSON.\n" +
+          "\n" +
+          "OUTPUT FORMAT INSTRUCTION:\n" +
+          "After you reach Gate 6 and close professionally, output this JSON:\n" +
+          "CHECKLIST_UPDATE_JSON\n" +
+          "{ \\\"GATE_6\\\": {\\\"done\\\": true, \\\"value\\\": \\\"completed\\\"} }\n" +
+          "END_CHECKLIST_UPDATE_JSON\n";
+      }
+
       // Add checklist tracking for doctor_default
       if (callState.scenarioTag === "doctor_default" && callState.checklist) {
         const nextTarget = getNextRequiredChecklistId();
@@ -5637,12 +5663,14 @@ wss.on("connection", (twilioWs, req) => {
               twilioCoachingContexts.set(callSid, {
                 transcript: callState.roleplayTranscript || [],
                 scenarioTag: callState.scenarioTag,
+                userCustomDescription: callState.userCustomDescription || null,
                 feedbackRequested: false
               });
               console.log(nowIso(), "Stored coaching context with transcript and scenario", {
                 callSid,
                 transcriptLength: callState.roleplayTranscript ? callState.roleplayTranscript.length : 0,
-                scenarioTag: callState.scenarioTag
+                scenarioTag: callState.scenarioTag,
+                isCustom: callState.scenarioTag ? callState.scenarioTag.startsWith("custom_") : false
               });
             }
             
@@ -5669,6 +5697,55 @@ wss.on("connection", (twilioWs, req) => {
             // Close the WebSocket
             closeAll("roleplay_checklist_complete");
             return;
+          }
+        }
+
+        // Roleplay: parse and merge checklist updates from text-only JSON block (CUSTOM scenarios)
+        // Do this BEFORE flushing pendingResponseCreate so checklist is current
+        if (callState.phase === "roleplay" && callState.scenarioTag && callState.scenarioTag.startsWith("custom_") && callState.checklist) {
+          const checklistUpdate = parseChecklistUpdateJson(text);
+          if (checklistUpdate && checklistUpdate.GATE_6 && checklistUpdate.GATE_6.done) {
+            // Custom scenario complete: transition to Twilio-based coaching
+            console.log(nowIso(), "Custom scenario roleplay complete (GATE_6 detected), transitioning to coaching");
+            callState.roleplayComplete = true;
+            
+            // Store the transcript and scenario for the coaching/wrap-up endpoints to use
+            if (callSid) {
+              twilioCoachingContexts.set(callSid, {
+                transcript: callState.roleplayTranscript || [],
+                scenarioTag: callState.scenarioTag,
+                userCustomDescription: callState.userCustomDescription || null,
+                feedbackRequested: false
+              });
+              console.log(nowIso(), "Stored coaching context for custom scenario", {
+                callSid,
+                transcriptLength: callState.roleplayTranscript ? callState.roleplayTranscript.length : 0,
+                scenarioTag: callState.scenarioTag
+              });
+            }
+            
+            // Redirect the call to the coaching feedback gathering endpoint via Twilio REST API
+            if (callSid && hasTwilioRest()) {
+              try {
+                const client = twilioClient();
+                console.log(nowIso(), "Redirecting custom scenario call to /gather-coaching-feedback", { callSid });
+                
+                (async () => {
+                  try {
+                    await client.calls(callSid).update({
+                      twiml: `<Response><Redirect method="POST">/gather-coaching-feedback</Redirect></Response>`
+                    });
+                  } catch (e) {
+                    console.log(nowIso(), "Failed to redirect call:", e && e.message ? e.message : e);
+                  }
+                })();
+              } catch (e) {
+                console.log(nowIso(), "Error setting up coaching redirect:", e && e.message ? e.message : e);
+              }
+            }
+            
+            // Close the WebSocket
+            closeAll("custom_roleplay_complete");
           }
         }
 
