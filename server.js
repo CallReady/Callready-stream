@@ -1909,8 +1909,25 @@ app.post("/voice", async (req, res) => {
   }
 });
 
-app.post("/stream-choose-scenario", (req, res) => {
+app.post("/stream-choose-scenario", async (req, res) => {
   try {
+    const callSid = req.body?.CallSid || "";
+    
+    // Mark in memory that opener has already been played via Twilio TwiML
+    if (callSid) {
+      twilioOpenerPlayedFlags.set(callSid, true);
+      console.log(nowIso(), "/stream-choose-scenario set twilio_opener_played flag", { callSid });
+      
+      // Also update DB for persistence/logging (non-blocking)
+      db.none(
+        `UPDATE calls SET custom_state = COALESCE(custom_state, '{}')::jsonb || 
+         '{"twilio_opener_played": true}'::jsonb WHERE call_sid = $1`,
+        [callSid]
+      ).catch(err => {
+        console.error(nowIso(), "/stream-choose-scenario error updating DB flag", { err: err.message, callSid });
+      });
+    }
+
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
@@ -1922,13 +1939,12 @@ app.post("/stream-choose-scenario", (req, res) => {
       return;
     }
 
-    // Start WebSocket at choose_scenario phase
-    const wsUrl = PUBLIC_WSS_URL + (PUBLIC_WSS_URL.includes("?") ? "&" : "?") + "startPhase=choose_scenario";
+    // Start WebSocket - no need for query params since we stored the flag in memory
+    const wsUrl = PUBLIC_WSS_URL;
 
-    console.log(nowIso(), "/stream-choose-scenario building TwiML", {
-      PUBLIC_WSS_URL,
-      paramToAdd: "startPhase=choose_scenario",
-      finalWsUrl: wsUrl.substring(0, 150)
+    console.log(nowIso(), "/stream-choose-scenario building WebSocket connection", {
+      callSid,
+      wsUrl: wsUrl.substring(0, 100)
     });
 
     const connect = vr.connect();
@@ -2515,33 +2531,15 @@ app.post("/gather-result", async (req, res) => {
 });
 
 const server = http.createServer(app);
+
+// In-memory store for Twilio opener flags (callSid => true)
+// Allows /stream-choose-scenario to signal that Twilio already played the opener
+const twilioOpenerPlayedFlags = new Map();
+
 const wss = new WebSocket.Server({ server, path: "/media" });
 
 wss.on("connection", (twilioWs, req) => {
   console.log(nowIso(), "WS CONNECT /media", "version:", CALLREADY_VERSION);
-  
-  // Extract startPhase from URL query parameters (default to "boot" for backward compatibility)
-  let startPhase = "boot";
-  let debugUrl = "N/A";
-  
-  try {
-    if (req && req.url) {
-      debugUrl = req.url;
-      const urlParams = new URL(req.url, "http://localhost");
-      const requestedPhase = urlParams.searchParams.get("startPhase");
-      console.log(nowIso(), "WS URL parsing", { rawUrl: req.url, requestedPhase });
-      if (requestedPhase && ["boot", "opener", "choose_scenario", "connecting", "roleplay", "coaching", "wrap_up", "ending"].includes(requestedPhase)) {
-        startPhase = requestedPhase;
-        console.log(nowIso(), "WS startPhase SET from URL", { startPhase });
-      }
-    } else {
-      console.log(nowIso(), "WS req not available or no URL", { hasReq: !!req, hasUrl: req?.url ? true : false });
-    }
-  } catch (err) {
-    console.error(nowIso(), "WS error parsing URL", { err: err.message, debugUrl });
-  }
-
-  console.log(nowIso(), "WS connection initialized", { startPhase, openerSentWillBe: startPhase !== "boot" && startPhase !== "opener" });
 
   let streamSid = null;
   let callSid = null;
@@ -2550,9 +2548,7 @@ wss.on("connection", (twilioWs, req) => {
   let openaiReady = false;
   let closing = false;
 
-  // Mark opener as sent if we're starting from a phase after opener (TwiML handled it)
-  let openerSent = startPhase !== "boot" && startPhase !== "opener";
-  console.log(nowIso(), "WS openerSent flag set", { startPhase, openerSent });
+  let openerSent = false;
   let responseActive = false;
 
   let openerAudioDeltaCount = 0;
@@ -2592,7 +2588,7 @@ wss.on("connection", (twilioWs, req) => {
 
   // Server-owned lightweight call state (we will start using this in the next steps)
   const callState = {
-    phase: startPhase,           // boot, opener, choose_scenario, roleplay, coaching, wrap_up, ending
+    phase: "boot",               // boot, opener, choose_scenario, roleplay, coaching, wrap_up, ending
     callType: "outgoing",        // Always outgoing (user is caller, AI is receptionist/answerer)
     role: "answerer",            // Always answerer (AI answers as receptionist)
     scenarioTag: null,           // snake_case tag once known
@@ -4919,6 +4915,13 @@ wss.on("connection", (twilioWs, req) => {
       usageLog.callSid = callSid || null;
       usageLog.streamSid = streamSid || null;
       usageLog.startedAtMs = Date.now();
+
+      // Check if Twilio opener was already played via TwiML (using in-memory flag)
+      if (callSid && twilioOpenerPlayedFlags.has(callSid)) {
+        openerSent = true;
+        twilioOpenerPlayedFlags.delete(callSid); // Clean up after use
+        console.log(nowIso(), "WS: Set openerSent=true (twilio_opener_played flag found in memory)", { callSid });
+      }
 
 
       if (callSid) {
