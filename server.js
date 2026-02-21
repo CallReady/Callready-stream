@@ -2550,13 +2550,7 @@ wss.on("connection", (twilioWs, req) => {
   let openaiReady = false;
   let closing = false;
 
-  let openerSent = false;
   let responseActive = false;
-
-  let openerAudioDeltaCount = 0;
-  let openerResent = false;
-  let openerRetryTimer = null;
-  let openerNoAudioTimer = null;
 
   let turnDetectionEnabled = false;
 
@@ -3210,10 +3204,6 @@ wss.on("connection", (twilioWs, req) => {
     } catch { }
 
     try {
-      if (openerRetryTimer) clearTimeout(openerRetryTimer);
-    } catch { }
-
-    try {
       if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
     } catch { }
     try {
@@ -3501,49 +3491,6 @@ wss.on("connection", (twilioWs, req) => {
     // Define the preferred order for collecting doctor appointment checklist items.
     // Edit this array to change the order in which the AI asks for information.
     return ["new_or_returning_patient", "birthdate", "patient_name", "reason_for_appointment", "insurance", "appointment_preference", "confirmation_preference", "questions_and_closing"];
-  }
-
-  function sendOpenerOnce(label) {
-    console.log(nowIso(), "Sending opener", label ? "(" + label + ")" : "");
-    setPhase("opener", "sendOpenerOnce");
-    const openerSpeech = buildDynamicOpenerSpeech();
-    if (openerNoAudioTimer) {
-      clearTimeout(openerNoAudioTimer);
-    }
-    openerNoAudioTimer = setTimeout(() => {
-      console.log(nowIso(), "No opener audio received, redirecting to /unavailable");
-      redirectCallToUnavailable("opener_no_audio");
-    }, 3000);
-
-    openaiResponseCreate({
-      type: "response.create",
-      response: {
-        modalities: ["audio", "text"],
-        instructions: "Speak this exactly, naturally, then stop speaking:\n" + openerSpeech,
-      },
-    });
-  }
-
-  function armOpenerRetryTimer() {
-    if (openerRetryTimer) return;
-
-    openerRetryTimer = setTimeout(() => {
-      if (turnDetectionEnabled) return;
-      if (!openerSent) return;
-      if (openerAudioDeltaCount > 0) return;
-      if (openerResent) return;
-
-      if (responseActive) {
-        console.log(nowIso(), "Opener retry waiting, OpenAI response still active");
-        try { openerRetryTimer = null; } catch { }
-        armOpenerRetryTimer();
-        return;
-      }
-
-      openerResent = true;
-      console.log(nowIso(), "Opener audio did not arrive, resending opener once");
-      sendOpenerOnce("retry");
-    }, 1500);
   }
 
   function prepForEnding() {
@@ -3936,19 +3883,62 @@ wss.on("connection", (twilioWs, req) => {
         },
       });
 
-      if (!openerSent) {
-        console.log(nowIso(), "Sending opener because openerSent was false", { callState: callState.phase });
-        openerSent = true;
-        openerAudioDeltaCount = 0;
-        openerResent = false;
-
-        setTimeout(() => {
-          sendOpenerOnce("initial");
-          armOpenerRetryTimer();
+      // Opener is always played by Twilio TwiML now, so enable VAD and transition directly to choose_scenario
+      setTimeout(() => {
+        console.log(nowIso(), "Twilio opener completed, enabling VAD and transitioning to choose_scenario");
+        
+        // Clear audio buffer
+        openaiSend({ type: "input_audio_buffer.clear" });
+          
+          // Enable VAD
+          openaiSend({
+            type: "session.update",
+            session: {
+              turn_detection: {
+                type: "server_vad",
+                silence_duration_ms: 1000,
+                prefix_padding_ms: 500,
+                threshold: 0.45,
+                create_response: false,
+                interrupt_response: false,
+              },
+            },
+          });
+          
+          // Set flags as if opener just completed
+          waitingForFirstCallerSpeech = false;
+          sawSpeechStarted = true;
+          requireCallerSpeechBeforeNextAI = false;
+          sawCallerSpeechSinceLastAIDone = true;
+          
+          // Clear aiSpeaking flag
+          try {
+            if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
+          } catch { }
+          
+          aiSpeakingTailTimer = setTimeout(() => {
+            aiSpeaking = false;
+            try {
+              openaiSend({ type: "input_audio_buffer.clear" });
+            } catch { }
+          }, 50);
+          
+          // Transition to choose_scenario phase
+          setPhase("choose_scenario", "post-twilio-opener");
+          callState.scenarioChosen = false;
+          awaitingScenarioTag = false;
+          callState.scenarioCaptureInFlight = false;
+          callState.scenarioConfirmCaptureInFlight = false;
+          
+          // Send choose_scenario question
+          openaiResponseCreate({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              instructions: buildPhaseInstructions("twilio_opener_skip"),
+            },
+          });
         }, 250);
-      } else {
-        console.log(nowIso(), "Skipping opener because openerSent is already true", { callState: callState.phase });
-      }
     });
 
     openaiWs.on("message", (data) => {
@@ -4229,10 +4219,6 @@ wss.on("connection", (twilioWs, req) => {
       }
 
       if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
-        if (openerNoAudioTimer) {
-          clearTimeout(openerNoAudioTimer);
-          openerNoAudioTimer = null;
-        }
         if (aiAudioBytesThisResponse === 0 && (callState.phase === "connecting" || callState.phase === "roleplay")) {
           // Audio started
         }
@@ -4244,14 +4230,6 @@ wss.on("connection", (twilioWs, req) => {
 
         // Block listening until estimated playback end plus a small safety buffer
         listenBlockUntilMs = Date.now() + audioMs + 10;
-
-
-        if (!turnDetectionEnabled && openerSent) {
-          openerAudioDeltaCount += 1;
-          if (openerAudioDeltaCount === 1) {
-
-          }
-        }
 
         if (turnDetectionEnabled && waitingForFirstCallerSpeech && !sawSpeechStarted) {
           cancelOpenAIResponseIfAnyOnce("AI spoke before first caller speech");
@@ -4672,141 +4650,6 @@ wss.on("connection", (twilioWs, req) => {
           return;
         }
 
-        if (openerSent && !turnDetectionEnabled) {
-          turnDetectionEnabled = true;
-          waitingForFirstCallerSpeech = true;
-          sawSpeechStarted = false;
-
-          requireCallerSpeechBeforeNextAI = false;
-          sawCallerSpeechSinceLastAIDone = false;
-
-          console.log(nowIso(), "Opener done, enabling VAD and clearing buffer");
-
-          try {
-            if (openerRetryTimer) clearTimeout(openerRetryTimer);
-          } catch { }
-          openerRetryTimer = null;
-
-          openaiSend({ type: "input_audio_buffer.clear" });
-
-          openaiSend({
-            type: "session.update",
-            session: {
-              turn_detection: {
-                type: "server_vad",
-                silence_duration_ms: 1000,
-                prefix_padding_ms: 500,
-                threshold: 0.45,
-                create_response: false,
-                interrupt_response: false,
-              },
-            },
-          });
-
-          waitingForFirstCallerSpeech = false;
-          sawSpeechStarted = true;
-          requireCallerSpeechBeforeNextAI = false;
-          sawCallerSpeechSinceLastAIDone = true;
-
-          try {
-            if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
-          } catch { }
-
-          aiSpeakingTailTimer = setTimeout(() => {
-            aiSpeaking = false;
-
-            try {
-              openaiSend({ type: "input_audio_buffer.clear" });
-            } catch { }
-          }, 50);
-
-          // Skip call type phase and go directly to scenario selection
-          setPhase("choose_scenario", "post-opener");
-          callState.scenarioChosen = false;
-          awaitingScenarioTag = false;
-          callState.scenarioCaptureInFlight = false;
-          callState.scenarioConfirmCaptureInFlight = false;
-
-          openaiResponseCreate({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              instructions:
-                "Ask exactly one question in a calm, natural way:\n" +
-                "\"Do you already have a call in mind, or would you like me to pick one for you?\"\n" +
-                "Wait for the response.\n" +
-                "Do not output SCENARIO_PICK in this message.\n" +
-                "Then stop speaking and wait.",
-            },
-          });
-
-          return;
-        }
-
-        // Opener: parse response to returning caller's last scenario question
-        if (
-          msg.type === "conversation.item.input_audio_transcription.completed" &&
-          callState.phase === "opener" &&
-          priorContext &&
-          priorContext.scenario_tag &&
-          !returningCallerAskedAboutLastScenario
-        ) {
-          const againRe =
-            /\b(again|same|that|last|yes|yep|yeah|sure|okay|ok|repeat)\b/i;
-          const newRe =
-            /\b(new|different|something else|other|nope|no|try|change)\b/i;
-
-          if (againRe.test(u)) {
-            // Practice the same scenario
-            callState.scenarioTag = priorContext.scenario_tag;
-            callState.scenarioChosen = false;
-            callState.scenarioConfirmCaptureInFlight = true;
-
-            returningCallerAskedAboutLastScenario = true;
-            setPhase("choose_scenario", "returning_caller_confirmed_last_scenario");
-
-            const lastScenario = scenarioTagToHumanFriendly(priorContext.scenario_tag);
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "Say exactly: \"Okay, let's practice " + lastScenario + ". Does that sound good?\"\n" +
-                  "Then wait for the response.\n",
-              },
-            });
-
-            return;
-          }
-
-          if (newRe.test(u)) {
-            // Try something new - go to scenario selection
-            returningCallerAskedAboutLastScenario = true;
-            callState.scenarioChosen = false;
-            awaitingScenarioTag = false;
-            callState.scenarioCaptureInFlight = false;
-            callState.scenarioConfirmCaptureInFlight = false;
-            callState.scenarioTag = null;
-
-            setPhase("choose_scenario", "returning_caller_wants_new_scenario");
-
-            openaiResponseCreate({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                instructions:
-                  "Ask exactly one question in a calm, natural way:\n" +
-                  "\"Do you already have a call in mind, or would you like me to pick one for you?\"\n" +
-                  "Wait for the response.\n" +
-                  "Do not output SCENARIO_PICK in this message.\n" +
-                  "Then stop speaking and wait.",
-              },
-            });
-
-            return;
-          }
-        }
-
         if (turnDetectionEnabled) {
           // Detect natural scenario wrap-up and whether we crossed the soft threshold
           try {
@@ -4920,9 +4763,8 @@ wss.on("connection", (twilioWs, req) => {
 
       // Check if Twilio opener was already played via TwiML (using in-memory flag)
       if (callSid && twilioOpenerPlayedFlags.has(callSid)) {
-        openerSent = true;
         twilioOpenerPlayedFlags.delete(callSid); // Clean up after use
-        console.log(nowIso(), "WS: Set openerSent=true (twilio_opener_played flag found in memory)", { callSid });
+        console.log(nowIso(), "WS: Twilio opener flag found and cleaned up", { callSid });
       }
 
 
