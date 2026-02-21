@@ -1967,9 +1967,10 @@ app.post("/gather-choose-scenario", async (req, res) => {
 });
 
 // PREVIOUS_SCENARIO PHASE: Ask returning caller if they want to re-practice their previous scenario
-app.post("/gather-previous-scenario", async (req, res) => {
+app.all("/gather-previous-scenario", async (req, res) => {
   try {
-    const callSid = req.body?.CallSid || "";
+    // Handle both POST (with CallSid in body) and GET (with CallSid in query)
+    const callSid = (req.body?.CallSid || req.query?.CallSid || "");
     const retry = req.query?.retry === "1";
 
     console.log(nowIso(), "/gather-previous-scenario", { callSid, retry });
@@ -2011,11 +2012,12 @@ app.post("/gather-previous-scenario", async (req, res) => {
 });
 
 // Process response to previous scenario question (yes/no)
-app.post("/process-previous-scenario", async (req, res) => {
+app.all("/process-previous-scenario", async (req, res) => {
   try {
-    const callSid = req.body?.CallSid || "";
-    const speechResult = (req.body?.SpeechResult || "").toLowerCase();
-    const confidence = parseFloat(req.body?.Confidence || "0");
+    // Handle both POST (with data in body) and GET (with data in query)
+    const callSid = (req.body?.CallSid || req.query?.CallSid || "");
+    const speechResult = ((req.body?.SpeechResult || req.query?.SpeechResult || "")).toLowerCase();
+    const confidence = parseFloat(req.body?.Confidence || req.query?.Confidence || "0");
 
     console.log(nowIso(), "/process-previous-scenario", { callSid, speechResult, confidence });
 
