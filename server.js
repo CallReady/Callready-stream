@@ -4172,20 +4172,13 @@ wss.on("connection", (twilioWs, req) => {
             "You have handled the call successfully.\n" +
             "Now close professionally with warmth: 'Thanks for calling!', 'Have a great day!', etc.\n" +
             "\n" +
-            "MANDATORY JSON OUTPUT:\n" +
-            "When you close the call, output in this format:\n" +
+            "After your closing, silently call:\n" +
+            "mark_checklist_item_complete(field_id='professional_close', value='completed')\n" +
             "\n" +
-            "Have a great day!\n" +
-            "\n" +
-            "---JSON_SERVER_DATA_START---\n" +
-            "CHECKLIST_UPDATE_JSON\n" +
-            "{\"professional_close\": {\"done\": true, \"value\": \"completed\"}}\n" +
-            "END_CHECKLIST_UPDATE_JSON\n" +
-            "---JSON_SERVER_DATA_END---\n" +
-            "\n" +
-            "Caller hears: 'Have a great day!'\n" +
-            "Server receives: checklist update marking professional_close as done\n" +
-            "DO NOT SPEAK THE JSON - Write it in text only after speaking your closing.\n" +
+            "Example:\n" +
+            "YOU SPEAK: 'Have a great day!'\n" +
+            "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='professional_close', value='completed')\n" +
+            "Caller only hears: 'Have a great day!'\n" +
             "\n";
         } else if (nextTarget) {
           const customInstructions = getCustomChecklistFieldInstructions(nextTarget);
@@ -4208,28 +4201,15 @@ wss.on("connection", (twilioWs, req) => {
             ? "STILL GATHERING: " + remaining.join(", ") + "\n"
             : "All required items are gathered. Close the call professionally.\n") +
           "\n" +
-          "CRITICAL - DO NOT SPEAK THE JSON:\n" +
-          "The JSON markers and content are ONLY for the server to read.\n" +
-          "Do NOT speak, read, or say anything between the markers out loud.\n" +
-          "SPEAK your natural response FIRST, then output the JSON markers silently in text only.\n" +
-          "\n" +
-          "OUTPUT FORMAT INSTRUCTION:\n" +
-          "After EVERY response, output a checklist update JSON block using markers.\n" +
+          "TRACKING COMPLETION:\n" +
+          "After EVERY response where you collect information, silently call the mark_checklist_item_complete function.\n" +
+          "This is COMPLETELY SILENT - the caller never hears it.\n" +
           "\n" +
           "Example: After caller says 'My name is Alex':\n" +
+          "YOU SPEAK: 'Nice to meet you, Alex!'\n" +
+          "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='caller_identity', value='Alex')\n" +
           "\n" +
-          "Nice to meet you, Alex!\n" +
-          "\n" +
-          "---JSON_SERVER_DATA_START---\n" +
-          "CHECKLIST_UPDATE_JSON\n" +
-          "{\"caller_identity\": {\"done\": true, \"value\": \"Alex\"}}\n" +
-          "END_CHECKLIST_UPDATE_JSON\n" +
-          "---JSON_SERVER_DATA_END---\n" +
-          "\n" +
-          "Caller hears: 'Nice to meet you, Alex!'\n" +
-          "YOU SPEAK: 'Nice to meet you, Alex!' (STOP SPEAKING HERE)\n" +
-          "YOU WRITE IN TEXT ONLY: The JSON block (silent, not spoken)\n" +
-          "\n" +
+          "The caller only hears 'Nice to meet you, Alex!'\n" +
           "Only include checklist IDs you are updating this turn.\n";
       }
 
@@ -4264,19 +4244,13 @@ wss.on("connection", (twilioWs, req) => {
             "Provide a professional closing statement.\n" +
             "Thank them for calling and wish them a good day.\n" +
             "\n" +
-            "MANDATORY JSON OUTPUT:\n" +
-            "When you close the call, output in this format:\n" +
+            "After your closing, silently call:\n" +
+            "mark_checklist_item_complete(field_id='questions_and_closing', value='completed')\n" +
             "\n" +
-            "Have a great day!\n" +
-            "\n" +
-            "---JSON_SERVER_DATA_START---\n" +
-            "CHECKLIST_UPDATE_JSON\n" +
-            "{\"questions_and_closing\": {\"done\": true, \"value\": \"completed\"}}\n" +
-            "END_CHECKLIST_UPDATE_JSON\n" +
-            "---JSON_SERVER_DATA_END---\n" +
-            "\n" +
-            "Caller hears: 'Have a great day!'\n" +
-            "Server receives: checklist update marking questions_and_closing as done\n" +
+            "Example:\n" +
+            "YOU SPEAK: 'Have a great day!'\n" +
+            "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='questions_and_closing', value='completed')\n" +
+            "Caller only hears: 'Have a great day!'\n" +
             "\n";
         } else {
           // Add specific field instructions if available
@@ -4301,27 +4275,16 @@ wss.on("connection", (twilioWs, req) => {
             ? "STILL GATHERING: " + remaining.join(", ") + "\n"
             : "All required items are gathered. Proceed directly to wrap up without recapping the details.\n") +
           "\n" +
-          "CRITICAL - DO NOT SPEAK THE JSON:\n" +
-          "The JSON markers and content are ONLY for the server to read.\n" +
-          "Do NOT speak, read, or say anything between the markers out loud.\n" +
-          "SPEAK your natural response FIRST, then output the JSON markers silently in text only.\n" +
+          "TRACKING COMPLETION:\n" +
+          "After EVERY response where you collect information, silently call the mark_checklist_item_complete function.\n" +
+          "This is COMPLETELY SILENT - the caller never hears it.\n" +
           "\n" +
-          "REMEMBER: You MUST output the JSON block after EVERY response using the markers.\n" +
-          "The caller will ONLY hear words before ---JSON_SERVER_DATA_START---.\n" +
+          "Example: Caller says 'My name is Sarah Miller'\n" +
+          "YOU SPEAK: 'Great, Sarah!'\n" +
+          "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='patient_name', value='Sarah Miller')\n" +
           "\n" +
-          "Example: Caller says 'My name is Sarah Miller':\n" +
-          "\n" +
-          "Great, Sarah!\n" +
-          "\n" +
-          "---JSON_SERVER_DATA_START---\n" +
-          "CHECKLIST_UPDATE_JSON\n" +
-          "{\"patient_name\": {\"done\": true, \"value\": \"Sarah Miller\"}}\n" +
-          "END_CHECKLIST_UPDATE_JSON\n" +
-          "---JSON_SERVER_DATA_END---\n" +
-          "\n" +
-          "Caller hears: 'Great, Sarah!'\n" +
-          "YOU SPEAK: 'Great, Sarah!' (STOP SPEAKING HERE)\n" +
-          "YOU WRITE IN TEXT ONLY: The JSON block (silent, not spoken)\n";
+          "The caller only hears 'Great, Sarah!'\n" +
+          "The function call happens automatically without interrupting the conversation.\n";
       }
 
       return instructions;
@@ -5002,19 +4965,19 @@ wss.on("connection", (twilioWs, req) => {
         "Ask for the caller's name.\n" +
         "Say: 'May I get your name?' or 'And your name is...?'\n" +
         "If the name is uncommon, ask them to spell it.\n" +
-        "Mark this field done with their name.",
+        "After they respond, call mark_checklist_item_complete(field_id='caller_identity', value='<their name>').",
       
       call_purpose: 
         "Ask why they're calling and restate it back to confirm understanding.\n" +
         "Say: 'What can I help you with today?' or 'What brings you in?'\n" +
         "Then confirm: 'So you're calling about [their reason]?'\n" +
-        "Mark this field done with their call purpose.",
+        "After confirming, call mark_checklist_item_complete(field_id='call_purpose', value='<their reason>').",
       
       required_details: 
         "Ask for at least one scenario-specific detail.\n" +
         "Examples: phone number, account number, preferred time, specific product/service, etc.\n" +
         "What matters depends on your role and the call purpose.\n" +
-        "Mark this field done with the key detail they provide.",
+        "After they provide it, call mark_checklist_item_complete(field_id='required_details', value='<the detail>').",
       
       friction_point: 
         "Present ONE realistic constraint, limitation, or follow-up question.\n" +
@@ -5022,7 +4985,7 @@ wss.on("connection", (twilioWs, req) => {
         "- 'We're booking 2-3 weeks out. Is that okay?'\n" +
         "- 'That requires a $50 setup fee. Does that work?'\n" +
         "- 'We don't have that in stock, but we have [alternative]. Interested?'\n" +
-        "This adds authenticity. Mark done when you've presented the constraint.",
+        "This adds authenticity. After presenting constraint, call mark_checklist_item_complete(field_id='friction_point', value='<what you presented>').",
       
       next_step: 
         "Define what happens next or what you can offer.\n" +
@@ -5030,12 +4993,12 @@ wss.on("connection", (twilioWs, req) => {
         "- 'I've got you down for next Thursday at 2 PM.'\n" +
         "- 'I'll email you that quote by end of day.'\n" +
         "- 'We'll ship that tomorrow.'\n" +
-        "Mark done when you've confirmed the next step.",
+        "After confirming next step, call mark_checklist_item_complete(field_id='next_step', value='<the next step>').",
       
       professional_close: 
         "End the call professionally with warmth.\n" +
         "Say: 'Thanks for calling!', 'Have a great day!', 'Looking forward to working with you!'\n" +
-        "Mark done when you've closed."
+        "After closing, call mark_checklist_item_complete(field_id='professional_close', value='completed')."
     };
     
     return instructions[fieldName] || "";
@@ -5493,6 +5456,28 @@ wss.on("connection", (twilioWs, req) => {
             "1) Say exactly: Okay.\n" +
             "2) In TEXT ONLY, output exactly one line: CALLREADY_END: END_CALL_NOW\n" +
             "Never say the token out loud.\n",
+          tools: [
+            {
+              type: "function",
+              name: "mark_checklist_item_complete",
+              description: "Silently mark a checklist item as complete after collecting information from the caller. Use this after every question you ask when roleplay instructions tell you to track checklist progress.",
+              parameters: {
+                type: "object",
+                properties: {
+                  field_id: {
+                    type: "string",
+                    description: "The checklist field identifier (e.g., 'patient_name', 'birthdate', 'caller_identity', etc.)"
+                  },
+                  value: {
+                    type: "string",
+                    description: "The information collected from the caller (e.g., their name, date, preference, etc.)"
+                  }
+                },
+                required: ["field_id", "value"]
+              }
+            }
+          ],
+          tool_choice: "auto"
         },
       });
 
@@ -6007,6 +5992,30 @@ wss.on("connection", (twilioWs, req) => {
         
         responseActive = false;
         callState.openaiResponseActive = false;
+        
+        // Handle function calls (silent checklist updates)
+        if (msg.response && msg.response.output) {
+          for (const item of msg.response.output) {
+            if (item.type === "function_call" && item.name === "mark_checklist_item_complete") {
+              try {
+                const args = typeof item.arguments === "string" ? JSON.parse(item.arguments) : item.arguments;
+                const field_id = args.field_id;
+                const value = args.value;
+                
+                console.log(nowIso(), "Function call: mark_checklist_item_complete", { field_id, value });
+                
+                // Update checklist if we're in roleplay with a checklist
+                if (callState.phase === "roleplay" && callState.checklist && field_id in callState.checklist) {
+                  callState.checklist[field_id].done = true;
+                  callState.checklist[field_id].value = value;
+                  console.log(nowIso(), "Checklist item updated via function call", { field_id, done: true, value });
+                }
+              } catch (e) {
+                console.log(nowIso(), "Error processing function call", { error: e.message });
+              }
+            }
+          }
+        }
         
         // Capture roleplay transcript for coaching feedback (AI responses)
         if (callState.phase === "roleplay" && cleanedText && cleanedText.trim()) {
