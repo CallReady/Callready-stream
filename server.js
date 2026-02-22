@@ -4089,50 +4089,7 @@ wss.on("connection", (twilioWs, req) => {
         "Brief acknowledgments are fine.\n" +
         "Natural fragments are fine.\n" +
         "Do not sound scripted or corporate.\n" +
-        "Stay warm and professional.\n" +
-        "\n" +
-        "CRITICAL - JSON OUTPUT REQUIREMENT (MANDATORY EVERY TURN):\n" +
-        "After you give your spoken response, you MUST output the JSON on separate lines.\n" +
-        "Use this exact format:\n" +
-        "\n" +
-        "[Your normal spoken response here]\n" +
-        "\n" +
-        "---JSON_SERVER_DATA_START---\n" +
-        "CHECKLIST_UPDATE_JSON\n" +
-        "{\"field_name\": {\"done\": true, \"value\": \"what they said\"}}\n" +
-        "END_CHECKLIST_UPDATE_JSON\n" +
-        "---JSON_SERVER_DATA_END---\n" +
-        "\n" +
-        "CRITICAL: Everything between the ---JSON_SERVER_DATA_START--- and ---JSON_SERVER_DATA_END--- markers\n" +
-        "will NOT be spoken to the caller. This is for server tracking only.\n" +
-        "The caller will ONLY hear the words BEFORE ---JSON_SERVER_DATA_START---.\n" +
-        "\n" +
-        "Example 1 (caller tells you their name):\n" +
-        "Caller: 'My name is Sarah Miller'\n" +
-        "You output:\n" +
-        "Great, Sarah!\n" +
-        "\n" +
-        "---JSON_SERVER_DATA_START---\n" +
-        "CHECKLIST_UPDATE_JSON\n" +
-        "{\"patient_name\": {\"done\": true, \"value\": \"Sarah Miller\"}}\n" +
-        "END_CHECKLIST_UPDATE_JSON\n" +
-        "---JSON_SERVER_DATA_END---\n" +
-        "\n" +
-        "Caller hears: 'Great, Sarah!'\n" +
-        "Server receives: checklist update with name\n" +
-        "\n" +
-        "Example 2 (no new info this turn):\n" +
-        "You output:\n" +
-        "And what's your date of birth?\n" +
-        "\n" +
-        "---JSON_SERVER_DATA_START---\n" +
-        "CHECKLIST_UPDATE_JSON\n" +
-        "{}\n" +
-        "END_CHECKLIST_UPDATE_JSON\n" +
-        "---JSON_SERVER_DATA_END---\n" +
-        "\n" +
-        "REMEMBER: Always include the start and end markers, even if the JSON is empty {}.\n" +
-        "Never, ever speak the markers, field names, or JSON to the caller. Only natural speech before the markers.\n";
+        "Stay warm and professional.\n";
 
       // Add scenario context and goal reminder for every turn
       if (callState.scenarioTag === "doctor_default") {
@@ -4911,44 +4868,44 @@ wss.on("connection", (twilioWs, req) => {
         "Ask if they are a new patient or returning patient.\n" +
         "If new: say 'Welcome! Are you a new patient with us or have you been seen here before?'\n" +
         "If returning: acknowledge and continue.\n" +
-        "Mark this field done with value 'new' or 'returning'.",
+        "After they answer, call mark_checklist_item_complete(field_id='new_or_returning_patient', value='new' or 'returning').",
       
       birthdate: 
         "Ask for their date of birth.\n" +
         "Say something like: 'Can I get your date of birth?' or 'What's your birthdate?'\n" +
         "Accept any format (MM/DD/YYYY, Month Day Year, etc.).\n" +
-        "Mark this field done with the birthdate they provide.",
+        "After they provide it, call mark_checklist_item_complete(field_id='birthdate', value='<their birthdate>').",
       
       patient_name: 
         "Ask for their full name.\n" +
         "Say: 'May I have your full name?' or 'Can I get your name please?'\n" +
         "If the name is uncommon or hard to spell, ask: 'Can you spell that for me?'\n" +
-        "Mark this field done with their full name.",
+        "After they provide it, call mark_checklist_item_complete(field_id='patient_name', value='<their full name>').",
       
       reason_for_appointment: 
         "Ask why they're calling or what they need to see the doctor for.\n" +
         "Say: 'What brings you in?' or 'What's the reason for your visit?'\n" +
         "Accept brief descriptions (annual checkup, sick visit, follow-up, specific symptom, etc.).\n" +
-        "Mark this field done with their reason.",
+        "After they tell you, call mark_checklist_item_complete(field_id='reason_for_appointment', value='<their reason>').",
       
       insurance: 
         "Ask about insurance coverage.\n" +
         "Say: 'Do you have insurance, or will you be paying out-of-pocket?'\n" +
         "If they say insurance: ask 'What insurance do you have?' or 'Who's your insurance through?'\n" +
         "If self-pay: acknowledge 'Okay, we'll mark you as self-pay.'\n" +
-        "Mark this field done with insurance name or 'self-pay'.",
+        "After they answer, call mark_checklist_item_complete(field_id='insurance', value='<insurance name or self-pay>').",
       
       appointment_preference: 
         "Ask when they'd like to come in.\n" +
         "Say: 'When would you like to come in?' or 'What day works best for you?'\n" +
         "Offer options if they're unsure: 'We have openings next Tuesday at 10 AM or Thursday at 2 PM. Which works better?'\n" +
-        "Mark this field done with the date/time preference they choose.",
+        "After they choose, call mark_checklist_item_complete(field_id='appointment_preference', value='<date/time preference>').",
       
       confirmation_preference: 
         "Ask how they'd like to receive appointment reminders.\n" +
-        "Say: 'Would you like a text or a phone to remind you of your appointment?'\n" +
+        "Say: 'Would you like a text or a phone call to remind you of your appointment?'\n" +
         "Ask for a phone number if they would like a reminder.\n" +
-        "Mark this field done with 'text', 'call', or 'email'.",
+        "After they answer, call mark_checklist_item_complete(field_id='confirmation_preference', value='text' or 'call' or 'email').",
       
       questions_and_closing: 
         "This is handled by special logic - see QUESTIONS AND CLOSING PHASE instructions.\n" +
