@@ -2110,29 +2110,32 @@ app.post("/process-choose-scenario", async (req, res) => {
 
     const text = speechResult.toLowerCase().trim();
 
-    // Check if user wants AI to pick
-    const pickForMeRe = /\b(pick|choose|select|you pick|you choose|surprise|don't care|doesn't matter|whatever|go ahead)\b/i;
+    // Simplified intent detection: prioritize clear "userHasPlan" first, then default to "AI picks"
     
-    // Check if user has one in mind
-    const haveOneRe = /\b(have|yes|got|specific|mind|already know|know what|particular|i have|i do|mine)\b/i;
+    // Check if user has a scenario in mind (strong signal: yes, have, specific, mine, already know, my own)
+    const userHasPlan = /\b(yes|have|got|my own|specific|mind|already know|know what|mine|i do|custom|personal)\b/.test(text);
+    
+    // Check if user wants AI to pick (includes: pick, choose, surprise, whatever, don't care, you pick, you choose, go ahead)
+    const userWantsAIPick = /\b(pick|choose|select|surprise|whatever|don't care|doesn't matter|go ahead|you pick|you choose)\b/.test(text);
+    
+    // Prioritize userHasPlan over userWantsAIPick (if both match, assume user has a plan)
+    if (userHasPlan && !userWantsAIPick) {
+      // User has a scenario in mind - ask them to describe it
+      if (callSid) {
+        twilioChooseScenarioRetries.delete(callSid);
+      }
+      vr.redirect({ method: "POST" }, "/gather-describe-call");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
 
-    if (pickForMeRe.test(text) && !haveOneRe.test(text)) {
+    if (userWantsAIPick) {
       // User wants AI to pick - auto-pick doctor_default and confirm
       if (callSid) {
         twilioChooseScenarioRetries.delete(callSid);
         twilioScenarioFlags.set(callSid, "doctor_default");
       }
       vr.redirect({ method: "POST" }, "/gather-confirm-doctor");
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
-    if (haveOneRe.test(text) || /\b(no|nope|i do|i have)\b/i.test(text)) {
-      // User has a scenario in mind - ask them to describe it
-      if (callSid) {
-        twilioChooseScenarioRetries.delete(callSid);
-      }
-      vr.redirect({ method: "POST" }, "/gather-describe-call");
       res.type("text/xml").send(vr.toString());
       return;
     }
