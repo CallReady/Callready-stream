@@ -2024,7 +2024,7 @@ app.all("/gather-previous-scenario", async (req, res) => {
 
     const gather = vr.gather({
       input: "speech",
-      timeout: 3,
+      timeout: 5,
       speechTimeout: "auto",
       action: "/process-previous-scenario",
       method: "POST",
