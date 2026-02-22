@@ -4109,11 +4109,11 @@ wss.on("connection", (twilioWs, req) => {
           "\n" +
           "Example openers:\n" +
           "- 'Hello, thank you for calling Coastline Dental. This is Jennifer. How can I help you?'\n" +
-          "- 'Hi, thanks for calling Park Street Events. I'm David. What can I do for you?'\n" +
+          "- 'Hi, thanks for calling Park Street Events. I'm Alex. What can I do for you?'\n" +
           "- 'Good afternoon, Harmony Wellness Center, this is Maya speaking. What brings you in today?'\n" +
           "\n" +
           "GATES - PROGRESS THROUGH THEM ADAPTIVELY:\n" +
-          "You will progress through 6 gates. NOT all gates need equal weight - adapt them to fit the scenario:\n" +
+          "You will progress through 6 gates. NOT all gates need equal weight - adapt or skip them to fit the scenario:\n" +
           "\n" +
           "GATE 1: ESTABLISH IDENTITY\n" +
           "Get the caller's name (and confirm spelling if needed). Natural format: 'May I get your name?' / 'And your name is...?'\n" +
@@ -4146,8 +4146,6 @@ wss.on("connection", (twilioWs, req) => {
           "\n" +
           "Progress naturally through these gates. Do NOT announce the gates or number them in your speech.\n" +
           "Speak like a real receptionist/customer service person - conversational, not mechanical.\n" +
-          "After you complete Gate 6, say: 'That wraps up this practice call.'\n" +
-          "Then output the completion JSON.\n" +
           "\n" +
           "OUTPUT FORMAT INSTRUCTION:\n" +
           "After you reach Gate 6 and close professionally, output this JSON:\n" +
@@ -4178,9 +4176,8 @@ wss.on("connection", (twilioWs, req) => {
             "After answering their question(s), ask: 'Do you have any other questions?'\n" +
             "Repeat this loop until they indicate they have no further questions (e.g., 'No', 'I think that's all', 'That's it', etc.).\n" +
             "Once they confirm no more questions:\n" +
-            "Provide a professional closing statement like:\n" +
-            "'Great! We'll see you on [APPOINTMENT_DATE] at [APPOINTMENT_TIME]. Have a great day!'\n" +
-            "Use the appointment_preference value you collected to fill in the date/time in the closing.\n" +
+            "Provide a professional closing statement including, if appropriate, the appointment date and time:\n" +
+            "Thank them for calling and wish them a good day: Have a great day!'\n" +
             "Then mark questions_and_closing as done.\n" +
             "\n" +
             "OUTPUT FORMAT:\n" +
@@ -4188,6 +4185,16 @@ wss.on("connection", (twilioWs, req) => {
             "{ \"questions_and_closing\": {\"done\": true, \"value\": \"completed\"} }\n" +
             "\n";
         } else {
+          // Add specific field instructions if available
+          const fieldInstructions = getDoctorChecklistFieldInstructions(nextTarget);
+          if (fieldInstructions) {
+            instructions +=
+              "\n" +
+              "HOW TO COLLECT " + nextTarget.toUpperCase() + ":\n" +
+              fieldInstructions + "\n" +
+              "\n";
+          }
+          
           instructions +=
             "Your next question should primarily aim to collect NEXT_TARGET.\n" +
             "Do not jump ahead unless the caller volunteers relevant information.\n" +
@@ -4829,6 +4836,60 @@ wss.on("connection", (twilioWs, req) => {
     // Define the preferred order for collecting doctor appointment checklist items.
     // Edit this array to change the order in which the AI asks for information.
     return ["new_or_returning_patient", "birthdate", "patient_name", "reason_for_appointment", "insurance", "appointment_preference", "confirmation_preference", "questions_and_closing"];
+  }
+
+  function getDoctorChecklistFieldInstructions(fieldName) {
+    // Explicit instructions for each checklist field to guide AI behavior
+    const instructions = {
+      new_or_returning_patient: 
+        "Ask if they are a new patient or returning patient.\n" +
+        "If new: say 'Welcome! Are you a new patient with us or have you been seen here before?'\n" +
+        "If returning: acknowledge and continue.\n" +
+        "Mark this field done with value 'new' or 'returning'.",
+      
+      birthdate: 
+        "Ask for their date of birth.\n" +
+        "Say something like: 'Can I get your date of birth?' or 'What's your birthdate?'\n" +
+        "Accept any format (MM/DD/YYYY, Month Day Year, etc.).\n" +
+        "Mark this field done with the birthdate they provide.",
+      
+      patient_name: 
+        "Ask for their full name.\n" +
+        "Say: 'May I have your full name?' or 'Can I get your name please?'\n" +
+        "If the name is uncommon or hard to spell, ask: 'Can you spell that for me?'\n" +
+        "Mark this field done with their full name.",
+      
+      reason_for_appointment: 
+        "Ask why they're calling or what they need to see the doctor for.\n" +
+        "Say: 'What brings you in?' or 'What's the reason for your visit?'\n" +
+        "Accept brief descriptions (annual checkup, sick visit, follow-up, specific symptom, etc.).\n" +
+        "Mark this field done with their reason.",
+      
+      insurance: 
+        "Ask about insurance coverage.\n" +
+        "Say: 'Do you have insurance, or will you be paying out-of-pocket?'\n" +
+        "If they say insurance: ask 'What insurance do you have?' or 'Who's your insurance through?'\n" +
+        "If self-pay: acknowledge 'Okay, we'll mark you as self-pay.'\n" +
+        "Mark this field done with insurance name or 'self-pay'.",
+      
+      appointment_preference: 
+        "Ask when they'd like to come in.\n" +
+        "Say: 'When would you like to come in?' or 'What day works best for you?'\n" +
+        "Offer options if they're unsure: 'We have openings next Tuesday at 10 AM or Thursday at 2 PM. Which works better?'\n" +
+        "Mark this field done with the date/time preference they choose.",
+      
+      confirmation_preference: 
+        "Ask how they'd like to receive appointment reminders.\n" +
+        "Say: 'Would you like a text or a phone to remind you of your appointment?'\n" +
+        "Ask for a phone number if they would like a reminder."
+        "Mark this field done with 'text', 'call', or 'email'.",
+      
+      questions_and_closing: 
+        "This is handled by special logic - see QUESTIONS AND CLOSING PHASE instructions.\n" +
+        "Ask if they have questions, answer them, then provide closing confirmation."
+    };
+    
+    return instructions[fieldName] || "";
   }
 
   function prepForEnding() {
