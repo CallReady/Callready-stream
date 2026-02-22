@@ -2073,6 +2073,8 @@ app.all("/process-previous-scenario", async (req, res) => {
     if (confidence < 0.5) {
       // Low confidence, retry
       vr.redirect({ method: "POST" }, "/gather-previous-scenario?retry=1");
+      res.type("text/xml").send(vr.toString());
+      return;
     } else if (isAffirmative) {
       // User wants to re-practice previous scenario
       console.log(nowIso(), "/process-previous-scenario: User accepted re-practice", {
@@ -2086,17 +2088,16 @@ app.all("/process-previous-scenario", async (req, res) => {
       // Redirect to connecting phase
       vr.redirect({ method: "POST" }, `/stream-roleplay?scenario=${context.scenario_tag}`);
       res.type("text/xml").send(vr.toString());
+      return;
     } else if (isNegative) {
       // User wants to pick something different
       console.log(nowIso(), "/process-previous-scenario: User declined, moving to main choice", { callSid });
       vr.redirect({ method: "POST" }, "/gather-choose-scenario?skipPrevious=1");
       res.type("text/xml").send(vr.toString());
+      return;
     } else {
       // Unclear response, retry
       vr.redirect({ method: "POST" }, "/gather-previous-scenario?retry=1");
-    }
-
-    if (!isAffirmative && !isNegative) {
       res.type("text/xml").send(vr.toString());
     }
   } catch (err) {
