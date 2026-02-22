@@ -1803,22 +1803,7 @@ function buildOpenerSpeechForTwilio(priorContext, callerRuntime, perCallCapSecon
         " practice sessions left this month. ";
     }
 
-    // Add question about practicing last scenario if available (skip unknown)
-    if (priorContext && (priorContext.scenario_label || priorContext.scenario_tag)) {
-      let lastScenario = "";
-      if (priorContext.scenario_label && priorContext.scenario_label !== "a practice call") {
-        lastScenario = priorContext.scenario_label;
-      } else if (priorContext.scenario_tag) {
-        const mapped = scenarioTagToHumanFriendlyHelper(priorContext.scenario_tag);
-        if (mapped !== "a practice call") {
-          lastScenario = mapped;
-        }
-      }
-
-      if (lastScenario) {
-        speech += "Last time you practiced " + lastScenario + ". Would you like to try that again, or practice something new?";
-      }
-    }
+    // Returning-caller scenario recall is currently disabled.
   }
 
   return speech;
@@ -1919,7 +1904,7 @@ app.post("/voice", async (req, res) => {
     const priorContext = await fetchPriorCallContextByCallSid(callSid);
     const callerRuntime = await fetchCallerRuntimeContextByCallSid(callSid);
     
-    // Store prior context for /gather-choose-scenario to offer re-practice of previous scenario
+    // Store prior context for potential future use (not used in opener prompts)
     if (priorContext && priorContext.scenario_tag) {
       twilioReturningCallerContexts.set(callSid, {
         scenario_tag: priorContext.scenario_tag,
