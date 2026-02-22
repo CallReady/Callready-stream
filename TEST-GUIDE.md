@@ -31,10 +31,10 @@ cd C:\Users\BradThompson\Documents\GitHub\Callready-stream
 ### 1. **New Caller Path** (Default)
 Tests a first-time caller going through the complete flow:
 - `/voice` → Opener greeting
-- `/gather-choose-scenario` → Do you have a call in mind?
-- `/process-choose-scenario` → User says "yes, I have one"
-- `/gather-scenario-menu` → Pick from 3 scenarios
-- `/process-scenario-menu` → User picks doctor appointment
+- `/gather-choose-scenario` → Do you have a call in mind that you'd like to practice?
+- `/process-choose-scenario` → User says "no"
+- `/gather-scenario-choice-confirm` → Okay, I'll pick something for us to work on. Does that sound good?
+- `/process-scenario-choice-confirm` → User says "yes"
 - `/gather-confirm-doctor` → Does this sound good?
 - `/process-confirm-doctor` → User confirms
 
@@ -220,11 +220,11 @@ $processMenuBody = @{
       ↓
 /gather-choose-scenario
       ↓
-/process-choose-scenario (User: "I have one")
+/process-choose-scenario (User: "no")
       ↓
-/gather-scenario-menu (3 options)
+/gather-scenario-choice-confirm
       ↓
-/process-scenario-menu (User: "Doctor" / "1")
+/process-scenario-choice-confirm (User: "yes")
       ↓
 /gather-confirm-doctor (Confirm selection)
       ↓
@@ -254,7 +254,7 @@ $processMenuBody = @{
 /process-previous-scenario (User: "yes" or "no")
       ↓
       ├─ YES: /stream-roleplay (same scenario)
-      └─ NO: /gather-scenario-menu (pick new scenario)
+      └─ NO: /gather-choose-scenario (ask yes/no call-in-mind question)
 ```
 
 ## Database Considerations

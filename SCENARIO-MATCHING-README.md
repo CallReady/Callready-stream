@@ -8,8 +8,8 @@ The AI-powered scenario matching system allows callers to describe any phone cal
 
 ### Call Flow
 
-1. **Caller describes their call**: When a caller says they have a scenario in mind, they're prompted with:
-   > "Tell me, what kind of call would you like to practice? For example, calling a salon to reschedule, or calling to check on an order."
+1. **Caller describes their call**: When a caller says yes to having a call in mind, they're prompted with:
+   > "Great! Tell me who you'd like to practice calling and what the call is about."
 
 2. **AI matching occurs**: The system uses OpenAI's API to:
    - Parse the caller's description
@@ -67,7 +67,7 @@ When a custom scenario is created:
 ### New Endpoints Added
 
 #### `/gather-describe-call` (POST)
-Asks: "Tell me, what kind of call would you like to practice?"
+Asks: "Great! Tell me who you'd like to practice calling and what the call is about."
 - Collects speech input for 10 seconds max
 - Passes to `/process-describe-call`
 
@@ -96,9 +96,9 @@ Processes yes/no response to custom call offer
 ### Modified Endpoints
 
 #### `/process-choose-scenario` (UPDATED)
-Changed behavior when caller indicates they have a scenario in mind:
-- Old: Showed 3-option menu (doctor, pharmacy, school)
-- New: Routes to `/gather-describe-call` for AI matching
+Changed behavior to a yes/no gate:
+- Yes → Routes to `/gather-describe-call` for AI matching
+- No → Asks confirmation to auto-suggest a default scenario
 
 ## Helper Functions
 

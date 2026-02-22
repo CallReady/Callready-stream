@@ -22,8 +22,10 @@ This document maps every possible call path through the CallReady system with th
 ```
 /incoming 
   → /opener [dynamic greeting]
-  → /gather-choose-scenario [says: "pick", "you choose", "surprise", etc.]
-  → /process-choose-scenario [parses intent to pick]
+  → /gather-choose-scenario [says: "no"]
+  → /process-choose-scenario [yes/no gate]
+  → /gather-scenario-choice-confirm [asks: "Okay, I'll pick something for us to work on. Does that sound good?"]
+  → /process-scenario-choice-confirm [says: "yes"]
   → /gather-confirm-doctor [asks: "Does that sound good?"]
   → /process-confirm-doctor [says: "yes", "yeah", "sure", etc.]
   → /stream-roleplay [WebSocket to AI] (2-5 min roleplay)
@@ -35,10 +37,11 @@ This document maps every possible call path through the CallReady system with th
 ```
 
 **Voice Inputs to Trigger:**
-1. When asked "Do you already have a call in mind...?": **Say "pick for me"** or **"you choose"**
-2. When asked "Does that sound good?": **Say "yes"** or **"sure"**
-3. When asked "Want feedback?": **Say "yes"** or **"no"**
-4. When asked about SMS: **Press 1** (yes) or **Press 2** (no)
+1. When asked "Do you have a call in mind that you'd like to practice?": **Say "no"**
+2. When asked "Okay, I'll pick something for us to work on. Does that sound good?": **Say "yes"**
+3. When asked "Does that sound good?": **Say "yes"** or **"sure"**
+4. When asked "Want feedback?": **Say "yes"** or **"no"**
+5. When asked about SMS: **Press 1** (yes) or **Press 2** (no)
 
 ---
 
@@ -48,8 +51,10 @@ This document maps every possible call path through the CallReady system with th
 ```
 /incoming 
   → /opener
-  → /gather-choose-scenario [says: "pick"]
+  → /gather-choose-scenario [says: "no"]
   → /process-choose-scenario
+  → /gather-scenario-choice-confirm [asks: "Okay, I'll pick something for us to work on. Does that sound good?"]
+  → /process-scenario-choice-confirm [says: "yes"]
   → /gather-confirm-doctor [asks: "Does that sound good?"]
   → /process-confirm-doctor [says: "no", "nope", "different", etc.]
   → /gather-scenario-menu [offers 3 options]
@@ -63,10 +68,11 @@ This document maps every possible call path through the CallReady system with th
 ```
 
 **Voice Inputs to Trigger:**
-1. When asked "Do you already have a call in mind?": **Say "pick"**
-2. When asked "Does that sound good?": **Say "no"** or **"different"**
-3. When offered 3 menu options: **Say "pharmacy"** (or doctor/school) OR **Press 2**
-4. Continue with coaching/SMS flow
+1. When asked "Do you have a call in mind that you'd like to practice?": **Say "no"**
+2. When asked "Okay, I'll pick something for us to work on. Does that sound good?": **Say "yes"**
+3. When asked "Does that sound good?": **Say "no"** or **"different"**
+4. When offered 3 menu options: **Say "pharmacy"** (or doctor/school) OR **Press 2**
+5. Continue with coaching/SMS flow
 
 ---
 
@@ -76,9 +82,9 @@ This document maps every possible call path through the CallReady system with th
 ```
 /incoming 
   → /opener
-  → /gather-choose-scenario [says: "i have one", "yes", "specific", etc.]
-  → /process-choose-scenario [detects: "i have one"]
-  → /gather-describe-call [asks: "Tell me what kind of call..."]
+  → /gather-choose-scenario [says: "yes"]
+  → /process-choose-scenario
+  → /gather-describe-call [asks: "Great! Tell me who you'd like to practice calling and what the call is about."]
   → /process-describe-call [receives: "calling a doctor to reschedule"]
     [OpenAI matching: 80% confidence ≥ threshold of 75%]
   → /gather-confirm-suggested-scenario [says: "We'll practice calling a doctor's office..."]
@@ -92,8 +98,8 @@ This document maps every possible call path through the CallReady system with th
 ```
 
 **Voice Inputs to Trigger:**
-1. When asked "Do you already have a call in mind?": **Say "I have one in mind"** or **"yes"**
-2. When asked "Tell me what kind of call...": **Say "calling a doctor's office to schedule an appointment"**
+1. When asked "Do you have a call in mind that you'd like to practice?": **Say "yes"**
+2. When asked "Great! Tell me who you'd like to practice calling and what the call is about.": **Say "calling a doctor's office to schedule an appointment"**
 3. When asked "Does that sound right?": **Say "yes"**
 4. Continue with roleplay/coaching/SMS
 
@@ -105,7 +111,7 @@ This document maps every possible call path through the CallReady system with th
 ```
 /incoming 
   → /opener
-  → /gather-choose-scenario [says: "i have one"]
+  → /gather-choose-scenario [says: "yes"]
   → /process-choose-scenario
   → /gather-describe-call [says: "calling a doctor's office"]
   → /process-describe-call [OpenAI: 82% confidence match found]
@@ -123,8 +129,8 @@ This document maps every possible call path through the CallReady system with th
 ```
 
 **Voice Inputs to Trigger:**
-1. When asked "Do you already have a call in mind?": **Say "I have one"**
-2. When asked "Tell me what kind of call...": **Say "calling a dentist to schedule a cleaning"**
+1. When asked "Do you have a call in mind that you'd like to practice?": **Say "yes"**
+2. When asked "Great! Tell me who you'd like to practice calling and what the call is about.": **Say "calling a dentist to schedule a cleaning"**
 3. When asked "Does that sound right?": **Say "no"** or **"not exactly"**
 4. When asked "Want to try a custom call?": **Say "yes"** or **"okay"**
 5. Continue with custom roleplay
@@ -137,7 +143,7 @@ This document maps every possible call path through the CallReady system with th
 ```
 /incoming 
   → /opener
-  → /gather-choose-scenario [says: "i have one"]
+  → /gather-choose-scenario [says: "yes"]
   → /process-choose-scenario
   → /gather-describe-call [says: "calling to cancel my gym membership"]
   → /process-describe-call [OpenAI: 35% confidence - NO MATCH, < 75% threshold]
@@ -153,8 +159,8 @@ This document maps every possible call path through the CallReady system with th
 ```
 
 **Voice Inputs to Trigger:**
-1. When asked "Do you already have a call in mind?": **Say "yes"**
-2. When asked "Tell me what kind of call...": **Say "calling to cancel my gym membership"**
+1. When asked "Do you have a call in mind that you'd like to practice?": **Say "yes"**
+2. When asked "Great! Tell me who you'd like to practice calling and what the call is about.": **Say "calling to cancel my gym membership"**
 3. When asked "Want to try custom?": **Say "yes"**
 4. Continue with roleplay
 
@@ -166,7 +172,7 @@ This document maps every possible call path through the CallReady system with th
 ```
 /incoming 
   → /opener
-  → /gather-choose-scenario [says: "i have one"]
+  → /gather-choose-scenario [says: "yes"]
   → /process-choose-scenario
   → /gather-describe-call [says: "calling about something obscure"]
   → /process-describe-call [OpenAI: 25% confidence - NO MATCH]
@@ -183,8 +189,8 @@ This document maps every possible call path through the CallReady system with th
 ```
 
 **Voice Inputs to Trigger:**
-1. When asked "Do you already have a call in mind?": **Say "yes"**
-2. When asked "Tell me what kind of call...": **Say "something very unusual"**
+1. When asked "Do you have a call in mind that you'd like to practice?": **Say "yes"**
+2. When asked "Great! Tell me who you'd like to practice calling and what the call is about.": **Say "something very unusual"**
 3. When asked "Want to try custom?": **Say "no"** or **"not really"**
 4. When offered menu: **Say "pharmacy"** or **Press 2**
 5. Continue with roleplay
@@ -225,7 +231,7 @@ This document maps every possible call path through the CallReady system with th
   → /gather-choose-scenario
   → /gather-previous-scenario [asks: "Practice pharmacy again?"]
   → /process-previous-scenario [says: "no", "different", etc.]
-  → /gather-describe-call [asks: "Tell me what kind of call..."]
+  → /gather-describe-call [asks: "Great! Tell me who you'd like to practice calling and what the call is about."]
   → /process-describe-call [OpenAI matching...]
   → [Branches to match/custom flow]
   → /stream-roleplay
@@ -238,7 +244,7 @@ This document maps every possible call path through the CallReady system with th
 
 **Voice Inputs to Trigger:**
 1. When asked "Practice pharmacy again?": **Say "no"** or **"something different"**
-2. When asked "Tell me what kind of call...": **Describe new call**
+2. When asked "Great! Tell me who you'd like to practice calling and what the call is about.": **Describe new call**
 3. Continue based on matching result
 
 ---
@@ -286,7 +292,7 @@ This document maps every possible call path through the CallReady system with th
 ```
 
 **Voice Inputs to Trigger:**
-1. When asked "Do you already have a call in mind?": **Say nothing** (3 times)
+1. When asked "Do you have a call in mind that you'd like to practice?": **Say nothing** (3 times)
 2. Call automatically ends after 2 silent retries
 
 ---
@@ -297,7 +303,7 @@ This document maps every possible call path through the CallReady system with th
 ```
 /incoming 
   → /opener
-  → /gather-choose-scenario [says: "i have one"]
+  → /gather-choose-scenario [says: "yes"]
   → /process-choose-scenario
   → /gather-describe-call [SILENT - user doesn't respond]
     (4 second timeout, redirects to retry=1)
@@ -309,7 +315,7 @@ This document maps every possible call path through the CallReady system with th
 ```
 
 **Voice Inputs to Trigger:**
-1. When asked "Tell me what kind of call...": **Say nothing** on first attempt
+1. When asked "Great! Tell me who you'd like to practice calling and what the call is about.": **Say nothing** on first attempt
 2. System retries after timeout
 3. Respond on retry or let it timeout again
 
@@ -321,8 +327,10 @@ This document maps every possible call path through the CallReady system with th
 ```
 /incoming 
   → /opener
-  → /gather-choose-scenario [says: "pick"]
+  → /gather-choose-scenario [says: "no"]
   → /process-choose-scenario
+  → /gather-scenario-choice-confirm [says: "yes"]
+  → /process-scenario-choice-confirm
   → /gather-confirm-doctor [says: "yes"]
   → /process-confirm-doctor
   → /stream-roleplay [2-3 min in] [says: "quit", "end", "hang up", "stop", etc.]
@@ -333,8 +341,9 @@ This document maps every possible call path through the CallReady system with th
 ```
 
 **Voice Inputs to Trigger:**
-1. When asked "Do you already have a call in mind?": **Say "pick"**
-2. When asked "Does that sound good?": **Say "yes"**
+1. When asked "Do you have a call in mind that you'd like to practice?": **Say "no"**
+2. When asked "Okay, I'll pick something for us to work on. Does that sound good?": **Say "yes"**
+3. When asked "Does that sound good?": **Say "yes"**
 3. After roleplay starts, say: **"quit"**, **"end"**, **"hang up"**, **"stop"**, or **"goodbye"**
 4. Call routes to ending phase
 
@@ -346,8 +355,10 @@ This document maps every possible call path through the CallReady system with th
 ```
 /incoming 
   → /opener
-  → /gather-choose-scenario [says: "pick"]
+  → /gather-choose-scenario [says: "no"]
   → /process-choose-scenario
+  → /gather-scenario-choice-confirm [says: "yes"]
+  → /process-scenario-choice-confirm
   → /gather-confirm-doctor [says: "yes"]
   → /process-confirm-doctor
   → /stream-roleplay [WebSocket connecting...]
@@ -422,7 +433,7 @@ This document maps every possible call path through the CallReady system with th
 ```
 
 **Voice Inputs to Trigger:**
-1. When asked "Do you already have a call in mind?": **Say something unclear/mumbled**
+1. When asked "Do you have a call in mind that you'd like to practice?": **Say something unclear/mumbled**
 2. System will ask you to repeat
 3. Respond more clearly second time
 
@@ -434,8 +445,10 @@ This document maps every possible call path through the CallReady system with th
 ```
 /incoming 
   → /opener
-  → /gather-choose-scenario [says: "pick"]
+  → /gather-choose-scenario [says: "no"]
   → /process-choose-scenario
+  → /gather-scenario-choice-confirm [says: "yes"]
+  → /process-scenario-choice-confirm
   → /gather-confirm-doctor [says: "no"]
   → /process-confirm-doctor
   → /gather-scenario-menu [offers 3 options]
@@ -533,11 +546,11 @@ This document maps every possible call path through the CallReady system with th
 
 ### How to trigger each main path:
 
-| **Path Goal** | **At "Do you have...?" Say:** | **Result** |
+| **Path Goal** | **At "Do you have a call in mind that you'd like to practice?" Say:** | **Result** |
 |---|---|---|
-| Auto-suggest | "pick" / "choose" / "surprise" | → `/gather-confirm-doctor` |
-| Manual menu | "I have one" / "yes" | → `/gather-scenario-menu` |
-| AI matching | "I have one" (then describe call) | → `/gather-describe-call` |
+| Auto-suggest | "no" (then "yes" to suggestion) | → `/gather-confirm-doctor` |
+| Manual menu | "no" (then "yes", then "no" at doctor confirm) | → `/gather-scenario-menu` |
+| AI matching | "yes" (then describe call) | → `/gather-describe-call` |
 | Custom call | Describe → no match or reject suggestion | → `/gather-custom-call-confirmation` |
 | Previous | (Returning caller) "yes" | → `/gather-previous-scenario` |
 

@@ -1123,65 +1123,13 @@ async function isAlreadyOptedInByPhone(fromPhoneE164) {
   }
 }
 
-// Helper functions for scenario choice classification
+// Helper functions for scenario choice yes/no checks
 function normalizeSpeech(text) {
   return String(text || "")
     .toLowerCase()
     .replace(/[^\w\s']/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function classifyScenarioChoice(text) {
-  const t = normalizeSpeech(text);
-
-  // Bucket A: user chooses their own call
-  const userPhrases = [
-    "i have one",
-    "i have a call",
-    "i know",
-    "i already know",
-    "my own",
-    "my call",
-    "i want my",
-    "i want to practice calling",
-    "i need to call",
-    "specific",
-    "already picked",
-    "already chose",
-    "i chose",
-    "i picked"
-  ];
-
-  // Bucket B: CallReady suggests
-  const suggestPhrases = [
-    "you choose",
-    "you pick",
-    "pick one",
-    "choose one",
-    "suggest",
-    "surprise me",
-    "random",
-    "whatever",
-    "anything",
-    "not sure",
-    "i dont know",
-    "i do not know",
-    "your choice"
-  ];
-
-  if (userPhrases.some(p => t.includes(p))) return "user";
-  if (suggestPhrases.some(p => t.includes(p))) return "suggest";
-
-  // Extra lightweight heuristics
-  if (t.includes("suggest")) return "suggest";
-  if (t.includes("surprise")) return "suggest";
-  if (t.includes("random")) return "suggest";
-
-  if (t.includes("my own") || t.includes("my call") || t.includes("specific")) return "user";
-  if (t.startsWith("i need to call") || t.startsWith("i want to call")) return "user";
-
-  return "unknown";
 }
 
 function isYes(text) {
@@ -2030,7 +1978,7 @@ app.post("/gather-choose-scenario", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    const questionText = "Would you rather practice a call you already have in mind, or should I suggest one?";
+    const questionText = "Do you have a call in mind that you'd like to practice?";
 
     const gather = vr.gather({
       input: "speech",
@@ -2183,38 +2131,42 @@ app.post("/process-choose-scenario", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    // Classify the user's response
-    const choice = classifyScenarioChoice(speechResult);
-    
-    console.log(nowIso(), "scenario_choice", { phase: "choose_scenario", speech: speechResult, choice: choice, pending: null });
+    const saidYes = isYes(speechResult);
+    const saidNo = isNo(speechResult);
 
-    // If user made a clear choice (user or suggest), move to confirmation phase
-    if (choice === "user" || choice === "suggest") {
-      // Store pending choice in session
+    console.log(nowIso(), "scenario_choice", { phase: "choose_scenario", speech: speechResult, yes: saidYes, no: saidNo });
+
+    if (saidYes) {
       if (callSid) {
         twilioChooseScenarioRetries.delete(callSid);
-        twilioScenarioFlags.set(callSid, `pending_${choice}`);
       }
-      vr.redirect({ method: "POST" }, "/gather-scenario-choice-confirm?choice=" + choice);
+      vr.redirect({ method: "POST" }, "/gather-describe-call");
       res.type("text/xml").send(vr.toString());
       return;
     }
 
-    // If unclear, ask for clarification
-    if (choice === "unknown") {
-      const clarifyText = "I was not sure which you meant. Do you want to choose your call, or should I suggest one?";
-      const gather = vr.gather({
-        input: "speech",
-        timeout: 3,
-        speechTimeout: 0.8,
-        action: "/process-choose-scenario",
-        method: "POST",
-        language: "en-US"
-      });
-      gather.say({ voice: TWILIO_VOICE }, clarifyText);
+    if (saidNo) {
+      if (callSid) {
+        twilioChooseScenarioRetries.delete(callSid);
+      }
+      vr.redirect({ method: "POST" }, "/gather-scenario-choice-confirm");
       res.type("text/xml").send(vr.toString());
       return;
     }
+
+    const clarifyText = "Sorry, I just need a yes or no. Do you have a call in mind that you'd like to practice?";
+    const gather = vr.gather({
+      input: "speech",
+      timeout: 3,
+      speechTimeout: 0.8,
+      action: "/process-choose-scenario",
+      method: "POST",
+      language: "en-US",
+      hints: "yes, no"
+    });
+    gather.say({ voice: TWILIO_VOICE }, clarifyText);
+    res.type("text/xml").send(vr.toString());
+    return;
 
     // Fallback: retry
     vr.redirect({ method: "POST" }, `/gather-choose-scenario?retryCount=${currentRetryCount + 1}`);
@@ -2228,28 +2180,18 @@ app.post("/process-choose-scenario", async (req, res) => {
 app.post("/gather-scenario-choice-confirm", async (req, res) => {
   try {
     const callSid = req.body?.CallSid || "";
-    const choice = req.query?.choice || "";
-
-    console.log(nowIso(), "/gather-scenario-choice-confirm", { callSid, choice });
+    console.log(nowIso(), "/gather-scenario-choice-confirm", { callSid });
 
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    // Ask confirmation question based on the choice
-    let confirmText = "";
-    if (choice === "user") {
-      confirmText = "Okay, you want to use your own call. Is that right?";
-    } else if (choice === "suggest") {
-      confirmText = "Okay, you want me to suggest a call. Is that right?";
-    } else {
-      confirmText = "I didn't catch that. Is that right?";
-    }
+    const confirmText = "Okay, I'll pick something for us to work on. Does that sound good?";
 
     const gather = vr.gather({
       input: "speech",
       timeout: 3,
       speechTimeout: 0.8,
-      action: "/process-scenario-choice-confirm?choice=" + choice,
+      action: "/process-scenario-choice-confirm",
       method: "POST",
       language: "en-US",
       hints: "yes, no"
@@ -2268,61 +2210,33 @@ app.post("/process-scenario-choice-confirm", async (req, res) => {
   try {
     const callSid = req.body?.CallSid || "";
     const speechResult = req.body?.SpeechResult || "";
-    const choice = req.query?.choice || "";
-
-    console.log(nowIso(), "scenario_choice", { phase: "scenario_choice_confirm", speech: speechResult, choice: choice, pending: choice });
+    console.log(nowIso(), "scenario_choice", { phase: "scenario_choice_confirm", speech: speechResult });
 
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    // Check if user confirmed with yes
     if (isYes(speechResult)) {
-      // User confirmed the choice - proceed to next step based on choice
+      // User confirmed the suggestion - auto-pick doctor_default
       if (callSid) {
-        twilioScenarioFlags.delete(callSid);
+        twilioScenarioFlags.set(callSid, "doctor_default");
       }
-
-      if (choice === "user") {
-        // User wants to describe their own call
-        vr.redirect({ method: "POST" }, "/gather-describe-call");
-      } else if (choice === "suggest") {
-        // User wants AI to suggest - auto-pick doctor_default
-        if (callSid) {
-          twilioScenarioFlags.set(callSid, "doctor_default");
-        }
-        vr.redirect({ method: "POST" }, "/gather-confirm-doctor");
-      }
+      vr.redirect({ method: "POST" }, "/gather-confirm-doctor");
       res.type("text/xml").send(vr.toString());
       return;
     }
 
-    // Check if user said no
     if (isNo(speechResult)) {
-      // User rejected confirmation - go back to original question
-      if (callSid) {
-        twilioScenarioFlags.delete(callSid);
-      }
-      const initialText = "Would you rather practice a call you already have in mind, or should I suggest one?";
-      const gather = vr.gather({
-        input: "speech",
-        timeout: 3,
-        speechTimeout: 0.8,
-        action: "/process-choose-scenario",
-        method: "POST",
-        language: "en-US"
-      });
-      gather.say({ voice: TWILIO_VOICE }, initialText);
+      vr.redirect({ method: "POST" }, "/gather-describe-call");
       res.type("text/xml").send(vr.toString());
       return;
     }
 
-    // Unclear response - ask again for yes/no
-    const repromptText = "Sorry, I just need a yes or no. Is that right?";
+    const repromptText = "Sorry, I just need a yes or no. Does that sound good?";
     const gather = vr.gather({
       input: "speech",
       timeout: 3,
       speechTimeout: 0.8,
-      action: "/process-scenario-choice-confirm?choice=" + choice,
+      action: "/process-scenario-choice-confirm",
       method: "POST",
       language: "en-US",
       hints: "yes, no"
@@ -2445,8 +2359,8 @@ app.post("/gather-describe-call", async (req, res) => {
     const vr = new VoiceResponse();
 
     const questionText = retry
-      ? "Tell me again, what kind of call would you like to practice?"
-      : "Tell me, what kind of call would you like to practice? For example, calling a salon to reschedule, or calling to check on an order.";
+      ? "Tell me again, who you'd like to practice calling and what the call is about."
+      : "Great! Tell me who you'd like to practice calling and what the call is about.";
 
     const gather = vr.gather({
       input: "speech",

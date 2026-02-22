@@ -17,12 +17,12 @@ Invoke-WebRequest -Uri "http://localhost:3000/gather-choose-scenario" `
     -Body $body | Select-Object -ExpandProperty Content
 ```
 
-## Example 2: Test /process-choose-scenario (User says "I have one")
+## Example 2: Test /process-choose-scenario (User says "yes")
 
 ```powershell
 $body = @{
     CallSid = "CA_MANUAL_TEST_001"
-    SpeechResult = "I have a call in mind"
+    SpeechResult = "yes"
     Confidence = "0.95"
 } | ConvertTo-Json
 
@@ -203,9 +203,10 @@ function Test-Twilio ($endpoint, $callSid, $speechResult = "", $digits = "") {
 # Use it
 $sid = "CA_CHAIN_TEST"
 Test-Twilio "/gather-choose-scenario" $sid
-Test-Twilio "/process-choose-scenario" $sid "I have one"
-Test-Twilio "/gather-scenario-menu" $sid
-Test-Twilio "/process-scenario-menu" $sid "1"
+Test-Twilio "/process-choose-scenario" $sid "no"
+Test-Twilio "/gather-scenario-choice-confirm" $sid
+Test-Twilio "/process-scenario-choice-confirm" $sid "yes"
+Test-Twilio "/gather-confirm-doctor" $sid
 ```
 
 ## Inspect Request/Response Headers
