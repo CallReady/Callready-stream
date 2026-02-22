@@ -5775,7 +5775,7 @@ wss.on("connection", (twilioWs, req) => {
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
-                instructions: buildSessionInstructions() + "\n" + buildPhaseContext("twilio_opener_skip"),
+                instructions: buildPhaseContext("twilio_opener_skip"),
               },
             });
           }
@@ -5954,7 +5954,7 @@ wss.on("connection", (twilioWs, req) => {
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
-                instructions: buildSessionInstructions() + "\n" + buildPhaseContext("coaching_feedback_yes")
+                instructions: buildPhaseContext("coaching_feedback_yes")
               },
             });
             return;
@@ -5970,7 +5970,7 @@ wss.on("connection", (twilioWs, req) => {
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
-                instructions: buildSessionInstructions() + "\n" + buildPhaseContext("coaching_feedback_no_to_wrap_up")
+                instructions: buildPhaseContext("coaching_feedback_no_to_wrap_up")
               },
             });
             return;
@@ -6051,7 +6051,7 @@ wss.on("connection", (twilioWs, req) => {
             type: "response.create",
             response: {
               modalities: ["audio", "text"],
-              instructions: buildSessionInstructions() + "\n" + buildPhaseContext("wrap_up_ask_question")
+              instructions: buildPhaseContext("wrap_up_ask_question")
             },
           });
           return;
@@ -6172,7 +6172,7 @@ wss.on("connection", (twilioWs, req) => {
           type: "response.create",
           response: {
             modalities: ["audio", "text"],
-            instructions: buildSessionInstructions() + "\n" + buildPhaseContext("speech_stopped_auto_turn")
+            instructions: buildPhaseContext("speech_stopped_auto_turn")
           },
         });
 
@@ -6420,7 +6420,7 @@ wss.on("connection", (twilioWs, req) => {
                   type: "response.create",
                   response: {
                     modalities: ["audio", "text"],
-                    instructions: buildSessionInstructions() + "\n" + "Speak this exactly, then stop speaking and wait:\n" + startLine + "\n",
+                    instructions: "Speak this exactly, then stop speaking and wait:\n" + startLine + "\n",
                   },
                 });
                 callState.turnIndex += 1;
