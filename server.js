@@ -5669,7 +5669,9 @@ wss.on("connection", (twilioWs, req) => {
           var u = utter.toLowerCase();
 
           // Reroute: end (strong intent only)
-          if (userUtteranceRequestsEnd(u, callState.phase)) {
+          if (callState.redirectingToCoaching || callState.roleplayComplete) {
+            // Ignore end phrases while transitioning to coaching
+          } else if (userUtteranceRequestsEnd(u, callState.phase)) {
             endingRequested = true;
             setPhase("ending", "reroute_user_end_phrase");
             console.log(nowIso(), "User requested end", { utterance: u });
@@ -6058,6 +6060,13 @@ wss.on("connection", (twilioWs, req) => {
             console.log(nowIso(), "Roleplay checklist complete, transitioning to coaching");
             callState.roleplayComplete = true;
             callState.redirectingToCoaching = true;
+
+            // Stop listening for caller speech and cancel any pending AI response
+            suppressCallerAudioToOpenAI = true;
+            waitingForFirstCallerSpeech = false;
+            requireCallerSpeechBeforeNextAI = false;
+            sawCallerSpeechSinceLastAIDone = true;
+            cancelOpenAIResponseIfAnyOnce("roleplay_complete_redirect_to_coaching");
             
             // Store the transcript and scenario for the coaching/wrap-up endpoints to use
             if (callSid) {
