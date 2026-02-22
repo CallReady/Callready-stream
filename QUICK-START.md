@@ -119,7 +119,7 @@ PHASE 1: Opener
 TwiML Response:
 <?xml version="1.0"?>
 <Response>
-  <Say voice="Polly.Matthew-Neural">
+  <Say voice="Polly.Matthew-Generative">
     Hi. This is CallReady...
   </Say>
   <Redirect>/gather-choose-scenario</Redirect>

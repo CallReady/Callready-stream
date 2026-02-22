@@ -32,9 +32,9 @@ const PUBLIC_WSS_URL = process.env.PUBLIC_WSS_URL;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 
 // Twilio voice configuration
-// Primary: Polly.Matthew-Neural
+// Primary: Polly.Matthew-Generative
 // Alternate: Polly.Stephen-Generative (generative voice)
-const TWILIO_VOICE = "Polly.Matthew-Neural";
+const TWILIO_VOICE = "Polly.Matthew-Generative";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
@@ -2117,7 +2117,16 @@ app.post("/process-choose-scenario", async (req, res) => {
     const vr = new VoiceResponse();
 
     const normalized = normalizeSpeech(speechResult);
-    const wantsUsToChoose = normalized.includes("you choose");
+    const choosePhrases = [
+      "choose",
+      "you choose",
+      "you can choose",
+      "your choice",
+      "whatever",
+      "i don't care",
+      "i dont care"
+    ];
+    const wantsUsToChoose = choosePhrases.some((p) => normalized.includes(p));
 
     console.log(nowIso(), "scenario_choice", { phase: "choose_scenario", speech: speechResult, choose: wantsUsToChoose, confidence: confidence });
 
@@ -3902,6 +3911,7 @@ wss.on("connection", (twilioWs, req) => {
   let coachingAskedForFeedback = false;
   let wrapUpAskedQuestion = false;
   let wrapUpTimeLimitExceeded = false;
+  let coachingRedirectRequested = false;
 
   let sawCallerSpeechSinceLastAIDone = false;
 
@@ -4340,7 +4350,7 @@ wss.on("connection", (twilioWs, req) => {
           "You are a receptionist at Evergreen Medical Clinic.\n" +
           "The caller is scheduling a doctor appointment.\n" +
           "YOUR GOAL: Collect required information to complete the appointment booking.\n" +
-          "You must stay focused on gathering: new/returning patient status, name, birthdate, reason for visit, insurance or self-pay, preferred appointment time, caller questions\n";
+            "You must stay focused on gathering: call purpose, new/returning patient status, name, birthdate, reason for visit, insurance or self-pay, preferred appointment time, caller questions\n";
       }
 
       // Add checklist tracking for CUSTOM scenarios (unified with doctor_default infrastructure)
@@ -5084,6 +5094,7 @@ wss.on("connection", (twilioWs, req) => {
 
   function buildDoctorChecklist() {
     return {
+      call_purpose: { required: true, done: false, value: null },
       new_or_returning_patient: { required: true, done: false, value: null },
       birthdate: { required: true, done: false, value: null },
       patient_name: { required: true, done: false, value: null },
@@ -5098,7 +5109,7 @@ wss.on("connection", (twilioWs, req) => {
   function getDoctorChecklistOrder() {
     // Define the preferred order for collecting doctor appointment checklist items.
     // Edit this array to change the order in which the AI asks for information.
-    return ["new_or_returning_patient", "birthdate", "patient_name", "reason_for_appointment", "insurance", "appointment_preference", "confirmation_preference", "questions_and_closing"];
+    return ["call_purpose", "new_or_returning_patient", "birthdate", "patient_name", "reason_for_appointment", "insurance", "appointment_preference", "confirmation_preference", "questions_and_closing"];
   }
 
   function getCustomChecklistOrder() {
@@ -5110,6 +5121,11 @@ wss.on("connection", (twilioWs, req) => {
     // Tight per-field guidance to reduce drift in smaller models.
     // Format: PROMPT + ACCEPT + TOOL_CALL. Keep it short.
     var instructions = {
+      call_purpose:
+        "PROMPT: Ask how you can help today and what the call is about.\n" +
+        "ACCEPT: Short summary is fine.\n" +
+        "TOOL_CALL: mark_checklist_item_complete(field_id='call_purpose', value='<call purpose>').",
+
       new_or_returning_patient:
         "PROMPT: Ask if they are a new patient or a returning patient.\n" +
         "ACCEPT: If new, welcome them briefly. If returning, acknowledge briefly.\n" +
@@ -6336,6 +6352,7 @@ wss.on("connection", (twilioWs, req) => {
               try {
                 const client = twilioClient();
                 console.log(nowIso(), "Redirecting call to /gather-coaching-feedback", { callSid });
+                coachingRedirectRequested = true;
 
                 (async () => {
                   try {
@@ -6505,6 +6522,7 @@ wss.on("connection", (twilioWs, req) => {
       openaiReady = false;
 
       if (closing) return;
+      if (coachingRedirectRequested) return;
       if (endingRequested) return;
       if (endRedirectRequested) return;
 

@@ -109,7 +109,7 @@ For one-off tests of specific endpoints, see `MANUAL-TESTING.md` for examples.
 
 ### TwiML Output
 ✓ Valid XML structure
-✓ Correct Polly.Matthew-Neural voice
+✓ Correct Polly.Matthew-Generative voice
 ✓ Gather elements present where needed
 ✓ Say elements contain updated phrases
 ✓ Redirects point to next phase
@@ -145,7 +145,7 @@ TwiML Response:
 ---
 <?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Matthew-Neural">
+   <Say voice="Polly.Matthew-Generative">
     Hi. This is CallReady dot live, where we can practice...
   </Say>
   <Redirect method="POST">/gather-choose-scenario</Redirect>
