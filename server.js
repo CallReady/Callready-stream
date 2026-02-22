@@ -32,9 +32,9 @@ const PUBLIC_WSS_URL = process.env.PUBLIC_WSS_URL;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 
 // Twilio voice configuration
-// Primary: Polly.Stephen-Generative (generative voice)
-// Fallback: If Stephen-Generative becomes unavailable, change to "Polly.Matthew-Neural"
-const TWILIO_VOICE = "Polly.Stephen-Generative";
+// Primary: Polly.Matthew-Neural
+// Alternate: Polly.Stephen-Generative (generative voice)
+const TWILIO_VOICE = "Polly.Matthew-Neural";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
