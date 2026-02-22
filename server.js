@@ -6158,8 +6158,12 @@ wss.on("connection", (twilioWs, req) => {
           if (allDone) {
             // Roleplay complete: transition to Twilio-based coaching
             console.log(nowIso(), "Roleplay checklist complete, transitioning to coaching");
-            callState.roleplayComplete = true;
+            callState.phase = "coaching";
+            
+            if (callState.redirectingToCoaching) return;
             callState.redirectingToCoaching = true;
+
+            callState.roleplayComplete = true;
 
             // Stop listening for caller speech and cancel any pending AI response
             suppressCallerAudioToOpenAI = true;
@@ -6184,7 +6188,8 @@ wss.on("connection", (twilioWs, req) => {
               });
             }
             
-            // Redirect the call to the coaching feedback gathering endpoint via Twilio REST API
+            // Transition to coaching deterministically by pointing Twilio at the coaching webhook URL.
+            // Use an absolute URL so Twilio always knows where to fetch next instructions.
             if (callSid && hasTwilioRest()) {
               try {
                 const client = twilioClient();
@@ -6192,8 +6197,11 @@ wss.on("connection", (twilioWs, req) => {
 
                 (async () => {
                   try {
+                    const coachingUrl = `${process.env.PUBLIC_BASE_URL}/gather-coaching-feedback?callSid=${encodeURIComponent(callSid)}`;
+
                     await client.calls(callSid).update({
-                      twiml: `<Response><Redirect method="POST">/gather-coaching-feedback?callSid=${encodeURIComponent(callSid)}</Redirect></Response>`
+                      url: coachingUrl,
+                      method: "POST"
                     });
                     console.log(nowIso(), "Redirect to /gather-coaching-feedback succeeded", { callSid });
                     // Give Twilio a moment to process the redirect before closing media
