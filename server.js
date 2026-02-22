@@ -4083,21 +4083,47 @@ wss.on("connection", (twilioWs, req) => {
         "Stay warm and professional.\n" +
         "\n" +
         "CRITICAL - JSON OUTPUT REQUIREMENT (MANDATORY EVERY TURN):\n" +
-        "After EVERY response you give, you MUST output a JSON block to track progress.\n" +
-        "The JSON is for server tracking only - the caller will NOT hear it.\n" +
-        "Format (always include the delimiters):\n" +
+        "After you give your spoken response, you MUST output the JSON on separate lines.\n" +
+        "Use this exact format:\n" +
+        "\n" +
+        "[Your normal spoken response here]\n" +
+        "\n" +
+        "---JSON_SERVER_DATA_START---\n" +
         "CHECKLIST_UPDATE_JSON\n" +
         "{\"field_name\": {\"done\": true, \"value\": \"what they said\"}}\n" +
         "END_CHECKLIST_UPDATE_JSON\n" +
+        "---JSON_SERVER_DATA_END---\n" +
         "\n" +
-        "Example response structure:\n" +
-        "Your spoken words: 'Great! Can I get your full name?'\n" +
-        "Then immediately append:\n" +
+        "CRITICAL: Everything between the ---JSON_SERVER_DATA_START--- and ---JSON_SERVER_DATA_END--- markers\n" +
+        "will NOT be spoken to the caller. This is for server tracking only.\n" +
+        "The caller will ONLY hear the words BEFORE ---JSON_SERVER_DATA_START---.\n" +
+        "\n" +
+        "Example 1 (caller tells you their name):\n" +
+        "Caller: 'My name is Sarah Miller'\n" +
+        "You output:\n" +
+        "Great, Sarah!\n" +
+        "\n" +
+        "---JSON_SERVER_DATA_START---\n" +
         "CHECKLIST_UPDATE_JSON\n" +
-        "{\"birthdate\": {\"done\": true, \"value\": \"April 15, 1990\"}}\n" +
+        "{\"patient_name\": {\"done\": true, \"value\": \"Sarah Miller\"}}\n" +
         "END_CHECKLIST_UPDATE_JSON\n" +
+        "---JSON_SERVER_DATA_END---\n" +
         "\n" +
-        "Only include fields you are updating THIS turn based on what the caller JUST told you.\n";
+        "Caller hears: 'Great, Sarah!'\n" +
+        "Server receives: checklist update with name\n" +
+        "\n" +
+        "Example 2 (no new info this turn):\n" +
+        "You output:\n" +
+        "And what's your date of birth?\n" +
+        "\n" +
+        "---JSON_SERVER_DATA_START---\n" +
+        "CHECKLIST_UPDATE_JSON\n" +
+        "{}\n" +
+        "END_CHECKLIST_UPDATE_JSON\n" +
+        "---JSON_SERVER_DATA_END---\n" +
+        "\n" +
+        "REMEMBER: Always include the start and end markers, even if the JSON is empty {}.\n" +
+        "Never, ever speak the markers, field names, or JSON to the caller. Only natural speech before the markers.\n";
 
       // Add scenario context and goal reminder for every turn
       if (callState.scenarioTag === "doctor_default") {
@@ -4165,12 +4191,17 @@ wss.on("connection", (twilioWs, req) => {
           "Speak like a real receptionist/customer service person - conversational, not mechanical.\n" +
           "\n" +
           "MANDATORY JSON OUTPUT:\n" +
-          "After you reach Gate 6 and close professionally, you MUST output:\n" +
+          "When you complete Gate 6, output the JSON in this format:\n" +
+          "\n" +
+          "Thanks for calling!\n" +
+          "\n" +
+          "---JSON_SERVER_DATA_START---\n" +
           "CHECKLIST_UPDATE_JSON\n" +
           "{\"GATE_6\": {\"done\": true, \"value\": \"completed\"}}\n" +
           "END_CHECKLIST_UPDATE_JSON\n" +
+          "---JSON_SERVER_DATA_END---\n" +
           "\n" +
-          "The caller will NOT hear this JSON - it's for server tracking only.\n";
+          "The caller will ONLY hear 'Thanks for calling!' - the JSON will not be spoken.\n";
       }
 
       // Add checklist tracking for doctor_default
@@ -4205,10 +4236,18 @@ wss.on("connection", (twilioWs, req) => {
             "Thank them for calling and wish them a good day.\n" +
             "\n" +
             "MANDATORY JSON OUTPUT:\n" +
-            "When you close the call, you MUST output:\n" +
+            "When you close the call, output in this format:\n" +
+            "\n" +
+            "Have a great day!\n" +
+            "\n" +
+            "---JSON_SERVER_DATA_START---\n" +
             "CHECKLIST_UPDATE_JSON\n" +
             "{\"questions_and_closing\": {\"done\": true, \"value\": \"completed\"}}\n" +
             "END_CHECKLIST_UPDATE_JSON\n" +
+            "---JSON_SERVER_DATA_END---\n" +
+            "\n" +
+            "Caller hears: 'Have a great day!'\n" +
+            "Server receives: checklist update marking questions_and_closing as done\n" +
             "\n";
         } else {
           // Add specific field instructions if available
@@ -4233,12 +4272,20 @@ wss.on("connection", (twilioWs, req) => {
             ? "STILL GATHERING: " + remaining.join(", ") + "\n"
             : "All required items are gathered. Proceed directly to wrap up without recapping the details.\n") +
           "\n" +
-          "REMEMBER: You MUST output the JSON block after EVERY response.\n" +
-          "The caller will NOT hear the JSON - it's for server tracking only.\n" +
-          "Example: After caller says their name is 'Sarah Miller', you respond 'Great, Sarah!' then immediately output:\n" +
+          "REMEMBER: You MUST output the JSON block after EVERY response using the markers.\n" +
+          "The caller will ONLY hear words before ---JSON_SERVER_DATA_START---.\n" +
+          "\n" +
+          "Example: Caller says 'My name is Sarah Miller':\n" +
+          "\n" +
+          "Great, Sarah!\n" +
+          "\n" +
+          "---JSON_SERVER_DATA_START---\n" +
           "CHECKLIST_UPDATE_JSON\n" +
           "{\"patient_name\": {\"done\": true, \"value\": \"Sarah Miller\"}}\n" +
-          "END_CHECKLIST_UPDATE_JSON\n";
+          "END_CHECKLIST_UPDATE_JSON\n" +
+          "---JSON_SERVER_DATA_END---\n" +
+          "\n" +
+          "Caller hears: 'Great, Sarah!'\n";
       }
 
       return instructions;
@@ -5118,25 +5165,51 @@ wss.on("connection", (twilioWs, req) => {
     }
 
     if (typeof response.output_text === "string") out += response.output_text + "\n";
+    
+    // Strip JSON server data section before returning (so it's not synthesized to audio)
+    const startMarker = "---JSON_SERVER_DATA_START---";
+    const endMarker = "---JSON_SERVER_DATA_END---";
+    const startIdx = out.indexOf(startMarker);
+    if (startIdx !== -1) {
+      const endIdx = out.indexOf(endMarker, startIdx);
+      if (endIdx !== -1) {
+        // Remove everything from startMarker to endMarker inclusive
+        out = out.substring(0, startIdx) + out.substring(endIdx + endMarker.length);
+      }
+    }
+    
     return out;
   }
 
   function parseChecklistUpdateJson(text) {
     if (!text) return null;
 
-    const startDelim = "CHECKLIST_UPDATE_JSON";
-    const endDelim = "END_CHECKLIST_UPDATE_JSON";
+    const startDelim = "---JSON_SERVER_DATA_START---";
+    const endDelim = "---JSON_SERVER_DATA_END---";
 
     const startIdx = String(text).indexOf(startDelim);
     if (startIdx === -1) return null;
 
     const endIdx = String(text).indexOf(endDelim, startIdx);
     if (endIdx === -1) {
+      console.log(nowIso(), "Found JSON_SERVER_DATA_START but no END delimiter");
+      return null;
+    }
+
+    // Extract content between markers
+    const contentBetweenMarkers = String(text).substring(startIdx + startDelim.length, endIdx);
+    
+    // Now look for CHECKLIST_UPDATE_JSON within that content
+    const checklistStart = contentBetweenMarkers.indexOf("CHECKLIST_UPDATE_JSON");
+    if (checklistStart === -1) return null;
+    
+    const checklistEnd = contentBetweenMarkers.indexOf("END_CHECKLIST_UPDATE_JSON", checklistStart);
+    if (checklistEnd === -1) {
       console.log(nowIso(), "Found CHECKLIST_UPDATE_JSON start but no END delimiter");
       return null;
     }
 
-    const jsonBlock = String(text).substring(startIdx + startDelim.length, endIdx).trim();
+    const jsonBlock = contentBetweenMarkers.substring(checklistStart + "CHECKLIST_UPDATE_JSON".length, checklistEnd).trim();
     console.log(nowIso(), "Parsing checklist JSON block", { jsonBlock: jsonBlock.substring(0, 200) });
     try {
       return JSON.parse(jsonBlock);
