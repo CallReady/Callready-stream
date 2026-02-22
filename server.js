@@ -3846,6 +3846,7 @@ wss.on("connection", (twilioWs, req) => {
   let aiSpeaking = false;
   let aiSpeakingTailTimer = null;
   let aiAudioBytesThisResponse = 0;
+  let aiAudioStartAtMs = 0;
   let listenBlockUntilMs = 0;
   let endingRequested = false;
   let softOverageNotePending = false;
@@ -3862,6 +3863,7 @@ wss.on("connection", (twilioWs, req) => {
     scenarioTag: null,           // snake_case tag once known
     goal: null,                  // short goal text once known
     scenarioChosen: false,
+    redirectingToCoaching: false,
     lastUserUtterance: null,     // last transcript snippet we captured
     summary: null,               // short rolling summary (we will add later)
     turnIndex: 0,                // increments each time we ask OpenAI to speak
@@ -5838,6 +5840,9 @@ wss.on("connection", (twilioWs, req) => {
         if (aiAudioBytesThisResponse === 0 && (callState.phase === "connecting" || callState.phase === "roleplay")) {
           // Audio started
         }
+        if (aiAudioBytesThisResponse === 0) {
+          aiAudioStartAtMs = Date.now();
+        }
         const b = Buffer.from(msg.delta, "base64").length;
         aiAudioBytesThisResponse += b;
 
@@ -5845,7 +5850,7 @@ wss.on("connection", (twilioWs, req) => {
         const audioMs = Math.floor((aiAudioBytesThisResponse / 8000) * 1000);
 
         // Block listening until estimated playback end plus a small safety buffer
-        listenBlockUntilMs = Date.now() + audioMs + 10;
+        listenBlockUntilMs = (aiAudioStartAtMs || Date.now()) + audioMs + 10;
 
         if (turnDetectionEnabled && waitingForFirstCallerSpeech && !sawSpeechStarted) {
           cancelOpenAIResponseIfAnyOnce("AI spoke before first caller speech");
@@ -5969,6 +5974,8 @@ wss.on("connection", (twilioWs, req) => {
         
         responseActive = false;
         callState.openaiResponseActive = false;
+        aiAudioStartAtMs = 0;
+        listenBlockUntilMs = 0;
         
         // Handle function calls (silent checklist updates)
         if (msg.response && msg.response.output) {
@@ -6050,6 +6057,7 @@ wss.on("connection", (twilioWs, req) => {
             // Roleplay complete: transition to Twilio-based coaching
             console.log(nowIso(), "Roleplay checklist complete, transitioning to coaching");
             callState.roleplayComplete = true;
+            callState.redirectingToCoaching = true;
             
             // Store the transcript and scenario for the coaching/wrap-up endpoints to use
             if (callSid) {
@@ -6078,6 +6086,7 @@ wss.on("connection", (twilioWs, req) => {
                     await client.calls(callSid).update({
                       twiml: `<Response><Redirect method="POST">/gather-coaching-feedback</Redirect></Response>`
                     });
+                    console.log(nowIso(), "Redirect to /gather-coaching-feedback succeeded", { callSid });
                     // Give Twilio a moment to process the redirect before closing media
                     setTimeout(() => {
                       closeAll("roleplay_checklist_complete");
@@ -6429,6 +6438,10 @@ wss.on("connection", (twilioWs, req) => {
 
     if (msg.event === "stop") {
       console.log(nowIso(), "Twilio stream stop");
+      if (callState && callState.redirectingToCoaching) {
+        closeOpenAIOnly("twilio_stop_redirecting_to_coaching");
+        return;
+      }
       try {
         persistUsageSummaryOnce("twilio_stop");
       } catch { }
