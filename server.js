@@ -2679,7 +2679,7 @@ app.post("/stream-roleplay", async (req, res) => {
 
     // Transition message before starting roleplay
     vr.say({ voice: TWILIO_VOICE }, 
-      "Great. You'll hear the receptionist after the ring. You can make up any details you'd rather not share.");
+      "Great. You’ll hear the other person answer after the ring. You can make up any details you'd rather not share.");
 
     // Connect WebSocket for roleplay
     const wsUrl = PUBLIC_WSS_URL;
@@ -3789,7 +3789,7 @@ app.post("/process-wrap-up", async (req, res) => {
       // Say the transition message and redirect to stream-roleplay
       vr.say(
         { voice: TWILIO_VOICE },
-        "Great. You'll hear the receptionist after the ring and we'll get some more practice."
+        "Great. You’ll hear the other person answer after the ring and we'll get some more practice."
       );
       vr.redirect({ method: "POST" }, `/stream-roleplay?scenario=${encodeURIComponent(scenarioTag)}`);
       res.type("text/xml").send(vr.toString());
@@ -5562,10 +5562,9 @@ wss.on("connection", (twilioWs, req) => {
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
-                instructions: "Speak this exactly, then stop speaking and wait: Great, let's practice that call again. The receptionist will answer after the ring. Remember, you can make up any details you're uncomfortable sharing.\n",
+                instructions: "Speak this exactly, then stop speaking and wait: Great, let's practice that call again. You’ll hear the other person answer after the ring. Remember, you can make up any details you're uncomfortable sharing.\n",
               },
             });
-
             return;
           }
 
@@ -5882,7 +5881,7 @@ wss.on("connection", (twilioWs, req) => {
         if (callState && callState.phase === "connecting") {
           const cs = callState.connectingStep || null;
 
-          // Step 1: Transition message (AI says "Great, the receptionist will answer after the ring.")
+          // Step 1: Transition message (AI says "Great, the othe person will answer after the ring.")
           if (cs === "transition_message") {
             callState.connectingStep = "ring_audio";
             try { console.log(nowIso(), "CONNECTING_STEP", "ring_audio"); } catch (e) { }
