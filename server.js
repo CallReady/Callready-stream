@@ -5116,12 +5116,17 @@ wss.on("connection", (twilioWs, req) => {
     if (startIdx === -1) return null;
 
     const endIdx = String(text).indexOf(endDelim, startIdx);
-    if (endIdx === -1) return null;
+    if (endIdx === -1) {
+      console.log(nowIso(), "Found CHECKLIST_UPDATE_JSON start but no END delimiter");
+      return null;
+    }
 
     const jsonBlock = String(text).substring(startIdx + startDelim.length, endIdx).trim();
+    console.log(nowIso(), "Parsing checklist JSON block", { jsonBlock: jsonBlock.substring(0, 200) });
     try {
       return JSON.parse(jsonBlock);
     } catch (e) {
+      console.log(nowIso(), "Failed to parse checklist JSON", { error: e && e.message, jsonBlock });
       return null;
     }
   }
@@ -5834,8 +5839,10 @@ wss.on("connection", (twilioWs, req) => {
         // Roleplay: parse and merge checklist updates from text-only JSON block
         // Do this BEFORE flushing pendingResponseCreate so checklist is current
         if (callState.phase === "roleplay" && callState.scenarioTag === "doctor_default" && callState.checklist) {
+          console.log(nowIso(), "Checking for checklist update in response text", { textLength: text ? text.length : 0 });
           const checklistUpdate = parseChecklistUpdateJson(text);
           if (checklistUpdate) {
+            console.log(nowIso(), "Checklist update found", { updates: Object.keys(checklistUpdate) });
 
             // Merge updates: only update known keys
             for (const id in checklistUpdate) {
@@ -5846,14 +5853,20 @@ wss.on("connection", (twilioWs, req) => {
                 if (checklistUpdate[id].value !== undefined) {
                   callState.checklist[id].value = checklistUpdate[id].value;
                 }
+                console.log(nowIso(), "Checklist item updated", { id, done: callState.checklist[id].done, value: callState.checklist[id].value });
               }
             }
+          } else {
+            console.log(nowIso(), "No checklist update JSON found in response text");
           }
 
           // Check if all required checklist items are done
           const allDone = Object.keys(callState.checklist).every(
             id => !callState.checklist[id].required || callState.checklist[id].done
           );
+          const doneItems = Object.keys(callState.checklist).filter(id => callState.checklist[id].done);
+          const remainingItems = Object.keys(callState.checklist).filter(id => callState.checklist[id].required && !callState.checklist[id].done);
+          console.log(nowIso(), "Checklist status check", { allDone, doneItems, remainingItems });
           if (allDone) {
             // Roleplay complete: transition to Twilio-based coaching
             console.log(nowIso(), "Roleplay checklist complete, transitioning to coaching");
