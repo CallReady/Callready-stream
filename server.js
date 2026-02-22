@@ -1935,7 +1935,7 @@ app.post("/gather-choose-scenario", async (req, res) => {
     const retryCount = parseInt(req.query?.retryCount || "0", 10);
     const skipPrevious = req.query?.skipPrevious === "1";
     
-    console.log(nowIso(), "/gather-choose-scenario", { callSid, retryCount, skipPrevious });
+    console.log(nowIso(), "/gather-choose-scenario", { callSid, retryCount });
 
     // If user has been silent 3 times (retryCount >= 2), end the call
     if (retryCount >= 2) {
@@ -1952,22 +1952,10 @@ app.post("/gather-choose-scenario", async (req, res) => {
       return;
     }
 
-    // Check if this is a returning caller with prior scenario context
-    if (!skipPrevious && twilioReturningCallerContexts.has(callSid)) {
-      // Redirect to ask about re-practicing the previous scenario
-      const VoiceResponse = twilio.twiml.VoiceResponse;
-      const vr = new VoiceResponse();
-      vr.redirect({ method: "POST" }, "/gather-previous-scenario");
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    const questionText = retryCount === 1
-      ? "What call would you like to practice, or would you like a suggestion?"
-      : "Do you already have a call in mind, or would you like me to pick one for you?";
+    const questionText = "Do you already have a call in mind that you'd like to practice, or would you like me to suggest one?";
 
     const gather = vr.gather({
       input: "speech",
