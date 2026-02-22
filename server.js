@@ -3558,14 +3558,18 @@ function buildCustomChecklist(userDescription) {
 // Asks if the caller wants feedback about the call
 app.post("/gather-coaching-feedback", async (req, res) => {
   try {
-    const callSid = req.body?.CallSid || "";
-    const transcript = req.body?.transcript ? JSON.parse(req.body.transcript) : [];
+    // Get callSid from either body (after Gather) or query (from redirect)
+    const callSid = req.body?.CallSid || req.query?.callSid || "";
 
-    console.log(nowIso(), "/gather-coaching-feedback", { callSid, transcriptLength: transcript.length });
+    console.log(nowIso(), "/gather-coaching-feedback", { callSid, fromBody: !!req.body?.CallSid, fromQuery: !!req.query?.callSid });
 
-    // Store transcript for feedback generation if user says yes
-    if (callSid) {
-      twilioCoachingContexts.set(callSid, { transcript, feedbackRequested: false });
+    // Retrieve the coaching context that was stored during roleplay completion
+    // Don't overwrite it - just use what's already there
+    const existingContext = twilioCoachingContexts.get(callSid);
+    if (!existingContext) {
+      console.log(nowIso(), "/gather-coaching-feedback: No coaching context found for", { callSid });
+      // If no context, create a minimal one
+      twilioCoachingContexts.set(callSid, { transcript: [], feedbackRequested: false });
     }
 
     const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -4136,6 +4140,13 @@ wss.on("connection", (twilioWs, req) => {
       "Ask exactly one short question per turn, then wait for the caller's response.\n" +
       "Do not rush to complete the goal or repeatedly confirm information already provided.\n" +
       "\n" +
+      "CRITICAL CONSTRAINT - ONLY ASK ABOUT CHECKLIST ITEMS:\n" +
+      "The STILL_GATHERING field shows EXACTLY which information you need to collect.\n" +
+      "Ask ONLY about those items. Do NOT ask for additional information beyond the checklist.\n" +
+      "Do NOT ask about: address, phone number, medical history, allergies, medications, payment details, ID, license, etc. - unless they are explicitly in STILL_GATHERING.\n" +
+      "If the caller offers extra information not on the checklist, accept it politely but do not ask for similar items.\n" +
+      "Focus only on collecting what is listed in STILL_GATHERING.\n" +
+      "\n" +
       "SPEAKING STYLE:\n" +
       "Sound like a real person in this role.\n" +
       "Use one or two short sentences.\n" +
@@ -4233,8 +4244,9 @@ wss.on("connection", (twilioWs, req) => {
   }
 
   function buildPhaseContext(why) {
-    // Build ONLY the contextual information that changes per turn.
-    // This is appended to instructions sent with each response.create.
+    // Build contextual information that changes per turn.
+    // Includes both state variables AND dynamic scenario-specific guidance.
+    // This is sent with each response.create to update the AI on current state.
     var phase = String(callState.phase || "").trim();
     var context = "";
 
@@ -4250,7 +4262,7 @@ wss.on("connection", (twilioWs, req) => {
       context += "CALL_SUMMARY: " + callState.summary + "\n";
     }
 
-    // Add roleplay checklist context
+    // Add roleplay checklist context with dynamic field guidance
     if (phase === "roleplay" && callState.checklist) {
       const nextTarget = getNextRequiredChecklistId();
       const remaining = Object.keys(callState.checklist).filter(
@@ -4262,6 +4274,19 @@ wss.on("connection", (twilioWs, req) => {
         context += "STILL_GATHERING: " + remaining.join(", ") + "\n";
       } else {
         context += "CHECKLIST_STATUS: All required items are gathered\n";
+      }
+
+      // Add dynamic scenario-specific guidance based on current next target
+      if (callState.scenarioTag === "doctor_default" && nextTarget) {
+        const fieldInstructions = getDoctorChecklistFieldInstructions(nextTarget);
+        if (fieldInstructions) {
+          context += "\nFIELD GUIDANCE:\n" + fieldInstructions + "\n";
+        }
+      } else if (callState.scenarioTag && callState.scenarioTag.startsWith("custom_") && nextTarget) {
+        const fieldInstructions = getCustomChecklistFieldInstructions(nextTarget);
+        if (fieldInstructions) {
+          context += "\nFIELD GUIDANCE:\n" + fieldInstructions + "\n";
+        }
       }
     }
 
@@ -5762,7 +5787,7 @@ wss.on("connection", (twilioWs, req) => {
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
-                instructions: buildSessionInstructions() + "\n" + buildPhaseContext("twilio_opener_skip"),
+                instructions: buildPhaseContext("twilio_opener_skip"),
               },
             });
           }
@@ -5941,7 +5966,7 @@ wss.on("connection", (twilioWs, req) => {
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
-                instructions: buildSessionInstructions() + "\n" + buildPhaseContext("coaching_feedback_yes")
+                instructions: buildPhaseContext("coaching_feedback_yes")
               },
             });
             return;
@@ -5957,7 +5982,7 @@ wss.on("connection", (twilioWs, req) => {
               type: "response.create",
               response: {
                 modalities: ["audio", "text"],
-                instructions: buildSessionInstructions() + "\n" + buildPhaseContext("coaching_feedback_no_to_wrap_up")
+                instructions: buildPhaseContext("coaching_feedback_no_to_wrap_up")
               },
             });
             return;
@@ -6038,7 +6063,7 @@ wss.on("connection", (twilioWs, req) => {
             type: "response.create",
             response: {
               modalities: ["audio", "text"],
-              instructions: buildSessionInstructions() + "\n" + buildPhaseContext("wrap_up_ask_question")
+              instructions: buildPhaseContext("wrap_up_ask_question")
             },
           });
           return;
@@ -6159,7 +6184,7 @@ wss.on("connection", (twilioWs, req) => {
           type: "response.create",
           response: {
             modalities: ["audio", "text"],
-            instructions: buildSessionInstructions() + "\n" + buildPhaseContext("speech_stopped_auto_turn")
+            instructions: buildPhaseContext("speech_stopped_auto_turn")
           },
         });
 
@@ -6336,7 +6361,7 @@ wss.on("connection", (twilioWs, req) => {
                 (async () => {
                   try {
                     await client.calls(callSid).update({
-                      twiml: `<Response><Redirect method="POST">/gather-coaching-feedback</Redirect></Response>`
+                      twiml: `<Response><Redirect method="POST">/gather-coaching-feedback?callSid=${encodeURIComponent(callSid)}</Redirect></Response>`
                     });
                     console.log(nowIso(), "Redirect to /gather-coaching-feedback succeeded", { callSid });
                     // Give Twilio a moment to process the redirect before closing media
