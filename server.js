@@ -5619,6 +5619,13 @@ wss.on("connection", (twilioWs, req) => {
 
         utter = String(utter || "").trim();
 
+        if (utter && msg.type === "conversation.item.input_audio_transcription.completed") {
+          console.log(nowIso(), "Caller transcription completed", {
+            phase: callState.phase,
+            utter
+          });
+        }
+
         if (utter) {
           // Safety checks: detect critical issues that require server intervention
           const isSelfHarm = detectSelfHarmLanguage(utter);
@@ -5866,6 +5873,12 @@ wss.on("connection", (twilioWs, req) => {
 
         sawSpeechStarted = true;
 
+        console.log(nowIso(), "Caller speech_started", {
+          phase: callState.phase,
+          waitingForFirstCallerSpeech,
+          sawCallerSpeechSinceLastAIDone
+        });
+
         if (waitingForFirstCallerSpeech) {
           waitingForFirstCallerSpeech = false;
           console.log(nowIso(), "Caller speech detected, AI may respond now");
@@ -5881,6 +5894,13 @@ wss.on("connection", (twilioWs, req) => {
       if (msg.type === "input_audio_buffer.speech_stopped") {
         if (!turnDetectionEnabled) return;
         if (endingRequested || endRedirectRequested) return;
+
+        console.log(nowIso(), "Caller speech_stopped", {
+          phase: callState.phase,
+          sawSpeechStarted,
+          sawCallerSpeechSinceLastAIDone,
+          responseActive
+        });
 
 
 
@@ -6052,22 +6072,31 @@ wss.on("connection", (twilioWs, req) => {
               try {
                 const client = twilioClient();
                 console.log(nowIso(), "Redirecting call to /gather-coaching-feedback", { callSid });
-                
+
                 (async () => {
                   try {
                     await client.calls(callSid).update({
                       twiml: `<Response><Redirect method="POST">/gather-coaching-feedback</Redirect></Response>`
                     });
+                    // Give Twilio a moment to process the redirect before closing media
+                    setTimeout(() => {
+                      closeAll("roleplay_checklist_complete");
+                    }, 500);
+                    return;
                   } catch (e) {
                     console.log(nowIso(), "Failed to redirect call:", e && e.message ? e.message : e);
                   }
+
+                  // If redirect failed, close media to avoid hanging the call
+                  closeAll("roleplay_checklist_complete");
                 })();
+                return;
               } catch (e) {
                 console.log(nowIso(), "Error setting up coaching redirect:", e && e.message ? e.message : e);
               }
             }
-            
-            // Close the WebSocket
+
+            // No Twilio REST available, close the WebSocket
             closeAll("roleplay_checklist_complete");
             return;
           }
