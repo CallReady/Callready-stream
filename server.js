@@ -4080,7 +4080,24 @@ wss.on("connection", (twilioWs, req) => {
         "Brief acknowledgments are fine.\n" +
         "Natural fragments are fine.\n" +
         "Do not sound scripted or corporate.\n" +
-        "Stay warm and professional.\n";
+        "Stay warm and professional.\n" +
+        "\n" +
+        "CRITICAL - JSON OUTPUT REQUIREMENT (MANDATORY EVERY TURN):\n" +
+        "After EVERY response you give, you MUST output a JSON block to track progress.\n" +
+        "The JSON is for server tracking only - the caller will NOT hear it.\n" +
+        "Format (always include the delimiters):\n" +
+        "CHECKLIST_UPDATE_JSON\n" +
+        "{\"field_name\": {\"done\": true, \"value\": \"what they said\"}}\n" +
+        "END_CHECKLIST_UPDATE_JSON\n" +
+        "\n" +
+        "Example response structure:\n" +
+        "Your spoken words: 'Great! Can I get your full name?'\n" +
+        "Then immediately append:\n" +
+        "CHECKLIST_UPDATE_JSON\n" +
+        "{\"birthdate\": {\"done\": true, \"value\": \"April 15, 1990\"}}\n" +
+        "END_CHECKLIST_UPDATE_JSON\n" +
+        "\n" +
+        "Only include fields you are updating THIS turn based on what the caller JUST told you.\n";
 
       // Add scenario context and goal reminder for every turn
       if (callState.scenarioTag === "doctor_default") {
@@ -4147,11 +4164,13 @@ wss.on("connection", (twilioWs, req) => {
           "Progress naturally through these gates. Do NOT announce the gates or number them in your speech.\n" +
           "Speak like a real receptionist/customer service person - conversational, not mechanical.\n" +
           "\n" +
-          "OUTPUT FORMAT INSTRUCTION:\n" +
-          "After you reach Gate 6 and close professionally, output this JSON:\n" +
+          "MANDATORY JSON OUTPUT:\n" +
+          "After you reach Gate 6 and close professionally, you MUST output:\n" +
           "CHECKLIST_UPDATE_JSON\n" +
-          "{ \\\"GATE_6\\\": {\\\"done\\\": true, \\\"value\\\": \\\"completed\\\"} }\n" +
-          "END_CHECKLIST_UPDATE_JSON\n";
+          "{\"GATE_6\": {\"done\": true, \"value\": \"completed\"}}\n" +
+          "END_CHECKLIST_UPDATE_JSON\n" +
+          "\n" +
+          "The caller will NOT hear this JSON - it's for server tracking only.\n";
       }
 
       // Add checklist tracking for doctor_default
@@ -4163,11 +4182,17 @@ wss.on("connection", (twilioWs, req) => {
 
         instructions +=
           "\n" +
+          "SCENARIO CONTEXT:\n" +
+          "You are a receptionist at Evergreen Medical Clinic.\n" +
+          "The caller is scheduling a doctor appointment.\n" +
+          "YOUR GOAL: Collect required information to complete the appointment booking.\n" +
+          "\n" +
           "NEXT_TARGET: " + (nextTarget || "NONE") + "\n";
 
         // Special handling for questions_and_closing phase
         if (nextTarget === "questions_and_closing") {
           instructions +=
+            "\n" +
             "QUESTIONS AND CLOSING PHASE:\n" +
             "You have collected all required appointment information.\n" +
             "Now ask: 'Do you have any questions for me?'\n" +
@@ -4176,13 +4201,14 @@ wss.on("connection", (twilioWs, req) => {
             "After answering their question(s), ask: 'Do you have any other questions?'\n" +
             "Repeat this loop until they indicate they have no further questions (e.g., 'No', 'I think that's all', 'That's it', etc.).\n" +
             "Once they confirm no more questions:\n" +
-            "Provide a professional closing statement including, if appropriate, the appointment date and time:\n" +
-            "Thank them for calling and wish them a good day: Have a great day!'\n" +
-            "Then mark questions_and_closing as done.\n" +
+            "Provide a professional closing statement.\n" +
+            "Thank them for calling and wish them a good day.\n" +
             "\n" +
-            "OUTPUT FORMAT:\n" +
-            "When marking questions_and_closing as done, include in the JSON:\n" +
-            "{ \"questions_and_closing\": {\"done\": true, \"value\": \"completed\"} }\n" +
+            "MANDATORY JSON OUTPUT:\n" +
+            "When you close the call, you MUST output:\n" +
+            "CHECKLIST_UPDATE_JSON\n" +
+            "{\"questions_and_closing\": {\"done\": true, \"value\": \"completed\"}}\n" +
+            "END_CHECKLIST_UPDATE_JSON\n" +
             "\n";
         } else {
           // Add specific field instructions if available
@@ -4191,14 +4217,14 @@ wss.on("connection", (twilioWs, req) => {
             instructions +=
               "\n" +
               "HOW TO COLLECT " + nextTarget.toUpperCase() + ":\n" +
-              fieldInstructions + "\n" +
-              "\n";
+              fieldInstructions + "\n";
           }
           
           instructions +=
+            "\n" +
             "Your next question should primarily aim to collect NEXT_TARGET.\n" +
+            "When the caller answers, you MUST immediately output the JSON block with their answer.\n" +
             "Do not jump ahead unless the caller volunteers relevant information.\n" +
-            "If NEXT_TARGET is NONE, you have all required information. Thank the caller and complete the appointment scheduling with a natural closing line. Do NOT repeat back or read out the collected details.\n" +
             "\n";
         }
 
@@ -4207,23 +4233,12 @@ wss.on("connection", (twilioWs, req) => {
             ? "STILL GATHERING: " + remaining.join(", ") + "\n"
             : "All required items are gathered. Proceed directly to wrap up without recapping the details.\n") +
           "\n" +
-          "OUTPUT FORMAT INSTRUCTION:\n" +
-          "CRITICAL: Your audio and text outputs serve different purposes:\n" +
-          "- AUDIO OUTPUT (what the caller hears): ONLY your natural spoken response. No JSON, no brackets, no delimiters, NO checklist item names or values.\n" +
-          "- TEXT OUTPUT (server-side only): Your natural spoken response, then add the JSON block below.\n" +
-          "\n" +
-          "Examples:\n" +
-          "GOOD - Audio: 'Great, I've got all the information. Dr. Johnson can see you next Tuesday at 2 PM. You're all set!'\n" +
-          "BAD - Audio: 'So I have patient_name: John Smith, birthdate: 1990-04-15...' (don't do this)\n" +
-          "\n" +
-          "Structure for text output:\n" +
-          "Audio: 'Great, I've got all the information. Dr. Johnson can see you next Tuesday at 2 PM. You're all set!'\n" +
-          "Text: Same as audio above, then:\n" +
+          "REMEMBER: You MUST output the JSON block after EVERY response.\n" +
+          "The caller will NOT hear the JSON - it's for server tracking only.\n" +
+          "Example: After caller says their name is 'Sarah Miller', you respond 'Great, Sarah!' then immediately output:\n" +
           "CHECKLIST_UPDATE_JSON\n" +
-          "{ \"patient_name\": {\"done\": true, \"value\": \"John Smith\"} }\n" +
-          "END_CHECKLIST_UPDATE_JSON\n" +
-          "\n" +
-          "Only include checklist IDs you are updating this turn in the JSON block.\n";
+          "{\"patient_name\": {\"done\": true, \"value\": \"Sarah Miller\"}}\n" +
+          "END_CHECKLIST_UPDATE_JSON\n";
       }
 
       return instructions;
