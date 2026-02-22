@@ -4881,7 +4881,7 @@ wss.on("connection", (twilioWs, req) => {
       confirmation_preference: 
         "Ask how they'd like to receive appointment reminders.\n" +
         "Say: 'Would you like a text or a phone to remind you of your appointment?'\n" +
-        "Ask for a phone number if they would like a reminder."
+        "Ask for a phone number if they would like a reminder.\n" +
         "Mark this field done with 'text', 'call', or 'email'.",
       
       questions_and_closing: 
