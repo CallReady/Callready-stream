@@ -3555,14 +3555,14 @@ function buildDoctorChecklist() {
 
 // Build checklist for custom scenarios
 function buildCustomChecklist(userDescription) {
-  return [
-    "GATE 1 - ESTABLISH IDENTITY: Asked for caller's name and confirmed spelling if unclear",
-    "GATE 2 - CLARIFY PURPOSE: Asked what the caller is calling about and restated briefly to confirm understanding",
-    "GATE 3 - COLLECT REQUIRED DETAILS: Asked for at least one necessary detail, requested clarification if unclear",
-    "GATE 4 - INTRODUCE MILD FRICTION: Presented one realistic constraint, limitation, or follow-up question",
-    "GATE 5 - RESOLVE OR DEFINE NEXT STEP: Offered resolution, appointment, action, or escalation and confirmed agreement",
-    "GATE 6 - CLOSE PROFESSIONALLY: Ended call politely"
-  ];
+  return {
+    caller_identity: { required: true, done: false, value: null },
+    call_purpose: { required: true, done: false, value: null },
+    required_details: { required: true, done: false, value: null },
+    friction_point: { required: true, done: false, value: null },
+    next_step: { required: true, done: false, value: null },
+    professional_close: { required: true, done: false, value: null }
+  };
 }
 
 // POST /gather-coaching-feedback
@@ -4025,9 +4025,17 @@ wss.on("connection", (twilioWs, req) => {
   }
 
   function getNextRequiredChecklistId() {
-    if (!callState.checklist || callState.scenarioTag !== "doctor_default") return null;
+    if (!callState.checklist) return null;
 
-    const preferredOrder = getDoctorChecklistOrder();
+    let preferredOrder;
+    if (callState.scenarioTag === "doctor_default") {
+      preferredOrder = getDoctorChecklistOrder();
+    } else if (callState.scenarioTag && callState.scenarioTag.startsWith("custom_")) {
+      preferredOrder = getCustomChecklistOrder();
+    } else {
+      return null;
+    }
+
     for (const id of preferredOrder) {
       const item = callState.checklist[id];
       if (item && item.required && !item.done) {
@@ -4136,72 +4144,64 @@ wss.on("connection", (twilioWs, req) => {
           "You must stay focused on gathering: new/returning patient status, name, birthdate, reason for visit, insurance or self-pay, preferred appointment time, caller questions\n";
       }
 
-      // Add checklist tracking for CUSTOM scenarios (gate-based)
+      // Add checklist tracking for CUSTOM scenarios (unified with doctor_default infrastructure)
       if (callState.scenarioTag && callState.scenarioTag.startsWith("custom_") && callState.checklist) {
+        const nextTarget = getNextRequiredChecklistId();
+        const remaining = Object.keys(callState.checklist).filter(
+          id => callState.checklist[id].required && !callState.checklist[id].done
+        );
+
         instructions +=
           "\n" +
-          "SCENARIO CONTEXT (reminder for this turn):\n" +
+          "SCENARIO CONTEXT:\n" +
           "Scenario: " + (callState.userCustomDescription || "a phone call") + "\n" +
           "\n" +
           "CRITICAL - YOU ARE ANSWERING THE PHONE:\n" +
           "You are NOT the caller. You are the person/business RECEIVING the call.\n" +
-          "Create a realistic opening with:\n" +
-          "1) An INVENTED business/organization NAME (be creative: 'Riverside Auto Repair', 'Metro Spa & Wellness', 'Thompson Accounting Services', etc.)\n" +
-          "2) An INVENTED CHARACTER NAME (first name only: 'This is Sarah', 'This is Marcus', etc.)\n" +
-          "3) A NATURAL OPENING GREETING ('Thank you for calling...' or 'Hi, thanks for calling...' or similar)\n" +
+          "Create a realistic opening with an invented business name, your character name, and natural greeting.\n" +
+          "Example: 'Hello, thank you for calling Coastline Dental. This is Jennifer. How can I help you?'\n" +
           "\n" +
-          "Example openers:\n" +
-          "- 'Hello, thank you for calling Coastline Dental. This is Jennifer. How can I help you?'\n" +
-          "- 'Hi, thanks for calling Park Street Events. I'm Alex. What can I do for you?'\n" +
-          "- 'Good afternoon, Harmony Wellness Center, this is Maya speaking. What brings you in today?'\n" +
+          "NEXT_TARGET: " + (nextTarget || "NONE") + "\n";
+
+        // Special handling for professional_close phase
+        if (nextTarget === "professional_close") {
+          instructions +=
+            "\n" +
+            "CLOSING PHASE:\n" +
+            "You have handled the call successfully.\n" +
+            "Now close professionally with warmth: 'Thanks for calling!', 'Have a great day!', etc.\n" +
+            "\n" +
+            "OUTPUT FORMAT INSTRUCTION:\n" +
+            "After your closing, output the JSON to mark this complete.\n";
+        } else if (nextTarget) {
+          const customInstructions = getCustomChecklistFieldInstructions(nextTarget);
+          if (customInstructions) {
+            instructions +=
+              "\n" +
+              "HOW TO COLLECT " + nextTarget.toUpperCase() + ":\n" +
+              customInstructions + "\n";
+          }
+          
+          instructions +=
+            "\n" +
+            "Your next question should primarily aim to collect NEXT_TARGET.\n" +
+            "Do not jump ahead unless the caller volunteers relevant information.\n" +
+            "\n";
+        }
+
+        instructions +=
+          (remaining.length > 0
+            ? "STILL GATHERING: " + remaining.join(", ") + "\n"
+            : "All required items are gathered. Close the call professionally.\n") +
           "\n" +
-          "GATES - PROGRESS THROUGH THEM ADAPTIVELY:\n" +
-          "You will progress through 6 gates. NOT all gates need equal weight - adapt or skip them to fit the scenario:\n" +
-          "\n" +
-          "GATE 1: ESTABLISH IDENTITY\n" +
-          "Get the caller's name (and confirm spelling if needed). Natural format: 'May I get your name?' / 'And your name is...?'\n" +
-          "\n" +
-          "GATE 2: CLARIFY PURPOSE  \n" +
-          "Understand why they're calling and restate it back. E.g., 'So you're calling about...?' or 'And you're interested in...?'\n" +
-          "For some scenarios (e.g., customer complaint, technical support), this gate is CRITICAL.\n" +
-          "For others (e.g., simple appointment booking), this may be brief.\n" +
-          "\n" +
-          "GATE 3: COLLECT REQUIRED DETAILS\n" +
-          "Ask for scenario-specific information (phone number, account number, preferred times, insurance, etc.).\n" +
-          "What details matter depends on YOUR role. For a pharmacy: prescription details, insurance, phone.\n" +
-          "For event planning: date, guest count, budget. For tech support: device type, error message.\n" +
-          "\n" +
-          "GATE 4: INTRODUCE MILD FRICTION\n" +
-          "Present ONE realistic constraint or require clarification that adds authenticity:\n" +
-          "- 'We're currently booking 2-3 weeks out. Is that timeline okay for you?'\n" +
-          "- 'That service requires a setup fee of $50. Does that work?'\n" +
-          "- 'We don't carry that brand, but we have a similar alternative. Interested?'\n" +
-          "This gate MUST happen but can be brief and natural.\n" +
-          "\n" +
-          "GATE 5: RESOLVE OR DEFINE NEXT STEP\n" +
-          "Confirm what happens next or what you can offer them.\n" +
-          "- 'Perfect, I've got you down for next Thursday at 2 PM.'\n" +
-          "- 'I'll email you that quote by end of day.'\n" +
-          "- 'We'll ship that out to you tomorrow.'\n" +
-          "\n" +
-          "GATE 6: CLOSE PROFESSIONALLY\n" +
-          "End naturally with warmth: 'Thanks for calling!', 'Have a great day!', 'Looking forward to working with you!'\n" +
-          "\n" +
-          "Progress naturally through these gates. Do NOT announce the gates or number them in your speech.\n" +
-          "Speak like a real receptionist/customer service person - conversational, not mechanical.\n" +
-          "\n" +
-          "MANDATORY JSON OUTPUT:\n" +
-          "When you complete Gate 6, output the JSON in this format:\n" +
-          "\n" +
-          "Thanks for calling!\n" +
-          "\n" +
-          "---JSON_SERVER_DATA_START---\n" +
+          "OUTPUT FORMAT INSTRUCTION:\n" +
+          "After EVERY response, output a checklist update JSON block.\n" +
+          "Example: After caller says 'My name is Alex':\n" +
           "CHECKLIST_UPDATE_JSON\n" +
-          "{\"GATE_6\": {\"done\": true, \"value\": \"completed\"}}\n" +
+          "{\"caller_identity\": {\"done\": true, \"value\": \"Alex\"}}\n" +
           "END_CHECKLIST_UPDATE_JSON\n" +
-          "---JSON_SERVER_DATA_END---\n" +
           "\n" +
-          "The caller will ONLY hear 'Thanks for calling!' - the JSON will not be spoken.\n";
+          "Only include checklist IDs you are updating this turn.\n";
       }
 
       // Add checklist tracking for doctor_default
@@ -4900,6 +4900,11 @@ wss.on("connection", (twilioWs, req) => {
     return ["new_or_returning_patient", "birthdate", "patient_name", "reason_for_appointment", "insurance", "appointment_preference", "confirmation_preference", "questions_and_closing"];
   }
 
+  function getCustomChecklistOrder() {
+    // Define the preferred order for custom scenario checklist items
+    return ["caller_identity", "call_purpose", "required_details", "friction_point", "next_step", "professional_close"];
+  }
+
   function getDoctorChecklistFieldInstructions(fieldName) {
     // Explicit instructions for each checklist field to guide AI behavior
     const instructions = {
@@ -4949,6 +4954,52 @@ wss.on("connection", (twilioWs, req) => {
       questions_and_closing: 
         "This is handled by special logic - see QUESTIONS AND CLOSING PHASE instructions.\n" +
         "Ask if they have questions, answer them, then provide closing confirmation."
+    };
+    
+    return instructions[fieldName] || "";
+  }
+
+  function getCustomChecklistFieldInstructions(fieldName) {
+    // Explicit instructions for each custom scenario checklist field
+    const instructions = {
+      caller_identity: 
+        "Ask for the caller's name.\n" +
+        "Say: 'May I get your name?' or 'And your name is...?'\n" +
+        "If the name is uncommon, ask them to spell it.\n" +
+        "Mark this field done with their name.",
+      
+      call_purpose: 
+        "Ask why they're calling and restate it back to confirm understanding.\n" +
+        "Say: 'What can I help you with today?' or 'What brings you in?'\n" +
+        "Then confirm: 'So you're calling about [their reason]?'\n" +
+        "Mark this field done with their call purpose.",
+      
+      required_details: 
+        "Ask for at least one scenario-specific detail.\n" +
+        "Examples: phone number, account number, preferred time, specific product/service, etc.\n" +
+        "What matters depends on your role and the call purpose.\n" +
+        "Mark this field done with the key detail they provide.",
+      
+      friction_point: 
+        "Present ONE realistic constraint, limitation, or follow-up question.\n" +
+        "Examples:\n" +
+        "- 'We're booking 2-3 weeks out. Is that okay?'\n" +
+        "- 'That requires a $50 setup fee. Does that work?'\n" +
+        "- 'We don't have that in stock, but we have [alternative]. Interested?'\n" +
+        "This adds authenticity. Mark done when you've presented the constraint.",
+      
+      next_step: 
+        "Define what happens next or what you can offer.\n" +
+        "Examples:\n" +
+        "- 'I've got you down for next Thursday at 2 PM.'\n" +
+        "- 'I'll email you that quote by end of day.'\n" +
+        "- 'We'll ship that tomorrow.'\n" +
+        "Mark done when you've confirmed the next step.",
+      
+      professional_close: 
+        "End the call professionally with warmth.\n" +
+        "Say: 'Thanks for calling!', 'Have a great day!', 'Looking forward to working with you!'\n" +
+        "Mark done when you've closed."
     };
     
     return instructions[fieldName] || "";
@@ -5926,8 +5977,9 @@ wss.on("connection", (twilioWs, req) => {
 
         // Roleplay: parse and merge checklist updates from text-only JSON block
         // Do this BEFORE flushing pendingResponseCreate so checklist is current
-        if (callState.phase === "roleplay" && callState.scenarioTag === "doctor_default" && callState.checklist) {
-          console.log(nowIso(), "Checking for checklist update in response text", { textLength: text ? text.length : 0 });
+        // Now supports BOTH doctor_default and custom scenarios
+        if (callState.phase === "roleplay" && callState.checklist && (callState.scenarioTag === "doctor_default" || (callState.scenarioTag && callState.scenarioTag.startsWith("custom_")))) {
+          console.log(nowIso(), "Checking for checklist update in response text", { scenarioTag: callState.scenarioTag, textLength: text ? text.length : 0 });
           const checklistUpdate = parseChecklistUpdateJson(text);
           if (checklistUpdate) {
             console.log(nowIso(), "Checklist update found", { updates: Object.keys(checklistUpdate) });
@@ -5999,55 +6051,6 @@ wss.on("connection", (twilioWs, req) => {
             // Close the WebSocket
             closeAll("roleplay_checklist_complete");
             return;
-          }
-        }
-
-        // Roleplay: parse and merge checklist updates from text-only JSON block (CUSTOM scenarios)
-        // Do this BEFORE flushing pendingResponseCreate so checklist is current
-        if (callState.phase === "roleplay" && callState.scenarioTag && callState.scenarioTag.startsWith("custom_") && callState.checklist) {
-          const checklistUpdate = parseChecklistUpdateJson(text);
-          if (checklistUpdate && checklistUpdate.GATE_6 && checklistUpdate.GATE_6.done) {
-            // Custom scenario complete: transition to Twilio-based coaching
-            console.log(nowIso(), "Custom scenario roleplay complete (GATE_6 detected), transitioning to coaching");
-            callState.roleplayComplete = true;
-            
-            // Store the transcript and scenario for the coaching/wrap-up endpoints to use
-            if (callSid) {
-              twilioCoachingContexts.set(callSid, {
-                transcript: callState.roleplayTranscript || [],
-                scenarioTag: callState.scenarioTag,
-                userCustomDescription: callState.userCustomDescription || null,
-                feedbackRequested: false
-              });
-              console.log(nowIso(), "Stored coaching context for custom scenario", {
-                callSid,
-                transcriptLength: callState.roleplayTranscript ? callState.roleplayTranscript.length : 0,
-                scenarioTag: callState.scenarioTag
-              });
-            }
-            
-            // Redirect the call to the coaching feedback gathering endpoint via Twilio REST API
-            if (callSid && hasTwilioRest()) {
-              try {
-                const client = twilioClient();
-                console.log(nowIso(), "Redirecting custom scenario call to /gather-coaching-feedback", { callSid });
-                
-                (async () => {
-                  try {
-                    await client.calls(callSid).update({
-                      twiml: `<Response><Redirect method="POST">/gather-coaching-feedback</Redirect></Response>`
-                    });
-                  } catch (e) {
-                    console.log(nowIso(), "Failed to redirect call:", e && e.message ? e.message : e);
-                  }
-                })();
-              } catch (e) {
-                console.log(nowIso(), "Error setting up coaching redirect:", e && e.message ? e.message : e);
-              }
-            }
-            
-            // Close the WebSocket
-            closeAll("custom_roleplay_complete");
           }
         }
 
