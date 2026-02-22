@@ -1963,7 +1963,7 @@ app.post("/gather-choose-scenario", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    const questionText = "Tell me about the call you want to practice. Who is it to and what is it about, or, if you want me to pick something for us to practice, just say, 'you choose.'";
+    const questionText = "Tell me about the call you want to practice or, if you want me to pick something, just say 'you can choose.'";
 
     const gather = vr.gather({
       input: "speech",
@@ -3939,7 +3939,8 @@ wss.on("connection", (twilioWs, req) => {
     connectingStartedAtMs: null, // milliseconds timestamp when entering connecting phase
     connectingTimeoutFired: false, // flag to fire connecting timeout only once
     checklist: null,             // { id: { required: bool, done: bool, value: string|null }, ... }
-    roleplayTranscript: []       // Array of {speaker: "caller"|"ai", text: string, timestamp: number}
+    roleplayTranscript: [],      // Array of {speaker: "caller"|"ai", text: string, timestamp: number}
+    questionsAndClosingSawQuestion: false
   };
 
   LAST_CALL_STATE = callState;
@@ -4026,6 +4027,7 @@ wss.on("connection", (twilioWs, req) => {
     // State hygiene: clear roleplay transcript when entering roleplay
     if (next === "roleplay" && prev !== "roleplay") {
       callState.roleplayTranscript = [];
+      callState.questionsAndClosingSawQuestion = false;
     }
 
     // State hygiene: reset coaching flag when leaving coaching phase
@@ -5819,6 +5821,38 @@ wss.on("connection", (twilioWs, req) => {
           }
 
           var u = utter.toLowerCase();
+
+          // If we're at the final questions_and_closing step and the caller declines, mark it complete.
+          if (
+            callState.phase === "roleplay" &&
+            callState.scenarioTag === "doctor_default" &&
+            callState.checklist &&
+            !callState.checklist.questions_and_closing?.done &&
+            msg.type === "conversation.item.input_audio_transcription.completed"
+          ) {
+            const nextTarget = getNextRequiredChecklistId();
+            if (nextTarget === "questions_and_closing") {
+              const questionRe = /\b(what|when|where|why|how|can|could|would|should|do|does|is|are|will|may|did|who)\b/i;
+              if (questionRe.test(u)) {
+                callState.questionsAndClosingSawQuestion = true;
+                console.log(nowIso(), "questions_and_closing: caller asked a question");
+              }
+
+              const noQuestionsRe = /\b(no|nope|nah|no questions|nope i'm good|nope im good|i'm good|im good|all good|nothing else)\b/i;
+              if (noQuestionsRe.test(u)) {
+                callState.checklist.questions_and_closing.done = true;
+                callState.checklist.questions_and_closing.value = "caller_no_questions";
+                console.log(nowIso(), "Checklist auto-complete: questions_and_closing (caller no questions)");
+              }
+
+              const callerThanksRe = /\b(thanks|thank you|appreciate it|have a good day|have a great day|bye|goodbye)\b/i;
+              if (callState.questionsAndClosingSawQuestion && callerThanksRe.test(u)) {
+                callState.checklist.questions_and_closing.done = true;
+                callState.checklist.questions_and_closing.value = "caller_thanks_after_question";
+                console.log(nowIso(), "Checklist auto-complete: questions_and_closing (caller thanked after question)");
+              }
+            }
+          }
 
           // Reroute: end (strong intent only)
           if (callState.redirectingToCoaching || callState.roleplayComplete) {
