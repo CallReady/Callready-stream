@@ -4868,7 +4868,7 @@ wss.on("connection", (twilioWs, req) => {
     const instructions = {
       new_or_returning_patient: 
         "Ask if they are a new patient or returning patient.\n" +
-        "If new: say 'Welcome! Are you a new patient with us or have you been seen here before?'\n" +
+        "If new: say 'That's great! Welcome to our clinic!'\n" +
         "If returning: acknowledge and continue.\n" +
         "After they answer, call mark_checklist_item_complete(field_id='new_or_returning_patient', value='new' or 'returning').",
       
@@ -4901,12 +4901,12 @@ wss.on("connection", (twilioWs, req) => {
         "Ask when they'd like to come in.\n" +
         "Say: 'When would you like to come in?' or 'What day works best for you?'\n" +
         "Offer options if they're unsure: 'We have openings next Tuesday at 10 AM or Thursday at 2 PM. Which works better?'\n" +
-        "After they choose, call mark_checklist_item_complete(field_id='appointment_preference', value='<date/time preference>').",
+        "After they choose, call mark_checklist_item_complete(field_id='appointment_preference', value='<date/time preference>'). \n" +
+        "You do not need to re-confirm a day/time that caller suggested. \n",
       
       confirmation_preference: 
-        "Ask how they'd like to receive appointment reminders.\n" +
+        "Ask how they'd like to receive appointment reminders by call or text.\n" +
         "Say: 'Would you like a text or a phone call to remind you of your appointment?'\n" +
-        "Ask for a phone number if they would like a reminder.\n" +
         "After they answer, call mark_checklist_item_complete(field_id='confirmation_preference', value='text' or 'call' or 'email').",
       
       questions_and_closing: 
