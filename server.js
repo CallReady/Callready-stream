@@ -4172,8 +4172,21 @@ wss.on("connection", (twilioWs, req) => {
             "You have handled the call successfully.\n" +
             "Now close professionally with warmth: 'Thanks for calling!', 'Have a great day!', etc.\n" +
             "\n" +
-            "OUTPUT FORMAT INSTRUCTION:\n" +
-            "After your closing, output the JSON to mark this complete.\n";
+            "MANDATORY JSON OUTPUT:\n" +
+            "When you close the call, output in this format:\n" +
+            "\n" +
+            "Have a great day!\n" +
+            "\n" +
+            "---JSON_SERVER_DATA_START---\n" +
+            "CHECKLIST_UPDATE_JSON\n" +
+            "{\"professional_close\": {\"done\": true, \"value\": \"completed\"}}\n" +
+            "END_CHECKLIST_UPDATE_JSON\n" +
+            "---JSON_SERVER_DATA_END---\n" +
+            "\n" +
+            "Caller hears: 'Have a great day!'\n" +
+            "Server receives: checklist update marking professional_close as done\n" +
+            "DO NOT SPEAK THE JSON - Write it in text only after speaking your closing.\n" +
+            "\n";
         } else if (nextTarget) {
           const customInstructions = getCustomChecklistFieldInstructions(nextTarget);
           if (customInstructions) {
@@ -4195,12 +4208,27 @@ wss.on("connection", (twilioWs, req) => {
             ? "STILL GATHERING: " + remaining.join(", ") + "\n"
             : "All required items are gathered. Close the call professionally.\n") +
           "\n" +
+          "CRITICAL - DO NOT SPEAK THE JSON:\n" +
+          "The JSON markers and content are ONLY for the server to read.\n" +
+          "Do NOT speak, read, or say anything between the markers out loud.\n" +
+          "SPEAK your natural response FIRST, then output the JSON markers silently in text only.\n" +
+          "\n" +
           "OUTPUT FORMAT INSTRUCTION:\n" +
-          "After EVERY response, output a checklist update JSON block.\n" +
+          "After EVERY response, output a checklist update JSON block using markers.\n" +
+          "\n" +
           "Example: After caller says 'My name is Alex':\n" +
+          "\n" +
+          "Nice to meet you, Alex!\n" +
+          "\n" +
+          "---JSON_SERVER_DATA_START---\n" +
           "CHECKLIST_UPDATE_JSON\n" +
           "{\"caller_identity\": {\"done\": true, \"value\": \"Alex\"}}\n" +
           "END_CHECKLIST_UPDATE_JSON\n" +
+          "---JSON_SERVER_DATA_END---\n" +
+          "\n" +
+          "Caller hears: 'Nice to meet you, Alex!'\n" +
+          "YOU SPEAK: 'Nice to meet you, Alex!' (STOP SPEAKING HERE)\n" +
+          "YOU WRITE IN TEXT ONLY: The JSON block (silent, not spoken)\n" +
           "\n" +
           "Only include checklist IDs you are updating this turn.\n";
       }
@@ -4273,6 +4301,11 @@ wss.on("connection", (twilioWs, req) => {
             ? "STILL GATHERING: " + remaining.join(", ") + "\n"
             : "All required items are gathered. Proceed directly to wrap up without recapping the details.\n") +
           "\n" +
+          "CRITICAL - DO NOT SPEAK THE JSON:\n" +
+          "The JSON markers and content are ONLY for the server to read.\n" +
+          "Do NOT speak, read, or say anything between the markers out loud.\n" +
+          "SPEAK your natural response FIRST, then output the JSON markers silently in text only.\n" +
+          "\n" +
           "REMEMBER: You MUST output the JSON block after EVERY response using the markers.\n" +
           "The caller will ONLY hear words before ---JSON_SERVER_DATA_START---.\n" +
           "\n" +
@@ -4286,7 +4319,9 @@ wss.on("connection", (twilioWs, req) => {
           "END_CHECKLIST_UPDATE_JSON\n" +
           "---JSON_SERVER_DATA_END---\n" +
           "\n" +
-          "Caller hears: 'Great, Sarah!'\n";
+          "Caller hears: 'Great, Sarah!'\n" +
+          "YOU SPEAK: 'Great, Sarah!' (STOP SPEAKING HERE)\n" +
+          "YOU WRITE IN TEXT ONLY: The JSON block (silent, not spoken)\n";
       }
 
       return instructions;
@@ -5196,7 +5231,8 @@ wss.on("connection", (twilioWs, req) => {
     return;
   }
 
-  function extractTextFromResponseDone(msg) {
+  // Extract raw text from response (includes JSON markers)
+  function extractRawTextFromResponse(msg) {
     let out = "";
 
     const response = msg && msg.response ? msg.response : null;
@@ -5218,19 +5254,30 @@ wss.on("connection", (twilioWs, req) => {
 
     if (typeof response.output_text === "string") out += response.output_text + "\n";
     
-    // Strip JSON server data section before returning (so it's not synthesized to audio)
+    return out;
+  }
+
+  // Strip JSON markers from text (for audio synthesis)
+  function stripJsonMarkers(text) {
+    if (!text) return text;
+    
     const startMarker = "---JSON_SERVER_DATA_START---";
     const endMarker = "---JSON_SERVER_DATA_END---";
-    const startIdx = out.indexOf(startMarker);
+    const startIdx = text.indexOf(startMarker);
     if (startIdx !== -1) {
-      const endIdx = out.indexOf(endMarker, startIdx);
+      const endIdx = text.indexOf(endMarker, startIdx);
       if (endIdx !== -1) {
         // Remove everything from startMarker to endMarker inclusive
-        out = out.substring(0, startIdx) + out.substring(endIdx + endMarker.length);
+        return text.substring(0, startIdx) + text.substring(endIdx + endMarker.length);
       }
     }
-    
-    return out;
+    return text;
+  }
+
+  // Extract text from response, stripping JSON markers (legacy wrapper)
+  function extractTextFromResponseDone(msg) {
+    const rawText = extractRawTextFromResponse(msg);
+    return stripJsonMarkers(rawText);
   }
 
   function parseChecklistUpdateJson(text) {
@@ -5953,14 +6000,18 @@ wss.on("connection", (twilioWs, req) => {
       }
 
       if (msg.type === "response.done") {
-        const text = extractTextFromResponseDone(msg);
+        // Extract raw text with JSON markers intact for parsing
+        const rawText = extractRawTextFromResponse(msg);
+        // Also get cleaned text for display/transcript
+        const cleanedText = stripJsonMarkers(rawText);
+        
         responseActive = false;
         callState.openaiResponseActive = false;
         
         // Capture roleplay transcript for coaching feedback (AI responses)
-        if (callState.phase === "roleplay" && text && text.trim()) {
+        if (callState.phase === "roleplay" && cleanedText && cleanedText.trim()) {
           // Remove JSON blocks and special tokens from the transcript
-          let cleanText = text.replace(/CHECKLIST_UPDATE_JSON[\s\S]*?END_CHECKLIST_UPDATE_JSON/g, '').trim();
+          let cleanText = cleanedText.replace(/CHECKLIST_UPDATE_JSON[\s\S]*?END_CHECKLIST_UPDATE_JSON/g, '').trim();
           cleanText = cleanText.replace(/CALLREADY_END:.*$/gm, '').trim();
           
           if (cleanText) {
@@ -5980,8 +6031,9 @@ wss.on("connection", (twilioWs, req) => {
         // Do this BEFORE flushing pendingResponseCreate so checklist is current
         // Now supports BOTH doctor_default and custom scenarios
         if (callState.phase === "roleplay" && callState.checklist && (callState.scenarioTag === "doctor_default" || (callState.scenarioTag && callState.scenarioTag.startsWith("custom_")))) {
-          console.log(nowIso(), "Checking for checklist update in response text", { scenarioTag: callState.scenarioTag, textLength: text ? text.length : 0 });
-          const checklistUpdate = parseChecklistUpdateJson(text);
+          console.log(nowIso(), "Checking for checklist update in response text", { scenarioTag: callState.scenarioTag, rawTextLength: rawText ? rawText.length : 0 });
+          // Parse using RAW text (with markers intact)
+          const checklistUpdate = parseChecklistUpdateJson(rawText);
           if (checklistUpdate) {
             console.log(nowIso(), "Checklist update found", { updates: Object.keys(checklistUpdate) });
 
@@ -6134,7 +6186,7 @@ wss.on("connection", (twilioWs, req) => {
             }
           } catch { }
 
-          const aiRequestedEnd = responseTextRequestsEnd(text);
+          const aiRequestedEnd = responseTextRequestsEnd(cleanedText);
 
           if (!endRedirectRequested && aiRequestedEnd) {
             (async () => {
