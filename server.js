@@ -1963,7 +1963,7 @@ app.post("/gather-choose-scenario", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    const questionText = "Do you have a call in mind that you'd like to practice?";
+    const questionText = "Tell me about the call you want to practice. Who is it to and what is it about, or, if you want me to pick something for us to practice, just say, 'you choose.'";
 
     const gather = vr.gather({
       input: "speech",
@@ -2116,12 +2116,22 @@ app.post("/process-choose-scenario", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    const saidYes = isYes(speechResult);
-    const saidNo = isNo(speechResult);
+    const normalized = normalizeSpeech(speechResult);
+    const wantsUsToChoose = normalized.includes("you choose");
 
-    console.log(nowIso(), "scenario_choice", { phase: "choose_scenario", speech: speechResult, yes: saidYes, no: saidNo });
+    console.log(nowIso(), "scenario_choice", { phase: "choose_scenario", speech: speechResult, choose: wantsUsToChoose, confidence: confidence });
 
-    if (saidYes) {
+    if (wantsUsToChoose) {
+      if (callSid) {
+        twilioChooseScenarioRetries.delete(callSid);
+        twilioScenarioFlags.set(callSid, "doctor_default");
+      }
+      vr.redirect({ method: "POST" }, "/gather-confirm-doctor");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    if (normalized && confidence >= 0.4) {
       if (callSid) {
         twilioChooseScenarioRetries.delete(callSid);
       }
@@ -2130,24 +2140,14 @@ app.post("/process-choose-scenario", async (req, res) => {
       return;
     }
 
-    if (saidNo) {
-      if (callSid) {
-        twilioChooseScenarioRetries.delete(callSid);
-      }
-      vr.redirect({ method: "POST" }, "/gather-scenario-choice-confirm");
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
-    const clarifyText = "Sorry, I just need a yes or no. Do you have a call in mind that you'd like to practice?";
+    const clarifyText = "I didn't quite get that. Tell me about the call you want to practice. Who is it to and what is it about, or, if you want me to pick something for us to practice, just say, 'you choose.'";
     const gather = vr.gather({
       input: "speech",
       timeout: 3,
       speechTimeout: 0.8,
       action: "/process-choose-scenario",
       method: "POST",
-      language: "en-US",
-      hints: "yes, no"
+      language: "en-US"
     });
     gather.say({ voice: TWILIO_VOICE }, clarifyText);
     res.type("text/xml").send(vr.toString());
@@ -6132,10 +6132,12 @@ wss.on("connection", (twilioWs, req) => {
         listenBlockUntilMs = 0;
         
         // Handle function calls (silent checklist updates)
+        let sawChecklistToolCall = false;
         if (msg.response && msg.response.output) {
           for (const item of msg.response.output) {
             if (item.type === "function_call" && item.name === "mark_checklist_item_complete") {
               try {
+                sawChecklistToolCall = true;
                 const args = typeof item.arguments === "string" ? JSON.parse(item.arguments) : item.arguments;
                 const field_id = args.field_id;
                 const value = args.value;
@@ -6187,6 +6189,24 @@ wss.on("connection", (twilioWs, req) => {
         
         if ((callState.phase === "connecting" || callState.phase === "roleplay") && aiAudioBytesThisResponse === 0) {
           // Response completed with no audio
+        }
+
+        // Guard: if we got a tool-only response in roleplay, prompt for the next spoken turn.
+        if (
+          callState.phase === "roleplay" &&
+          aiAudioBytesThisResponse === 0 &&
+          sawChecklistToolCall &&
+          !endingRequested &&
+          !endRedirectRequested
+        ) {
+          openaiResponseCreate({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              tool_choice: "none",
+              instructions: buildPhaseContext("tool_only_followup")
+            },
+          });
         }
 
         // Roleplay: parse and merge checklist updates from text-only JSON block
