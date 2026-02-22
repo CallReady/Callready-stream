@@ -1985,6 +1985,9 @@ app.post("/gather-choose-scenario", async (req, res) => {
       twilioChooseScenarioRetries.set(callSid, retryCount);
     }
 
+    // Fallback if no input - increment retry count
+    vr.redirect({ method: "POST" }, `/gather-choose-scenario?retryCount=${retryCount + 1}`);
+
     res.type("text/xml").send(vr.toString());
   } catch (err) {
     console.error("/gather-choose-scenario ERROR:", err);
@@ -2000,11 +2003,6 @@ app.all("/gather-previous-scenario", async (req, res) => {
     const retry = req.query?.retry === "1";
 
     console.log(nowIso(), "/gather-previous-scenario", { callSid, retry });
-
-    // Clear any retry count from previous scenario selection phase
-    if (!retry && callSid) {
-      twilioChooseScenarioRetries.delete(callSid);
-    }
 
     const context = twilioReturningCallerContexts.get(callSid);
     if (!context || !context.scenario_tag) {
@@ -2034,6 +2032,9 @@ app.all("/gather-previous-scenario", async (req, res) => {
     });
 
     gather.say({ voice: TWILIO_VOICE }, questionText);
+
+    // Fallback if no input
+    vr.redirect({ method: "POST" }, "/gather-previous-scenario?retry=1");
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
@@ -2065,27 +2066,16 @@ app.all("/process-previous-scenario", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    // Handle timeout case: no speech detected
-    if (!speechResult || speechResult.trim().length === 0) {
-      console.log(nowIso(), "/process-previous-scenario: No speech detected (timeout), retrying", { callSid });
-      vr.redirect({ method: "POST" }, "/gather-previous-scenario?retry=1");
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
-    // Handle low confidence
-    if (confidence < 0.5) {
-      console.log(nowIso(), "/process-previous-scenario: Low confidence, retrying", { callSid, confidence });
-      vr.redirect({ method: "POST" }, "/gather-previous-scenario?retry=1");
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
     // Determine if response is affirmative (yes, yeah, sure, etc.)
     const isAffirmative = /\b(yes|yeah|yep|sure|definitely|absolutely|ok|okay|let\'s|let's|go|proceed|start)\b/i.test(speechResult);
     const isNegative = /\b(no|nope|different|something else|other|change)\b/i.test(speechResult);
 
-    if (isAffirmative) {
+    if (confidence < 0.5) {
+      // Low confidence, retry
+      vr.redirect({ method: "POST" }, "/gather-previous-scenario?retry=1");
+      res.type("text/xml").send(vr.toString());
+      return;
+    } else if (isAffirmative) {
       // User wants to re-practice previous scenario
       console.log(nowIso(), "/process-previous-scenario: User accepted re-practice", {
         callSid,
@@ -2107,7 +2097,6 @@ app.all("/process-previous-scenario", async (req, res) => {
       return;
     } else {
       // Unclear response, retry
-      console.log(nowIso(), "/process-previous-scenario: Unclear response, retrying", { callSid, speechResult });
       vr.redirect({ method: "POST" }, "/gather-previous-scenario?retry=1");
       res.type("text/xml").send(vr.toString());
     }
@@ -2130,22 +2119,6 @@ app.post("/process-choose-scenario", async (req, res) => {
 
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
-
-    // Handle timeout case: no speech detected
-    if (!speechResult || speechResult.trim().length === 0) {
-      console.log(nowIso(), "/process-choose-scenario: No speech detected (timeout), retrying", { callSid, currentRetryCount });
-      vr.redirect({ method: "POST" }, `/gather-choose-scenario?retryCount=${currentRetryCount + 1}`);
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
-    // Handle low confidence
-    if (confidence < 0.5) {
-      console.log(nowIso(), "/process-choose-scenario: Low confidence, retrying", { callSid, confidence });
-      vr.redirect({ method: "POST" }, `/gather-choose-scenario?retryCount=${currentRetryCount + 1}`);
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
 
     const text = speechResult.toLowerCase().trim();
 
@@ -2210,6 +2183,9 @@ app.post("/gather-scenario-menu", async (req, res) => {
     });
 
     gather.say({ voice: TWILIO_VOICE }, menuText);
+
+    // Fallback if no input
+    vr.redirect({ method: "POST" }, "/gather-scenario-menu?retry=1");
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
@@ -2306,6 +2282,9 @@ app.post("/gather-describe-call", async (req, res) => {
     });
 
     gather.say({ voice: TWILIO_VOICE }, questionText);
+
+    // Fallback if no input
+    vr.redirect({ method: "POST" }, "/gather-describe-call?retry=1");
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
@@ -2432,6 +2411,9 @@ app.post("/gather-confirm-suggested-scenario", async (req, res) => {
 
     gather.say({ voice: TWILIO_VOICE }, questionText);
 
+    // Fallback if no input
+    vr.redirect({ method: "POST" }, `/gather-confirm-suggested-scenario?tag=${encodeURIComponent(scenarioTag)}&retry=1`);
+
     res.type("text/xml").send(vr.toString());
   } catch (err) {
     console.error("/gather-confirm-suggested-scenario ERROR:", err);
@@ -2453,22 +2435,6 @@ app.post("/process-confirm-suggested-scenario", async (req, res) => {
     const vr = new VoiceResponse();
 
     const text = speechResult.toLowerCase().trim();
-
-    // Handle timeout case: no speech detected
-    if (!text) {
-      console.log(nowIso(), "/process-confirm-suggested-scenario: No speech detected (timeout), retrying", { callSid });
-      vr.redirect({ method: "POST" }, `/gather-confirm-suggested-scenario?tag=${encodeURIComponent(scenarioTag)}&retry=1`);
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
-    // Handle low confidence
-    if (confidence < 0.5) {
-      console.log(nowIso(), "/process-confirm-suggested-scenario: Low confidence, retrying", { callSid, confidence });
-      vr.redirect({ method: "POST" }, `/gather-confirm-suggested-scenario?tag=${encodeURIComponent(scenarioTag)}&retry=1`);
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
 
     const yesRe = /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|let's do it|lets do it|go ahead|whatever|fine|alright|right|correct|exact)\b/i;
     const noRe = /\b(no|nope|nah|not really|don't|dont|different|something else|another|change|wrong|no thanks)\b/i;
@@ -2534,6 +2500,9 @@ app.post("/gather-custom-call-confirmation", async (req, res) => {
 
     gather.say({ voice: TWILIO_VOICE }, questionText);
 
+    // Fallback if no input
+    vr.redirect({ method: "POST" }, "/gather-custom-call-confirmation?retry=1");
+
     res.type("text/xml").send(vr.toString());
   } catch (err) {
     console.error("/gather-custom-call-confirmation ERROR:", err);
@@ -2554,22 +2523,6 @@ app.post("/process-custom-call-confirmation", async (req, res) => {
     const vr = new VoiceResponse();
 
     const text = speechResult.toLowerCase().trim();
-
-    // Handle timeout case: no speech detected
-    if (!text) {
-      console.log(nowIso(), "/process-custom-call-confirmation: No speech detected (timeout), retrying", { callSid });
-      vr.redirect({ method: "POST" }, "/gather-custom-call-confirmation?retry=1");
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
-    // Handle low confidence
-    if (confidence < 0.5) {
-      console.log(nowIso(), "/process-custom-call-confirmation: Low confidence, retrying", { callSid, confidence });
-      vr.redirect({ method: "POST" }, "/gather-custom-call-confirmation?retry=1");
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
 
     const yesRe = /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|let's do it|lets do it|go ahead|fine|alright|right|ready)\b/i;
     const noRe = /\b(no|nope|nah|not really|don't|dont|no thanks|pass|end|stop|hang up|goodbye)\b/i;
@@ -2637,6 +2590,9 @@ app.post("/gather-confirm-doctor", async (req, res) => {
 
     gather.say({ voice: TWILIO_VOICE }, questionText);
 
+    // Fallback if no input
+    vr.redirect({ method: "POST" }, "/gather-confirm-doctor?retry=1");
+
     res.type("text/xml").send(vr.toString());
   } catch (err) {
     console.error("/gather-confirm-doctor ERROR:", err);
@@ -2656,22 +2612,6 @@ app.post("/process-confirm-doctor", async (req, res) => {
     const vr = new VoiceResponse();
 
     const text = speechResult.toLowerCase().trim();
-
-    // Handle timeout case: no speech detected
-    if (!text) {
-      console.log(nowIso(), "/process-confirm-doctor: No speech detected (timeout), retrying", { callSid });
-      vr.redirect({ method: "POST" }, "/gather-confirm-doctor?retry=1");
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
-    // Handle low confidence
-    if (confidence < 0.5) {
-      console.log(nowIso(), "/process-confirm-doctor: Low confidence, retrying", { callSid, confidence });
-      vr.redirect({ method: "POST" }, "/gather-confirm-doctor?retry=1");
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
 
     const yesRe = /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|let's do it|lets do it|go ahead|whatever|fine|alright)\b/i;
     const noRe = /\b(no|nope|nah|not really|don't|dont|different|something else|another|change)\b/i;
