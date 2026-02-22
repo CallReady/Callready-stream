@@ -5065,48 +5065,40 @@ wss.on("connection", (twilioWs, req) => {
   }
 
   function getCustomChecklistFieldInstructions(fieldName) {
-    // Explicit instructions for each custom scenario checklist field
-    const instructions = {
-      caller_identity: 
-        "Ask for the caller's name.\n" +
-        "Say: 'May I get your name?' or 'And your name is...?'\n" +
-        "If the name is uncommon, ask them to spell it.\n" +
-        "After they respond, call mark_checklist_item_complete(field_id='caller_identity', value='<their name>').",
-      
-      call_purpose: 
-        "Ask why they're calling and restate it back to confirm understanding.\n" +
-        "Say: 'What can I help you with today?' or 'What brings you in?'\n" +
-        "Then confirm: 'So you're calling about [their reason]?'\n" +
-        "After confirming, call mark_checklist_item_complete(field_id='call_purpose', value='<their reason>').",
-      
-      required_details: 
-        "Ask for at least one scenario-specific detail.\n" +
-        "Examples: phone number, account number, preferred time, specific product/service, etc.\n" +
-        "What matters depends on your role and the call purpose.\n" +
-        "After they provide it, call mark_checklist_item_complete(field_id='required_details', value='<the detail>').",
-      
-      friction_point: 
-        "Present ONE realistic constraint, limitation, or follow-up question.\n" +
-        "Examples:\n" +
-        "- 'We're booking 2-3 weeks out. Is that okay?'\n" +
-        "- 'That requires a $50 setup fee. Does that work?'\n" +
-        "- 'We don't have that in stock, but we have [alternative]. Interested?'\n" +
-        "This adds authenticity. After presenting constraint, call mark_checklist_item_complete(field_id='friction_point', value='<what you presented>').",
-      
-      next_step: 
-        "Define what happens next or what you can offer.\n" +
-        "Examples:\n" +
-        "- 'I've got you down for next Thursday at 2 PM.'\n" +
-        "- 'I'll email you that quote by end of day.'\n" +
-        "- 'We'll ship that tomorrow.'\n" +
-        "After confirming next step, call mark_checklist_item_complete(field_id='next_step', value='<the next step>').",
-      
-      professional_close: 
-        "End the call professionally with warmth.\n" +
-        "Say: 'Thanks for calling!', 'Have a great day!', 'Looking forward to working with you!'\n" +
-        "After closing, call mark_checklist_item_complete(field_id='professional_close', value='completed')."
+    // Tight per-field guidance to reduce drift in smaller models.
+    // Format: PROMPT + ACCEPT + TOOL_CALL. Keep it short.
+    var instructions = {
+      caller_identity:
+        "PROMPT: Ask for their name.\n" +
+        "ACCEPT: If uncommon, ask them to spell it.\n" +
+        "TOOL_CALL: mark_checklist_item_complete(field_id='caller_identity', value='<their name>').",
+
+      call_purpose:
+        "PROMPT: Ask why they are calling.\n" +
+        "ACCEPT: Restate it back to confirm understanding.\n" +
+        "TOOL_CALL: mark_checklist_item_complete(field_id='call_purpose', value='<their reason>').",
+
+      required_details:
+        "PROMPT: Ask for one scenario-specific detail (phone number, account number, time preference, etc.).\n" +
+        "ACCEPT: What matters depends on your role and the call purpose.\n" +
+        "TOOL_CALL: mark_checklist_item_complete(field_id='required_details', value='<the detail>').",
+
+      friction_point:
+        "PROMPT: Present ONE realistic constraint or limitation.\n" +
+        "ACCEPT: Examples: booking delay, fee, stock issue.\n" +
+        "TOOL_CALL: mark_checklist_item_complete(field_id='friction_point', value='<what you presented>').",
+
+      next_step:
+        "PROMPT: State what happens next or what you can offer.\n" +
+        "ACCEPT: Be specific (appointment time, delivery date, follow-up action).\n" +
+        "TOOL_CALL: mark_checklist_item_complete(field_id='next_step', value='<the next step>').",
+
+      professional_close:
+        "PROMPT: Close professionally with warmth.\n" +
+        "ACCEPT: Brief and friendly.\n" +
+        "TOOL_CALL: mark_checklist_item_complete(field_id='professional_close', value='completed')."
     };
-    
+
     return instructions[fieldName] || "";
   }
 
