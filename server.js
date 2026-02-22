@@ -3542,18 +3542,6 @@ async function generateCoachingFeedback(transcript) {
   }
 }
 
-// Build checklist for doctor scenario
-function buildDoctorChecklist() {
-  return [
-    "OPENING: Introduced self clearly and stated reason for calling",
-    "INFORMATION: Provided appointment type (annual checkup, follow-up, etc.) and availability preferences",
-    "QUESTIONS: Asked about any available time slots",
-    "DETAILS: Mentioned insurance or mentioned patient ID if applicable",
-    "CLOSING: Confirmed appointment date, time, and any required preparation",
-    "TONE: Remained calm, polite, and professional throughout"
-  ];
-}
-
 // Build checklist for custom scenarios
 function buildCustomChecklist(userDescription) {
   return {
@@ -4224,7 +4212,6 @@ wss.on("connection", (twilioWs, req) => {
           instructions +=
             "\n" +
             "Your next question should primarily aim to collect NEXT_TARGET.\n" +
-            "When the caller answers, you MUST immediately output the JSON block with their answer.\n" +
             "Do not jump ahead unless the caller volunteers relevant information.\n" +
             "\n";
         }
@@ -6046,6 +6033,27 @@ wss.on("connection", (twilioWs, req) => {
             }
           } else {
             console.log(nowIso(), "No checklist update JSON found in response text");
+          }
+
+          // Fallback: if the AI says a closing line at the final step, mark it complete.
+          if (callState.scenarioTag === "doctor_default" && callState.checklist && !callState.checklist.questions_and_closing?.done) {
+            const nextTarget = getNextRequiredChecklistId();
+            const closingRe = /\b(thanks for calling|thank you for calling|have a great day|have a good day|goodbye|bye|take care|see you)\b/i;
+            if (nextTarget === "questions_and_closing" && cleanedText && closingRe.test(cleanedText)) {
+              callState.checklist.questions_and_closing.done = true;
+              callState.checklist.questions_and_closing.value = "auto_closed";
+              console.log(nowIso(), "Checklist auto-complete: questions_and_closing", { value: "auto_closed" });
+            }
+          }
+
+          if (callState.scenarioTag && callState.scenarioTag.startsWith("custom_") && callState.checklist && !callState.checklist.professional_close?.done) {
+            const nextTarget = getNextRequiredChecklistId();
+            const closingRe = /\b(thanks for calling|thank you for calling|have a great day|have a good day|goodbye|bye|take care|see you|looking forward to working with you)\b/i;
+            if (nextTarget === "professional_close" && cleanedText && closingRe.test(cleanedText)) {
+              callState.checklist.professional_close.done = true;
+              callState.checklist.professional_close.value = "auto_closed";
+              console.log(nowIso(), "Checklist auto-complete: professional_close", { value: "auto_closed" });
+            }
           }
 
           // Check if all required checklist items are done
