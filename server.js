@@ -1,4 +1,4 @@
-//Twilio refactor working in opener phase
+//One call all the way through call flow!
 "use strict";
 
 const express = require("express");
@@ -1963,7 +1963,7 @@ app.post("/gather-choose-scenario", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    const questionText = "Tell me about the call you want to practice or, if you want me to pick something, just say 'you can choose.'";
+    const questionText = "Tell me about the call you want to practice, or, if you want me to pick something, just say 'you can choose.'";
 
     const gather = vr.gather({
       input: "speech",
