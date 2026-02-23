@@ -4385,8 +4385,17 @@ wss.on("connection", (twilioWs, req) => {
       preferredOrder = getDoctorChecklistOrder();
     } else if (callState.scenarioTag && callState.scenarioTag.startsWith("custom_")) {
       preferredOrder = getCustomChecklistOrder();
+    } else if (callState.scenarioTag) {
+      // For other scenarios like pizza_order, use the slots array as preferred order
+      const scenario = resolveScenario(callState.scenarioTag);
+      if (scenario && Array.isArray(scenario.slots)) {
+        preferredOrder = scenario.slots;
+      } else {
+        // Fallback: just use all keys in order they appear
+        preferredOrder = Object.keys(callState.checklist);
+      }
     } else {
-      return null;
+      preferredOrder = Object.keys(callState.checklist);
     }
 
     for (const id of preferredOrder) {
@@ -6710,6 +6719,20 @@ wss.on("connection", (twilioWs, req) => {
         // Also get cleaned text for display/transcript
         const cleanedText = stripJsonMarkers(rawText);
         
+        // Log response details for debugging hung-up scenarios
+        const remainingItems = Object.keys(callState.checklist || {}).filter(id => 
+          callState.checklist[id].required && !callState.checklist[id].done
+        );
+        if (remainingItems.length <= 2 && callState.phase === "roleplay") {
+          console.log(nowIso(), "[FINAL_STEPS] response.done with few items remaining", {
+            remainingCount: remainingItems.length,
+            remaining: remainingItems,
+            hasAudio: (msg.response && msg.response.output && msg.response.output.some(o => o.type === "audio")) ? true : false,
+            hasText: !!cleanedText,
+            textPreview: cleanedText ? cleanedText.substring(0, 80) : null
+          });
+        }
+        
         responseActive = false;
         callState.openaiResponseActive = false;
         aiAudioStartAtMs = 0;
@@ -6726,24 +6749,29 @@ wss.on("connection", (twilioWs, req) => {
                 const field_id = args.field_id;
                 const value = args.value;
                 
-                console.log(nowIso(), "Function call: mark_checklist_item_complete", { field_id, value });
+                console.log(nowIso(), "Function call: mark_checklist_item_complete", { 
+                  field_id, 
+                  value,
+                  rawArgs: item.arguments
+                });
                 
                 // Update checklist if we're in roleplay with a checklist
                 if (callState.phase === "roleplay" && callState.checklist && field_id in callState.checklist) {
                   // Track if this is the first item done
                   const doneItemsBefore = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
+                  const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
                   
                   callState.checklist[field_id].done = true;
                   callState.checklist[field_id].value = value;
                   
                   const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
-                  const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
                   
                   console.log(nowIso(), "Checklist item updated via function call", { 
                     field_id, 
                     value,
                     done: true, 
-                    progress: `${doneItemsAfter}/${totalRequired}`
+                    progress: `${doneItemsAfter}/${totalRequired}`,
+                    isFinalItem: doneItemsAfter === totalRequired
                   });
                   
                   // Update summary at key checkpoints
@@ -6753,7 +6781,13 @@ wss.on("connection", (twilioWs, req) => {
                     updateCallSummary("checklist_halfway");
                   }
                 } else if (!(field_id in callState.checklist)) {
-                  console.log(nowIso(), "Checklist item NOT found", { field_id, availableItems: Object.keys(callState.checklist || {}) });
+                  const availableItems = Object.keys(callState.checklist || {});
+                  console.log(nowIso(), "Checklist item NOT found", { 
+                    field_id, 
+                    availableItems,
+                    phase: callState.phase,
+                    hasChecklist: !!callState.checklist
+                  });
                 }
               } catch (e) {
                 console.log(nowIso(), "Error processing function call", { error: e.message });
@@ -6945,6 +6979,17 @@ wss.on("connection", (twilioWs, req) => {
               callState.checklist.professional_close.done = true;
               callState.checklist.professional_close.value = "auto_closed";
               console.log(nowIso(), "Checklist auto-complete: professional_close", { value: "auto_closed" });
+            }
+          }
+
+          // Fallback: if the AI says a closing line for pizza_order, mark order_confirmation_and_closing complete
+          if (callState.scenarioTag === "pizza_order" && callState.checklist && !callState.checklist.order_confirmation_and_closing?.done) {
+            const nextTarget = getNextRequiredChecklistId();
+            const closingRe = /\b(confirmed|confirming|confirm|ready|will be ready|your order|thanks|thank you|great|thanks for|thank you for|ordering|goodbye|bye|see you)\b/i;
+            if (nextTarget === "order_confirmation_and_closing" && cleanedText && closingRe.test(cleanedText)) {
+              callState.checklist.order_confirmation_and_closing.done = true;
+              callState.checklist.order_confirmation_and_closing.value = "auto_closed";
+              console.log(nowIso(), "Checklist auto-complete: order_confirmation_and_closing", { value: "auto_closed" });
             }
           }
         }
