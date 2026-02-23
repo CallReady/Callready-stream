@@ -41,7 +41,7 @@ module.exports = {
 
   questions: {
     call_purpose: {
-      baseQuestion: "Coastline Pizza, hold please... um... okay, what can I get started for you?",
+      baseQuestion: "Coastline Pizza, what can I get started for you?",
       helpIfStuck: "If unclear, try: 'You placing an order for pickup or delivery?'"
     },
 
@@ -91,7 +91,7 @@ module.exports = {
     },
 
     order_total_and_eta: {
-      baseQuestion: "Alright, total is {{TOTAL}}. {{ETA}}. Sound good?",
+      baseQuestion: "Compute the total using the pricing rules, and give them the total and estimated time for pickup or delivery, and aks if that sounds okay",
       helpIfStuck: "If they question the price, briefly explain it depends on size and toppings, then restate the total and time."
     },
 
