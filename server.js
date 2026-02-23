@@ -11,6 +11,8 @@ const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 const scenariosRegistry = require("./scenarios");
+const { setDynamicScenario, getDynamicScenario, clearDynamicScenario, getDynamicScenarioCount } = require("./scenarios/dynamic_store");
+const { generateDynamicScenario } = require("./scenarios/dynamic_generate");
 
 const app = express();
 
@@ -3277,6 +3279,55 @@ app.post("/debug/openai-realtime-check", async (req, res) => {
   }
 });
 
+// Test route for dynamic scenario generation
+app.post("/generate-dynamic-scenario", express.json(), async (req, res) => {
+  try {
+    const { CallSid, promptText } = req.body;
+
+    if (!CallSid || typeof CallSid !== "string") {
+      return res.status(400).json({ ok: false, error: "missing_call_sid" });
+    }
+
+    if (!promptText || typeof promptText !== "string") {
+      return res.status(400).json({ ok: false, error: "missing_prompt_text" });
+    }
+
+    if (!OPENAI_API_KEY) {
+      return res.status(500).json({ ok: false, error: "missing_openai_api_key" });
+    }
+
+    console.log(nowIso(), "Generating dynamic scenario for CallSid:", CallSid);
+    console.log(nowIso(), "Prompt:", promptText);
+
+    const result = await generateDynamicScenario({
+      promptText,
+      callSid: CallSid,
+      openaiApiKey: OPENAI_API_KEY
+    });
+
+    if (!result.ok) {
+      console.log(nowIso(), "Generation failed:", result.error, result.details || "");
+      return res.status(400).json(result);
+    }
+
+    // Store the generated scenario
+    setDynamicScenario(CallSid, result.scenario);
+    console.log(nowIso(), "Dynamic scenario stored. Tag:", result.scenario.tag);
+    console.log(nowIso(), "Slots:", result.scenario.slots);
+
+    res.status(200).json({
+      ok: true,
+      tag: result.scenario.tag,
+      slots: result.scenario.slots,
+      displayName: result.scenario.displayName
+    });
+
+  } catch (e) {
+    console.log(nowIso(), "generate-dynamic-scenario error:", e && e.message ? e.message : e);
+    res.status(500).json({ ok: false, error: "server_error" });
+  }
+});
+
 app.post("/debug/extract-tokens", (req, res) => {
   try {
 
@@ -5590,6 +5641,23 @@ wss.on("connection", (twilioWs, req) => {
   function resolveScenario(tag) {
     if (!tag) return null;
     return SCENARIO_REGISTRY[tag] || null;
+  }
+
+  /**
+   * Resolve scenario with dynamic scenario support
+   * If tag starts with "dynamic_", fetch from dynamic store
+   * Otherwise use normal registry lookup
+   */
+  function resolveScenarioWithDynamic(callState, scenarioTag) {
+    if (!scenarioTag) return null;
+    
+    if (scenarioTag.startsWith("dynamic_")) {
+      const callSid = callState && callState.callSid ? callState.callSid : null;
+      if (!callSid) return null;
+      return getDynamicScenario(callSid);
+    }
+    
+    return resolveScenario(scenarioTag);
   }
 
   function getScenarioOrFallback(tag) {
