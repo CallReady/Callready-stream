@@ -2,8 +2,8 @@ module.exports = {
   tag: "pizza_order",
   displayName: "Order a pizza",
   practiceLabel: "calling a pizza place to order pizza",
-  answererRole: "counter staff at Coastline Pizza",
-  goalStatement: "Collect the order details and place a pizza order for pickup or delivery.",
+  answererRole: "busy counter staff at Coastline Pizza",
+  goalStatement: "Quickly take a pizza order, handle multiple pizzas if needed, and give the total and pickup or delivery time.",
 
   slots: [
     "call_purpose",
@@ -11,74 +11,74 @@ module.exports = {
     "phone_number",
     "pickup_or_delivery",
     "delivery_address",
-    "pizza_size",
-    "crust_type",
-    "toppings",
+    "number_of_pizzas",
+    "pizza_details",
     "sides_and_drinks",
     "payment_method",
     "timing_preference",
+    "order_total_and_eta",
     "order_confirmation_and_closing"
   ],
 
   questions: {
     call_purpose: {
-      baseQuestion: "Thanks for calling Coastline Pizza. What can I help you with today?",
-      helpIfStuck: "If unclear, try: 'Are you calling to place an order for pickup or delivery?'"
+      baseQuestion: "Coastline Pizza, hold please... okay, what can I get started for you?",
+      helpIfStuck: "If unclear, try: 'You placing an order for pickup or delivery?'"
     },
 
     customer_name: {
-      baseQuestion: "Can I get a name for the order?",
-      helpIfStuck: "If unclear, ask them to spell it."
+      baseQuestion: "Name for the order?",
+      helpIfStuck: "If unclear, ask them to tell their full name for the order."
     },
 
     phone_number: {
-      baseQuestion: "What’s a good phone number for you?",
-      helpIfStuck: "If they hesitate, say it’s in case we need to confirm anything."
+      baseQuestion: "Best phone number in case we get cut off?",
+      helpIfStuck: "If they hesitate, explain it's just in case there’s an issue."
     },
 
     pickup_or_delivery: {
-      baseQuestion: "Is this for pickup or delivery?",
-      helpIfStuck: "If unsure, briefly explain: pickup is usually faster, delivery takes a bit longer."
+      baseQuestion: "Pickup or delivery?",
+      helpIfStuck: "If unsure, say pickup is about 20 minutes, delivery usually 35 to 45."
     },
 
     delivery_address: {
-      baseQuestion: "What’s the delivery address?",
-      helpIfStuck: "If they start with just a street name, ask for street number, apartment number if needed, and city."
+      baseQuestion: "What’s the address?",
+      helpIfStuck: "Ask for street number, apartment number if needed, and city."
     },
 
-    pizza_size: {
-      baseQuestion: "What size pizza would you like, small, medium, or large?",
-      helpIfStuck: "If they are unsure, offer a quick guide: medium for 2 people, large for 3 to 4."
+    number_of_pizzas: {
+      baseQuestion: "How many pizzas are we doing?",
+      helpIfStuck: "If they hesitate, clarify: 'Just one, or more than one?'"
     },
 
-    crust_type: {
-      baseQuestion: "Do you want thin, regular, or deep dish crust?",
-      helpIfStuck: "If they are unsure, suggest regular as the standard option."
-    },
-
-    toppings: {
-      baseQuestion: "What toppings would you like on that pizza?",
-      helpIfStuck: "If they struggle, offer a few common options like pepperoni, sausage, mushrooms, and olives."
+    pizza_details: {
+      baseQuestion: "All right, let’s go one at a time. Size, crust, and toppings for the first one?",
+      helpIfStuck: "If they are overwhelmed, guide them step by step: size first, then crust, then toppings. If multiple pizzas, ask for details for each and summarize."
     },
 
     sides_and_drinks: {
-      baseQuestion: "Would you like any sides or drinks with your order?",
-      helpIfStuck: "If they are unsure, offer examples like breadsticks, wings, salad, or soda."
+      baseQuestion: "Anything else? Breadsticks, wings, drinks?",
+      helpIfStuck: "Offer two or three quick options and keep it moving."
     },
 
     payment_method: {
-      baseQuestion: "Are you going to pay with a card or cash?",
-      helpIfStuck: "If delivery, ask if they’ll be paying at the door or over the phone."
+      baseQuestion: "You paying cash or card?",
+      helpIfStuck: "If delivery, clarify if card now or at the door."
     },
 
     timing_preference: {
-      baseQuestion: "Do you want that as soon as possible, or at a specific time?",
-      helpIfStuck: "If they pick a specific time, repeat it back to confirm."
+      baseQuestion: "You want that as soon as it’s ready, or you need it later?",
+      helpIfStuck: "If specific time given, repeat it back to confirm."
+    },
+
+    order_total_and_eta: {
+      baseQuestion: "Okay, your total comes to $[generate realistic total based on order]. Pickup will be about 20 minutes. Delivery about 40. Sound good?",
+      helpIfStuck: "If they question the price, briefly explain pricing depends on size and toppings."
     },
 
     order_confirmation_and_closing: {
-      baseQuestion: "All right, let me read that back to make sure I’ve got it right. Does everything sound correct?",
-      helpIfStuck: "If they change something, update it naturally, then confirm again and close with a friendly goodbye."
+      baseQuestion: "All right, we’ve got it in. We’ll see you soon. Anything else before I let you go?",
+      helpIfStuck: "If they make changes, update naturally, restate the total and time, then close casually."
     }
   },
 
