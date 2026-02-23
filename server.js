@@ -4725,6 +4725,8 @@ wss.on("connection", (twilioWs, req) => {
             nextTarget: spec.nextTargetSlotId,
             baseQuestion: spec.baseQuestion
           });
+          
+
           const remaining = Object.keys(callState.checklist).filter(
             id => callState.checklist[id].required && !callState.checklist[id].done
           );
@@ -4739,7 +4741,14 @@ wss.on("connection", (twilioWs, req) => {
             "NEXT_TARGET: " + spec.nextTargetSlotId + "\n" +
             "\n" +
             "CONFIG-DRIVEN MODE: ASK THIS QUESTION EXACTLY (may paraphrase in ONE sentence):\n" +
-            spec.baseQuestion + "\n" +
+            spec.baseQuestion + "\n";
+
+          // Add validation requirement if defined
+          if (spec.validation && spec.validation.requirement) {
+            instructions += "\nVALIDATION REQUIREMENT: Get " + spec.validation.requirement + "\n";
+          }
+
+          instructions +=
             "\n" +
             "CONSTRAINT: You must ask ONLY this question. Do not ask multiple questions or jump ahead.\n" +
             "You may paraphrase the question in a natural way, but you cannot add extra questions.\n" +
@@ -4762,47 +4771,43 @@ wss.on("connection", (twilioWs, req) => {
             "Caller only hears: 'Great, Emma!'\n";
 
           // Special handling for final checklist items - explain automatic transition
-          // Special handling for questions field
-          if (spec.nextTargetSlotId === "questions") {
+          // Check if this field needs special handling based on waitForResponse property
+          const waitForResponse = spec.waitForResponse !== false; // Default to true unless explicitly false
+          
+          // Special instructions for questions fields (multi-turn interaction)
+          if ((spec.nextTargetSlotId === "questions" || spec.nextTargetSlotId === "questions_and_closing") && waitForResponse) {
             instructions +=
               "\n" +
               "QUESTIONS PHASE:\n" +
-              "Ask: 'Do you have any questions?'\n" +
+              "Ask: '" + spec.baseQuestion + "'\n" +
               "Wait for the caller's response.\n" +
               "If they have questions or concerns, address them naturally and helpfully in character.\n" +
               "After answering their question(s), ask: 'Do you have any other questions?'\n" +
               "Repeat this loop until they indicate they have no further questions (e.g., 'No', 'Nope', 'That's all', etc.).\n" +
               "Once they confirm no more questions, silently call:\n" +
-              "mark_checklist_item_complete(field_id='questions', value='completed')\n" +
+              "mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='completed')\n" +
+              "\n";
+          }
+          
+          if (!waitForResponse) {
+            // Field doesn't wait for response - statement only
+            instructions +=
               "\n" +
-              "Example:\n" +
-              "CALLER: 'Do you deliver on Sundays?'\n" +
-              "YOU SPEAK: 'Yes, we deliver 7 days a week!'\n" +
-              "YOU SPEAK: 'Do you have any other questions?'\n" +
-              "CALLER: 'No, I think that's it.'\n" +
-              "YOU SPEAK: 'Great!'\n" +
-              "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='questions', value='completed')\n" +
+              "IMPORTANT: This is a closing statement, not a question.\n" +
+              "Say the line, then immediately and silently call:\n" +
+              "mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='completed')\n" +
+              "Do NOT wait for a caller response. The closing triggers the transition to COACHING PHASE.\n" +
               "\n";
           }
 
-          if (spec.nextTargetSlotId === "questions_and_closing" || spec.nextTargetSlotId === "order_confirmation_and_closing" || spec.nextTargetSlotId === "closing") {
+          // For final fields (with or without response), explain automatic transition
+          if (spec.nextTargetSlotId === "questions_and_closing" || spec.nextTargetSlotId === "order_confirmation_and_closing" || spec.nextTargetSlotId === "closing" || spec.nextTargetSlotId === "questions") {
             instructions +=
               "\n" +
               "AUTOMATIC TRANSITION:\n" +
               "Once you call mark_checklist_item_complete with this final field, the server checks if all checklist items are done.\n" +
               "If all are complete, the server automatically transitions the call to COACHING PHASE.\n" +
               "You will stop hearing the caller and receive new coaching instructions.\n" +
-              "\n";
-          }
-
-          // Special case: closing statement doesn't ask for caller input - just say it and mark complete
-          if (spec.nextTargetSlotId === "closing") {
-            instructions +=
-              "\n" +
-              "IMPORTANT: This is a closing statement, not a question.\n" +
-              "Say the closing line, then immediately and silently call:\n" +
-              "mark_checklist_item_complete(field_id='closing', value='completed')\n" +
-              "Do NOT wait for a caller response. The closing triggers the transition to COACHING PHASE.\n" +
               "\n";
           }
 
@@ -6786,6 +6791,7 @@ wss.on("connection", (twilioWs, req) => {
         aiAudioStartAtMs = 0;
         listenBlockUntilMs = 0;
         
+
         // Handle function calls (silent checklist updates)
         let sawChecklistToolCall = false;
         if (msg.response && msg.response.output) {
@@ -6803,6 +6809,7 @@ wss.on("connection", (twilioWs, req) => {
                   rawArgs: item.arguments
                 });
                 
+
                 // Update checklist if we're in roleplay with a checklist
                 if (callState.phase === "roleplay" && callState.checklist && field_id in callState.checklist) {
                   // Track if this is the first item done
