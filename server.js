@@ -1147,6 +1147,58 @@ function isNo(text) {
   ].some(p => t === p || t.includes(p));
 }
 
+function resolveScenarioTagFromSpeech(speechRaw) {
+  // Resolve user's speech input to a known scenario tag.
+  // Returns scenario tag if found, null otherwise.
+  // Note: Called by routes before WebSocket handler initializes SCENARIO_REGISTRY,
+  // so this checks if scenariosRegistry is available globally.
+
+  if (!speechRaw) return null;
+
+  const speech = String(speechRaw).toLowerCase().trim();
+  const registry = (typeof SCENARIO_REGISTRY !== "undefined" && SCENARIO_REGISTRY) || scenariosRegistry;
+  
+  if (!registry) return null;
+
+  // Direct tag match (e.g., "doctor_default")
+  if (registry[speech]) return speech;
+
+  // Normalize common fillers and punctuation
+  const normalized = speech
+    .replace(/\./g, " ")
+    .replace(/_/g, " ")
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Direct match after normalization
+  if (registry[normalized]) return normalized;
+
+  // Aliases: map common user phrases to scenario tags
+  const aliasMap = {
+    "doctor": "doctor_default",
+    "doctor default": "doctor_default",
+    "schedule doctor appointment": "doctor_default",
+    "doctor appointment": "doctor_default",
+    "schedule a doctor appointment": "doctor_default",
+    "schedule a doctors appointment": "doctor_default",
+    "schedule doctors appointment": "doctor_default",
+    "dr appointment": "doctor_default"
+  };
+
+  if (aliasMap[normalized]) {
+    const candidate = aliasMap[normalized];
+    if (registry && registry[candidate]) return candidate;
+  }
+
+  // Partial contains fallback, last resort
+  if (normalized.includes("doctor")) {
+    if (registry && registry["doctor_default"]) return "doctor_default";
+  }
+
+  return null;
+}
+
 app.get("/", (req, res) => res.status(200).send("CallReady server up"));
 
 app.get("/health", (req, res) => res.status(200).json({ ok: true, version: CALLREADY_VERSION }));
@@ -5254,53 +5306,6 @@ wss.on("connection", (twilioWs, req) => {
   function resolveScenario(tag) {
     if (!tag) return null;
     return SCENARIO_REGISTRY[tag] || null;
-  }
-
-  function resolveScenarioTagFromSpeech(speechRaw) {
-    // Resolve user's speech input to a known scenario tag.
-    // Returns scenario tag if found, null otherwise.
-
-    if (!speechRaw) return null;
-
-    const speech = String(speechRaw).toLowerCase().trim();
-
-    // Direct tag match (e.g., "doctor_default")
-    if (SCENARIO_REGISTRY && SCENARIO_REGISTRY[speech]) return speech;
-
-    // Normalize common fillers and punctuation
-    const normalized = speech
-      .replace(/\./g, " ")
-      .replace(/_/g, " ")
-      .replace(/-/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    // Direct match after normalization
-    if (SCENARIO_REGISTRY && SCENARIO_REGISTRY[normalized]) return normalized;
-
-    // Aliases: map common user phrases to scenario tags
-    const aliasMap = {
-      "doctor": "doctor_default",
-      "doctor default": "doctor_default",
-      "schedule doctor appointment": "doctor_default",
-      "doctor appointment": "doctor_default",
-      "schedule a doctor appointment": "doctor_default",
-      "schedule a doctors appointment": "doctor_default",
-      "schedule doctors appointment": "doctor_default",
-      "dr appointment": "doctor_default"
-    };
-
-    if (aliasMap[normalized]) {
-      const candidate = aliasMap[normalized];
-      if (SCENARIO_REGISTRY && SCENARIO_REGISTRY[candidate]) return candidate;
-    }
-
-    // Partial contains fallback, last resort
-    if (normalized.includes("doctor")) {
-      if (SCENARIO_REGISTRY && SCENARIO_REGISTRY["doctor_default"]) return "doctor_default";
-    }
-
-    return null;
   }
 
   function getScenarioOrFallback(tag) {
