@@ -7035,10 +7035,12 @@ wss.on("connection", (twilioWs, req) => {
             const nextTarget = getNextRequiredChecklistId();
             // Match negative responses to "Do you have any questions?"
             const noQuestionsRe = /\b(no|nope|nah|none|that's all|thats all|i think that's all|i think thats all|don't think so|dont think so|all set)\b/i;
-            if (nextTarget === "questions" && cleanedText && noQuestionsRe.test(cleanedText)) {
+            // Check the CALLER'S last utterance, not the AI's response
+            const callerUtteredNoQuestions = callState.lastUserUtterance && noQuestionsRe.test(callState.lastUserUtterance);
+            if (nextTarget === "questions" && callerUtteredNoQuestions) {
               callState.checklist.questions.done = true;
               callState.checklist.questions.value = "no_questions";
-              console.log(nowIso(), "Checklist auto-complete: questions", { value: "no_questions" });
+              console.log(nowIso(), "Checklist auto-complete: questions", { value: "no_questions", callerUtterance: callState.lastUserUtterance });
             }
           }
 
@@ -7046,6 +7048,7 @@ wss.on("connection", (twilioWs, req) => {
           if (callState.scenarioTag === "pizza_order" && callState.checklist && !callState.checklist.closing?.done) {
             const nextTarget = getNextRequiredChecklistId();
             const closingRe = /\b(thanks for ordering|thank you for ordering|thanks|thank you|goodbye|bye|see you|calling|call again)\b/i;
+            // Check the AI's response text for closing phrases it should speak
             if (nextTarget === "closing" && cleanedText && closingRe.test(cleanedText)) {
               callState.checklist.closing.done = true;
               callState.checklist.closing.value = "auto_closed";
