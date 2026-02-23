@@ -4762,13 +4762,24 @@ wss.on("connection", (twilioWs, req) => {
             "Caller only hears: 'Great, Emma!'\n";
 
           // Special handling for final checklist items - explain automatic transition
-          if (spec.nextTargetSlotId === "questions_and_closing" || spec.nextTargetSlotId === "order_confirmation_and_closing") {
+          if (spec.nextTargetSlotId === "questions_and_closing" || spec.nextTargetSlotId === "order_confirmation_and_closing" || spec.nextTargetSlotId === "closing") {
             instructions +=
               "\n" +
               "AUTOMATIC TRANSITION:\n" +
               "Once you call mark_checklist_item_complete with this final field, the server checks if all checklist items are done.\n" +
               "If all are complete, the server automatically transitions the call to COACHING PHASE.\n" +
               "You will stop hearing the caller and receive new coaching instructions.\n" +
+              "\n";
+          }
+
+          // Special case: closing statement doesn't ask for caller input - just say it and mark complete
+          if (spec.nextTargetSlotId === "closing") {
+            instructions +=
+              "\n" +
+              "IMPORTANT: This is a closing statement, not a question.\n" +
+              "Say the closing line, then immediately and silently call:\n" +
+              "mark_checklist_item_complete(field_id='closing', value='completed')\n" +
+              "Do NOT wait for a caller response. The closing triggers the transition to COACHING PHASE.\n" +
               "\n";
           }
 
@@ -6996,14 +7007,14 @@ wss.on("connection", (twilioWs, req) => {
             }
           }
 
-          // Fallback: if the AI says a closing line for pizza_order, mark order_confirmation_and_closing complete
-          if (callState.scenarioTag === "pizza_order" && callState.checklist && !callState.checklist.order_confirmation_and_closing?.done) {
+          // Fallback: if the AI says a closing line for pizza_order, mark closing complete
+          if (callState.scenarioTag === "pizza_order" && callState.checklist && !callState.checklist.closing?.done) {
             const nextTarget = getNextRequiredChecklistId();
-            const closingRe = /\b(confirmed|confirming|confirm|ready|will be ready|your order|thanks|thank you|great|thanks for|thank you for|ordering|goodbye|bye|see you)\b/i;
-            if (nextTarget === "order_confirmation_and_closing" && cleanedText && closingRe.test(cleanedText)) {
-              callState.checklist.order_confirmation_and_closing.done = true;
-              callState.checklist.order_confirmation_and_closing.value = "auto_closed";
-              console.log(nowIso(), "Checklist auto-complete: order_confirmation_and_closing", { value: "auto_closed" });
+            const closingRe = /\b(thanks for ordering|thank you for ordering|thanks|thank you|goodbye|bye|see you|calling|call again)\b/i;
+            if (nextTarget === "closing" && cleanedText && closingRe.test(cleanedText)) {
+              callState.checklist.closing.done = true;
+              callState.checklist.closing.value = "auto_closed";
+              console.log(nowIso(), "Checklist auto-complete: closing", { value: "auto_closed" });
             }
           }
         }

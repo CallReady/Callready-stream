@@ -1,9 +1,9 @@
 module.exports = {
     tag: "pizza_order",
     displayName: "Order a pizza",
-    practiceLabel: "calling a pizza place to order pizza",
+    practiceLabel: "calling a pizza place to order a pizza to be delivered",
     answererRole: "busy counter staff at Coastline Pizza",
-    goalStatement: "Quickly take a pizza order, handle multiple pizzas if needed, and give the total and pickup or delivery time.",
+    goalStatement: "Quickly take a pizza order for delivery, handle multiple pizzas if needed, and confirm the total and delivery time.",
 
     pricing: {
         taxRate: 0.08,
@@ -28,15 +28,15 @@ module.exports = {
         "call_purpose",
         "customer_name",
         "phone_number",
-        "pickup_or_delivery",
         "delivery_address",
         "number_of_pizzas",
         "pizza_details",
         "sides_and_drinks",
         "payment_method",
         "timing_preference",
-        "order_total_and_eta",
-        "order_confirmation_and_closing"
+        "order_total",
+        "questions",
+        "closing"
     ],
 
     questions: {
@@ -55,13 +55,8 @@ module.exports = {
             helpIfStuck: "If they hesitate, explain it's just in case there’s an issue."
         },
 
-        pickup_or_delivery: {
-            baseQuestion: "Pickup or delivery?",
-            helpIfStuck: "If unsure, say pickup is about 20 minutes, delivery usually 35 to 45."
-        },
-
         delivery_address: {
-            baseQuestion: "What’s the address?",
+            baseQuestion: "What's the delivery address?",
             helpIfStuck: "Ask for street number, apartment number if needed, and city."
         },
 
@@ -82,7 +77,7 @@ module.exports = {
 
         payment_method: {
             baseQuestion: "Will you be paying with cash or card?",
-            helpIfStuck: "If delivery, clarify: 'Card now or will you pay at the door?'"
+            helpIfStuck: "If card, clarify: 'Card now or will you pay at the door?'"
         },
 
         timing_preference: {
@@ -90,14 +85,18 @@ module.exports = {
             helpIfStuck: "If they give a specific time, repeat it back to confirm."
         },
 
-        order_total_and_eta: {
-            baseQuestion: "Your total is $45.99, and that'll be ready in about 20 minutes. Does that work?",
+        order_total: {
+            baseQuestion: "Your total is $45.99, and delivery's about 40 minutes. Does that work?",
             helpIfStuck: "State the total and time clearly. Do NOT ask the caller to calculate it. If they question, briefly explain what's included."
         },
 
-        order_confirmation_and_closing: {
-            baseQuestion: "Perfect! Thanks for ordering from Coastline Pizza. We'll see you soon!",
-            helpIfStuck: "Confirm the order is complete, thank them, and end the call naturally."
+        questions: {
+            baseQuestion: "Do you have any questions?",
+            helpIfStuck: "It's okay if you don't."
+        },
+
+        closing: {
+            baseQuestion: "Perfect! Thanks for ordering from Coastline Pizza."
         }
     },
 
