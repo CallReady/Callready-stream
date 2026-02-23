@@ -2528,8 +2528,15 @@ app.post("/process-confirm-suggested-scenario", async (req, res) => {
       // User confirmed the suggested scenario
       if (callSid && pool) {
         try {
-          var scenarioConfig = resolveScenario(scenarioTag);
-          var practiceLabel = scenarioConfig && scenarioConfig.practiceLabel ? scenarioConfig.practiceLabel : null;
+          let practiceLabel = null;
+          try {
+            const cfg = (SCENARIO_REGISTRY && scenarioTag && SCENARIO_REGISTRY[scenarioTag])
+              ? SCENARIO_REGISTRY[scenarioTag]
+              : null;
+            practiceLabel = (cfg && cfg.practiceLabel) ? cfg.practiceLabel : null;
+          } catch (e) {
+            practiceLabel = null;
+          }
           if (practiceLabel) {
             await pool.query(
               "UPDATE calls SET scenario_tag = $1, scenario_label = $2 WHERE call_sid = $3",
@@ -2716,8 +2723,15 @@ app.post("/process-confirm-doctor", async (req, res) => {
       
       if (callSid && pool) {
         try {
-          var scenarioConfig = resolveScenario(scenarioTag);
-          var practiceLabel = scenarioConfig && scenarioConfig.practiceLabel ? scenarioConfig.practiceLabel : null;
+          let practiceLabel = null;
+          try {
+            const cfg = (SCENARIO_REGISTRY && scenarioTag && SCENARIO_REGISTRY[scenarioTag])
+              ? SCENARIO_REGISTRY[scenarioTag]
+              : null;
+            practiceLabel = (cfg && cfg.practiceLabel) ? cfg.practiceLabel : null;
+          } catch (e) {
+            practiceLabel = null;
+          }
           if (practiceLabel) {
             await pool.query(
               "UPDATE calls SET scenario_tag = $1, scenario_label = $2 WHERE call_sid = $3",
