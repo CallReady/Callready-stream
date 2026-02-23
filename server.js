@@ -4694,10 +4694,25 @@ wss.on("connection", (twilioWs, req) => {
       if (callState.scenarioTag && callState.checklist) {
         // Try config-driven approach first (if scenario has slots and questions)
         const scenario = resolveScenario(callState.scenarioTag);
+        console.log(nowIso(), "[CONFIG_DRIVEN_CHECK] Resolved scenario", { 
+          scenarioTag: callState.scenarioTag, 
+          hasScenario: !!scenario,
+          hasSlots: scenario ? !!scenario.slots : false,
+          hasQuestions: scenario ? !!scenario.questions : false
+        });
         const spec = getNextTurnSpec(callState, scenario);
+        console.log(nowIso(), "[CONFIG_DRIVEN_CHECK] getNextTurnSpec result", { 
+          hasSpec: !!spec, 
+          nextTargetSlotId: spec ? spec.nextTargetSlotId : null
+        });
 
         if (spec && spec.nextTargetSlotId) {
           // Config-driven mode: use baseQuestion from scenario config
+          console.log(nowIso(), "[CONFIG_DRIVEN_MODE] ACTIVATED for", { 
+            scenarioTag: callState.scenarioTag,
+            nextTarget: spec.nextTargetSlotId,
+            baseQuestion: spec.baseQuestion
+          });
           const remaining = Object.keys(callState.checklist).filter(
             id => callState.checklist[id].required && !callState.checklist[id].done
           );
@@ -4734,8 +4749,13 @@ wss.on("connection", (twilioWs, req) => {
             "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='patient_name', value='Emma')\n" +
             "Caller only hears: 'Great, Emma!'\n";
 
-        } else if (callState.scenarioTag === "doctor_default" && callState.checklist) {
-          // Fallback: use legacy behavior if config is missing
+        } else {
+          // Fallback: use legacy behavior if config is missing (applies to all scenarios with checklists)
+          console.log(nowIso(), "[CONFIG_DRIVEN_MODE] FALLBACK - config not available, using legacy instructions", { 
+            scenarioTag: callState.scenarioTag,
+            hasSpec: !!spec,
+            hasNextTargetSlotId: spec ? !!spec.nextTargetSlotId : false
+          });
           const nextTarget = getNextRequiredChecklistId();
           const remaining = Object.keys(callState.checklist).filter(
             id => callState.checklist[id].required && !callState.checklist[id].done
@@ -6773,9 +6793,8 @@ wss.on("connection", (twilioWs, req) => {
           });
         }
 
-        // Roleplay: parse and merge checklist updates from text-only JSON block
+        // Roleplay: parse and merge checklist updates from text-only JSON block (legacy doctor_default and custom scenarios)
         // Do this BEFORE flushing pendingResponseCreate so checklist is current
-        // Now supports BOTH doctor_default and custom scenarios
         if (callState.phase === "roleplay" && callState.checklist && (callState.scenarioTag === "doctor_default" || (callState.scenarioTag && callState.scenarioTag.startsWith("custom_")))) {
           console.log(nowIso(), "Checking for checklist update in response text", { scenarioTag: callState.scenarioTag, rawTextLength: rawText ? rawText.length : 0 });
           // Parse using RAW text (with markers intact)
@@ -6819,14 +6838,16 @@ wss.on("connection", (twilioWs, req) => {
               console.log(nowIso(), "Checklist auto-complete: professional_close", { value: "auto_closed" });
             }
           }
+        }
 
-          // Check if all required checklist items are done
+        // Check checklist completion for ALL scenarios (not just doctor_default and custom_)
+        if (callState.phase === "roleplay" && callState.checklist) {
           const allDone = Object.keys(callState.checklist).every(
             id => !callState.checklist[id].required || callState.checklist[id].done
           );
           const doneItems = Object.keys(callState.checklist).filter(id => callState.checklist[id].done);
           const remainingItems = Object.keys(callState.checklist).filter(id => callState.checklist[id].required && !callState.checklist[id].done);
-          console.log(nowIso(), "Checklist status check", { allDone, doneItems, remainingItems });
+          console.log(nowIso(), "Checklist status check", { scenarioTag: callState.scenarioTag, allDone, doneItems, remainingItems });
           if (allDone) {
             // Roleplay complete: transition to Twilio-based coaching
             console.log(nowIso(), "Roleplay checklist complete, transitioning to coaching");
