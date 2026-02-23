@@ -2528,10 +2528,19 @@ app.post("/process-confirm-suggested-scenario", async (req, res) => {
       // User confirmed the suggested scenario
       if (callSid && pool) {
         try {
-          await pool.query(
-            `UPDATE calls SET scenario_tag = $1 WHERE call_sid = $2`,
-            [scenarioTag, callSid]
-          );
+          var scenarioConfig = resolveScenario(scenarioTag);
+          var practiceLabel = scenarioConfig && scenarioConfig.practiceLabel ? scenarioConfig.practiceLabel : null;
+          if (practiceLabel) {
+            await pool.query(
+              "UPDATE calls SET scenario_tag = $1, scenario_label = $2 WHERE call_sid = $3",
+              [scenarioTag, practiceLabel, callSid]
+            );
+          } else {
+            await pool.query(
+              "UPDATE calls SET scenario_tag = $1 WHERE call_sid = $2",
+              [scenarioTag, callSid]
+            );
+          }
           console.log(nowIso(), "/process-confirm-suggested-scenario set scenario_tag in DB", { callSid, scenarioTag });
         } catch (err) {
           console.error(nowIso(), "/process-confirm-suggested-scenario DB error", err);
@@ -2707,10 +2716,19 @@ app.post("/process-confirm-doctor", async (req, res) => {
       
       if (callSid && pool) {
         try {
-          await pool.query(
-            `UPDATE calls SET scenario_tag = $1 WHERE call_sid = $2`,
-            [scenarioTag, callSid]
-          );
+          var scenarioConfig = resolveScenario(scenarioTag);
+          var practiceLabel = scenarioConfig && scenarioConfig.practiceLabel ? scenarioConfig.practiceLabel : null;
+          if (practiceLabel) {
+            await pool.query(
+              "UPDATE calls SET scenario_tag = $1, scenario_label = $2 WHERE call_sid = $3",
+              [scenarioTag, practiceLabel, callSid]
+            );
+          } else {
+            await pool.query(
+              "UPDATE calls SET scenario_tag = $1 WHERE call_sid = $2",
+              [scenarioTag, callSid]
+            );
+          }
           console.log(nowIso(), "/process-confirm-doctor set scenario_tag in DB", { callSid, scenarioTag });
         } catch (err) {
           console.error(nowIso(), "/process-confirm-doctor DB error", err);
@@ -6745,6 +6763,19 @@ wss.on("connection", (twilioWs, req) => {
         callState.scenarioConfig = __scenarioResolved ? __scenarioResolved : null;
         if (callState.scenarioConfig) {
           console.log('[scenarios] config attached displayName=', callState.scenarioConfig.displayName);
+        }
+        var scenarioConfig = callState.scenarioConfig;
+        callState.practiceLabel = (scenarioConfig && scenarioConfig.practiceLabel) ? scenarioConfig.practiceLabel : null;
+        if (pool && callSid && callState.practiceLabel) {
+          try {
+            await pool.query(
+              "UPDATE calls SET scenario_label = $1 WHERE call_sid = $2",
+              [callState.practiceLabel, callSid]
+            );
+            console.log(nowIso(), "[scenarios] stored scenario_label", { callSid: callSid, scenario_label: callState.practiceLabel });
+          } catch (err) {
+            console.error(nowIso(), "[scenarios] failed to store scenario_label", err.message);
+          }
         }
         callState.scenarioChosen = true;
         
