@@ -5143,6 +5143,9 @@ wss.on("connection", (twilioWs, req) => {
   }
 
   function buildScenarioIntro() {
+    var openingOverride = (callState && callState.scenarioConfig && callState.scenarioConfig.openingLineTemplate)
+      ? String(callState.scenarioConfig.openingLineTemplate)
+      : null;
     const scenarios = {
       doctor_default: {
         title: "A simple appointment scheduling call.",
@@ -5156,8 +5159,11 @@ wss.on("connection", (twilioWs, req) => {
       return "We are practicing a realistic phone call scenario.";
     }
 
+    var openingLine = "We are practicing this scenario:";
+    openingLine = openingOverride || openingLine;
+
     return (
-      "We are practicing this scenario:\n" +
+      openingLine + "\n" +
       s.title + "\n" +
       "Goal: " + s.goal
     );
