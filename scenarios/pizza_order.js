@@ -13,7 +13,6 @@ module.exports = {
     "delivery_address",
     "pizza_size",
     "crust_type",
-    "sauce_choice",
     "toppings",
     "sides_and_drinks",
     "payment_method",
@@ -33,7 +32,7 @@ module.exports = {
     },
 
     phone_number: {
-      baseQuestion: "What’s a good phone number for the order?",
+      baseQuestion: "What’s a good phone number for you?",
       helpIfStuck: "If they hesitate, say it’s in case we need to confirm anything."
     },
 
@@ -53,13 +52,8 @@ module.exports = {
     },
 
     crust_type: {
-      baseQuestion: "What kind of crust would you like, thin, regular, or deep dish?",
+      baseQuestion: "Do you want thin, regular, or deep dish crust?",
       helpIfStuck: "If they are unsure, suggest regular as the standard option."
-    },
-
-    sauce_choice: {
-      baseQuestion: "What sauce would you like, classic red, white sauce, or no sauce?",
-      helpIfStuck: "If they say 'regular', treat it as classic red and confirm briefly."
     },
 
     toppings: {
@@ -73,12 +67,12 @@ module.exports = {
     },
 
     payment_method: {
-      baseQuestion: "How would you like to pay, card or cash?",
+      baseQuestion: "Are you going to pay with a card or cash?",
       helpIfStuck: "If delivery, ask if they’ll be paying at the door or over the phone."
     },
 
     timing_preference: {
-      baseQuestion: "When would you like that, as soon as possible, or a specific time?",
+      baseQuestion: "Do you want that as soon as possible, or at a specific time?",
       helpIfStuck: "If they pick a specific time, repeat it back to confirm."
     },
 
