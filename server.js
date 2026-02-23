@@ -2342,7 +2342,7 @@ app.post("/process-choose-scenario", async (req, res) => {
         vr.redirect({ method: "POST" }, "/gather-confirm-doctor");
       } else {
         // For other scenarios in future, use generic confirm flow
-        vr.redirect({ method: "POST" }, "/gather-confirm-suggested-scenario?scenario=" + encodeURIComponent(resolvedTag));
+        vr.redirect({ method: "POST" }, "/gather-confirm-suggested-scenario?tag=" + encodeURIComponent(resolvedTag));
       }
       
       res.type("text/xml").send(vr.toString());
@@ -2680,14 +2680,20 @@ app.post("/gather-confirm-suggested-scenario", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    // Get the scenario label
+    // Get the scenario label from config or fallback to hardcoded
     let scenarioLabel = "";
-    if (scenarioTag === "doctor_default") {
-      scenarioLabel = "calling a doctor's office to schedule an appointment";
-    } else if (scenarioTag === "pharmacy_refill") {
-      scenarioLabel = "calling a pharmacy to refill a prescription";
-    } else if (scenarioTag === "school_office") {
-      scenarioLabel = "calling a school office";
+    const scenario = resolveScenario(scenarioTag);
+    if (scenario && scenario.practiceLabel) {
+      scenarioLabel = scenario.practiceLabel;
+    } else {
+      // Fallback to hardcoded labels
+      if (scenarioTag === "doctor_default") {
+        scenarioLabel = "calling a doctor's office to schedule an appointment";
+      } else if (scenarioTag === "pharmacy_refill") {
+        scenarioLabel = "calling a pharmacy to refill a prescription";
+      } else if (scenarioTag === "school_office") {
+        scenarioLabel = "calling a school office";
+      }
     }
 
     const questionText = retry
@@ -2698,7 +2704,7 @@ app.post("/gather-confirm-suggested-scenario", async (req, res) => {
       input: "speech",
       timeout: 3,
       speechTimeout: "auto",
-      action: "/process-confirm-suggested-scenario",
+      action: `/process-confirm-suggested-scenario?tag=${encodeURIComponent(scenarioTag)}`,
       method: "POST",
       language: "en-US"
     });
@@ -6153,14 +6159,28 @@ wss.on("connection", (twilioWs, req) => {
             
             // Ring file is ~3 seconds, schedule roleplay greeting after
             let startLine = "";
-            if (callState.scenarioTag === "doctor_default") {
-              startLine = "Thank you for calling Evergreen Medical Clinic. This is Denise. How can I help you?";
-            } else if (callState.scenarioTag === "pharmacy_refill") {
-              startLine = "Thank you for calling Central Pharmacy. This is Alex. How can I help you?";
-            } else if (callState.scenarioTag === "school_office") {
-              startLine = "Good morning, this is Oak Ridge Elementary. This is Sarah. How may I help you?";
-            } else {
-              startLine = "Hello, thanks for calling. How can I help you?";
+            
+            // Try to get baseQuestion from scenario config (config-driven scenarios)
+            const greetingScenario = resolveScenario(callState.scenarioTag);
+            if (greetingScenario && greetingScenario.slots && greetingScenario.slots.length > 0 && greetingScenario.questions) {
+              const firstSlotId = greetingScenario.slots[0];
+              const firstQuestion = greetingScenario.questions[firstSlotId];
+              if (firstQuestion && firstQuestion.baseQuestion) {
+                startLine = firstQuestion.baseQuestion;
+              }
+            }
+            
+            // Fallback to hardcoded greetings if no config-driven greeting found
+            if (!startLine) {
+              if (callState.scenarioTag === "doctor_default") {
+                startLine = "Thank you for calling Evergreen Medical Clinic. This is Denise. How can I help you?";
+              } else if (callState.scenarioTag === "pharmacy_refill") {
+                startLine = "Thank you for calling Central Pharmacy. This is Alex. How can I help you?";
+              } else if (callState.scenarioTag === "school_office") {
+                startLine = "Good morning, this is Oak Ridge Elementary. This is Sarah. How may I help you?";
+              } else {
+                startLine = "Hello, thanks for calling. How can I help you?";
+              }
             }
             
             setTimeout(() => {
@@ -6909,10 +6929,24 @@ wss.on("connection", (twilioWs, req) => {
 
             // Ring file is approximately 3 seconds, so schedule the roleplay greeting after that
             let startLine = "";
-            if (callState.scenarioTag === "doctor_default") {
-              startLine = "Thank you for calling Evergreen Medical Clinic. This is Denise. How can I help you?";
-            } else {
-              startLine = "Hello, thanks for calling. How can I help you?";
+            
+            // Try to get baseQuestion from scenario config (config-driven scenarios)
+            const greetingScenario = resolveScenario(callState.scenarioTag);
+            if (greetingScenario && greetingScenario.slots && greetingScenario.slots.length > 0 && greetingScenario.questions) {
+              const firstSlotId = greetingScenario.slots[0];
+              const firstQuestion = greetingScenario.questions[firstSlotId];
+              if (firstQuestion && firstQuestion.baseQuestion) {
+                startLine = firstQuestion.baseQuestion;
+              }
+            }
+            
+            // Fallback to hardcoded greetings if no config-driven greeting found
+            if (!startLine) {
+              if (callState.scenarioTag === "doctor_default") {
+                startLine = "Thank you for calling Evergreen Medical Clinic. This is Denise. How can I help you?";
+              } else {
+                startLine = "Hello, thanks for calling. How can I help you?";
+              }
             }
 
             setTimeout(() => {
