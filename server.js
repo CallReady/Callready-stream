@@ -5665,10 +5665,6 @@ wss.on("connection", (twilioWs, req) => {
             callState.connectingStartedAtMs = Date.now();
             callState.connectingStep = "ring_audio"; // Mark as ring audio phase
             
-            // Reset speech detection flags to prevent stray VAD events from ring tones
-            sawSpeechStarted = false;
-            sawCallerSpeechSinceLastAIDone = false;
-            
             // Always answerer role since we only do outgoing calls
             callState.role = "answerer";
             callState.turnIndex = 0;
@@ -5995,10 +5991,6 @@ wss.on("connection", (twilioWs, req) => {
             setPhase("connecting", "wrap_up_practice_again");
             callState.connectingStartedAtMs = Date.now();
             callState.connectingStep = "transition_message";
-            
-            // Reset speech detection flags to ensure clean state for new practice round
-            sawSpeechStarted = false;
-            sawCallerSpeechSinceLastAIDone = false;
 
             openaiResponseCreate({
               type: "response.create",
@@ -6111,13 +6103,6 @@ wss.on("connection", (twilioWs, req) => {
       if (msg.type === "input_audio_buffer.speech_stopped") {
         if (!turnDetectionEnabled) return;
         if (endingRequested || endRedirectRequested) return;
-
-        // CRITICAL: Block speech_stopped during ring audio playback to prevent false VAD triggers
-        // The ring tones can be misinterpreted as speech, causing unwanted response generation
-        if (callState && callState.phase === "connecting" && callState.connectingStep === "ring_audio") {
-          console.log(nowIso(), "Ignoring speech_stopped during ring_audio playback (likely ring tones)");
-          return;
-        }
 
         console.log(nowIso(), "Caller speech_stopped", {
           phase: callState.phase,
@@ -6415,13 +6400,6 @@ wss.on("connection", (twilioWs, req) => {
         }
 
         if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
-
-        // STRICT GUARD: During ring audio playback (connecting phase, waiting for ring to finish),
-        // block ALL response processing to prevent audio overlap
-        if (callState && callState.phase === "connecting" && callState.connectingStep === "ring_audio") {
-          console.log(nowIso(), "Blocking response.done during ring_audio playback");
-          return;
-        }
 
         // Response completed
         if (callState && callState.phase === "connecting") {
