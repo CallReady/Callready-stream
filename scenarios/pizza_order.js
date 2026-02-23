@@ -25,7 +25,6 @@ module.exports = {
     },
 
     slots: [
-        "call_purpose",
         "customer_name",
         "phone_number",
         "pickup_or_delivery",
