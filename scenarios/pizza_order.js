@@ -32,16 +32,16 @@ module.exports = {
         "number_of_pizzas",
         "pizza_details",
         "sides_and_drinks",
-        "order_total_and_eta",
         "payment_method",
         "timing_preference",
+        "order_total_and_eta",
         "order_confirmation_and_closing"
     ],
 
     questions: {
         call_purpose: {
             baseQuestion: "Coastline Pizza, what can I get started for you?",
-            helpIfStuck: "If unclear, try: 'You placing an order for pickup or delivery?'"
+            helpIfStuck: "If they don't clearly indicate they're ordering, ask: 'Are you calling to place an order?'"
         },
 
         customer_name: {
@@ -70,8 +70,8 @@ module.exports = {
         },
 
         pizza_details: {
-            baseQuestion: "All right, let’s go one at a time. Size, crust, and toppings for the first one?",
-            helpIfStuck: "If they are overwhelmed, guide them step by step: size first, then crust, then toppings. If multiple pizzas, ask for details for each and summarize."
+            baseQuestion: "For the pizza—what size do you want, and what toppings?",
+            helpIfStuck: "If multiple pizzas, get size and toppings for each one. If they're overwhelmed, ask size first, then toppings. Summarize the full order before moving on."
         },
 
         sides_and_drinks: {
@@ -79,24 +79,24 @@ module.exports = {
             helpIfStuck: "If they ask for something else, say: 'Sorry, we only do pizza, breadsticks, wings, and drinks.' Then ask if they want any of those."
         },
 
-        order_total_and_eta: {
-            baseQuestion: "Okay, your total comes to 43 dollars. Does that work for you?",
-            helpIfStuck: "If they question the price, briefly explain it depends on size and toppings, then restate the total and time."
-        },
-
         payment_method: {
-            baseQuestion: "You paying cash or card?",
-            helpIfStuck: "If delivery, clarify if card now or at the door."
+            baseQuestion: "Will you be paying with cash or card?",
+            helpIfStuck: "If delivery, clarify: 'Card now or will you pay at the door?'"
         },
 
         timing_preference: {
-            baseQuestion: "You want that as soon as it’s ready, or you need it later?",
-            helpIfStuck: "If specific time given, repeat it back to confirm."
+            baseQuestion: "Do you need it as soon as it's ready, or at a specific time?",
+            helpIfStuck: "If they give a specific time, repeat it back to confirm."
+        },
+
+        order_total_and_eta: {
+            baseQuestion: "Your total is $45.99, and that'll be ready in about 20 minutes. Does that work?",
+            helpIfStuck: "State the total and time clearly. Do NOT ask the caller to calculate it. If they question, briefly explain what's included."
         },
 
         order_confirmation_and_closing: {
-            baseQuestion: "All right, we’ve got it in. We’ll see you soon. Anything else before I let you go?",
-            helpIfStuck: "If they make changes, update naturally, restate the total and time, then close casually."
+            baseQuestion: "Perfect! Thanks for ordering from Coastline Pizza. We'll see you soon!",
+            helpIfStuck: "Confirm the order is complete, thank them, and end the call naturally."
         }
     },
 
