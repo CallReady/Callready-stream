@@ -1,4 +1,4 @@
-//One call all the way through call flow!
+﻿//One call all the way through call flow!
 "use strict";
 
 const express = require("express");
@@ -5071,6 +5071,77 @@ wss.on("connection", (twilioWs, req) => {
     return "Begin roleplay naturally.";
   }
 
+  // ===============================
+  // Scenario Registry (Boot Loaded)
+  // ===============================
+  var SCENARIO_REGISTRY = Object.create(null);
+
+  SCENARIO_REGISTRY["calling a doctor's office to schedule an appointment"] = {
+    tag: "calling a doctor's office to schedule an appointment",
+    displayName: "Schedule a doctor appointment",
+    answererRole: "front desk staff at Evergreen Medical Clinic",
+    goal: "Help the caller schedule a doctor appointment by collecting the key details.",
+    openingLineTemplate: "Thanks for calling Evergreen Medical Clinic, how can I help you today?",
+    slots: [],
+    questions: {},
+    constraints: {},
+    completion: {
+      rule: "all_required_slots_complete"
+    }
+  };
+
+  SCENARIO_REGISTRY["calling a pharmacy to refill a prescription"] = {
+    tag: "calling a pharmacy to refill a prescription",
+    displayName: "Refill a prescription",
+    answererRole: "pharmacy staff member",
+    goal: "Help the caller request a prescription refill.",
+    openingLineTemplate: "Thank you for calling the pharmacy, how can I help you today?",
+    slots: [],
+    questions: {},
+    constraints: {},
+    completion: {
+      rule: "all_required_slots_complete"
+    }
+  };
+
+  SCENARIO_REGISTRY["calling a school office with a question"] = {
+    tag: "calling a school office with a question",
+    displayName: "Call a school office",
+    answererRole: "school office staff member",
+    goal: "Help the caller ask their question and get directed appropriately.",
+    openingLineTemplate: "School office, how can I help you?",
+    slots: [],
+    questions: {},
+    constraints: {},
+    completion: {
+      rule: "all_required_slots_complete"
+    }
+  };
+
+  function resolveScenario(tag) {
+    if (!tag) return null;
+    return SCENARIO_REGISTRY[tag] || null;
+  }
+
+  function getScenarioOrFallback(tag) {
+    var scenario = resolveScenario(tag);
+    if (scenario) return scenario;
+
+    return {
+      tag: "generic_fallback",
+      displayName: "Generic call",
+      answererRole: "business staff member",
+      goal: "Help the caller complete their request.",
+      openingLineTemplate: "Hello, how can I help you today?",
+      slots: [],
+      questions: {},
+      constraints: {},
+      completion: {
+        rule: "all_required_slots_complete"
+      }
+    };
+  }
+
   function buildScenarioIntro() {
     const scenarios = {
       doctor_default: {
@@ -6652,6 +6723,13 @@ wss.on("connection", (twilioWs, req) => {
         
         // Set scenario state
         callState.scenarioTag = selectedScenario;
+        var __scenarioTag = (callState && callState.scenarioTag) ? callState.scenarioTag : null;
+        var __scenarioResolved = __scenarioTag ? resolveScenario(__scenarioTag) : null;
+        console.log('[scenarios] shadow lookup tag=', __scenarioTag, 'found=', !!__scenarioResolved);
+        callState.scenarioConfig = __scenarioResolved ? __scenarioResolved : null;
+        if (callState.scenarioConfig) {
+          console.log('[scenarios] config attached displayName=', callState.scenarioConfig.displayName);
+        }
         callState.scenarioChosen = true;
         
         // Initialize checklist based on scenario type
