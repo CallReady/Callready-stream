@@ -1229,8 +1229,11 @@ function buildChecklistFromScenario(scenario) {
 
     var checklist = {};
     slots.forEach(function (slotId) {
+      // call_purpose is asked but doesn't block completion (it's just a greeting)
+      var isRequired = slotId !== "call_purpose";
+      
       checklist[slotId] = {
-        required: true,
+        required: isRequired,
         done: false,
         value: null
       };
@@ -2149,7 +2152,7 @@ app.post("/gather-choose-scenario", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    const questionText = "Tell me about the call you want to practice, or, if you want me to pick something, just say 'you can choose.'";
+    const questionText = "Tell me about the call you want to practice, or if you want me to pick something, just say: you can choose.";
 
     const gather = vr.gather({
       input: "speech",
@@ -2736,7 +2739,7 @@ app.post("/process-confirm-suggested-scenario", async (req, res) => {
 
     const text = speechResult.toLowerCase().trim();
 
-    const yesRe = /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|let's do it|lets do it|go ahead|whatever|fine|alright|right|correct|exact)\b/i;
+    const yesRe = /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|let's do it|lets do it|go ahead|whatever|fine|alright|right|correct|exact|it does|it sure does)\b/i;
     const noRe = /\b(no|nope|nah|not really|don't|dont|different|something else|another|change|wrong|no thanks)\b/i;
 
     if (yesRe.test(text)) {
@@ -4757,6 +4760,17 @@ wss.on("connection", (twilioWs, req) => {
             "YOU SPEAK: 'Great, Emma!'\n" +
             "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='patient_name', value='Emma')\n" +
             "Caller only hears: 'Great, Emma!'\n";
+
+          // Special handling for final checklist items - explain automatic transition
+          if (spec.nextTargetSlotId === "questions_and_closing" || spec.nextTargetSlotId === "order_confirmation_and_closing") {
+            instructions +=
+              "\n" +
+              "AUTOMATIC TRANSITION:\n" +
+              "Once you call mark_checklist_item_complete with this final field, the server checks if all checklist items are done.\n" +
+              "If all are complete, the server automatically transitions the call to COACHING PHASE.\n" +
+              "You will stop hearing the caller and receive new coaching instructions.\n" +
+              "\n";
+          }
 
         } else {
           // Fallback: use legacy behavior if config is missing (applies to all scenarios with checklists)
@@ -6819,16 +6833,10 @@ wss.on("connection", (twilioWs, req) => {
         // This must happen before the tool-only followup guard so we can transition instead of creating a new response
         if (callState.phase === "roleplay" && callState.checklist) {
           const allDone = Object.keys(callState.checklist).every(
-            id => {
-              // call_purpose is asked but doesn't block completion (it's just a greeting)
-              if (id === "call_purpose") return true;
-              return !callState.checklist[id].required || callState.checklist[id].done;
-            }
+            id => !callState.checklist[id].required || callState.checklist[id].done
           );
           const doneItems = Object.keys(callState.checklist).filter(id => callState.checklist[id].done);
-          const remainingItems = Object.keys(callState.checklist).filter(id => 
-            id !== "call_purpose" && callState.checklist[id].required && !callState.checklist[id].done
-          );
+          const remainingItems = Object.keys(callState.checklist).filter(id => callState.checklist[id].required && !callState.checklist[id].done);
           const checklist_summary = Object.keys(callState.checklist).map(id => ({ 
             id, 
             required: callState.checklist[id].required, 
