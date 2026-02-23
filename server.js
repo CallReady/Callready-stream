@@ -3726,13 +3726,30 @@ app.post("/process-coaching-feedback", async (req, res) => {
     let speechResult = req.body?.SpeechResult || "";
     const digits = req.body?.Digits || "";
 
-    // Normalize response
-    const input = speechResult ? speechResult.toLowerCase().trim() : digits;
-    const userSaysYes =
-      input === "yes" || input === "1" || input.startsWith("yes");
-    const userSaysNo = input === "no" || input === "2" || input.startsWith("no");
+    // Normalize response: lowercase and strip punctuation
+    const rawInput = speechResult ? speechResult.toLowerCase().trim() : digits;
+    const normalizedInput = rawInput.replace(/[.,!?;:\-]/g, "").trim();
 
-    console.log(nowIso(), "/process-coaching-feedback", { callSid, input, userSaysYes, userSaysNo });
+    // Expanded phrase sets for better detection
+    const yesPhrases = [
+      "yes", "yeah", "yep", "yup", "sure", "sure thing",
+      "ok", "okay", "k", "please", "sounds good", "go ahead",
+      "do it", "let's do it", "lets do it"
+    ];
+    const noPhrases = [
+      "no", "nope", "nah", "no thanks", "not now", "not really",
+      "i'm good", "im good", "we're good", "were good"
+    ];
+
+    // Check for exact match or startsWith match
+    const userSaysYes = normalizedInput === "1" || yesPhrases.some(phrase =>
+      normalizedInput === phrase || normalizedInput.startsWith(phrase + " ")
+    );
+    const userSaysNo = normalizedInput === "2" || noPhrases.some(phrase =>
+      normalizedInput === phrase || normalizedInput.startsWith(phrase + " ")
+    );
+
+    console.log(nowIso(), "/process-coaching-feedback", { normalizedInput, userSaysYes, userSaysNo });
 
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
