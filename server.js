@@ -4684,10 +4684,10 @@ wss.on("connection", (twilioWs, req) => {
           "Only include checklist IDs you are updating this turn.\n";
       }
 
-      // Add checklist tracking for doctor_default
-      if (callState.scenarioTag === "doctor_default" && callState.checklist) {
+      // Add checklist tracking for scenarios with config-driven mode
+      if (callState.scenarioTag && callState.checklist) {
         // Try config-driven approach first (if scenario has slots and questions)
-        const scenario = resolveScenario("doctor_default");
+        const scenario = resolveScenario(callState.scenarioTag);
         const spec = getNextTurnSpec(callState, scenario);
 
         if (spec && spec.nextTargetSlotId) {
@@ -4699,9 +4699,9 @@ wss.on("connection", (twilioWs, req) => {
           instructions +=
             "\n" +
             "SCENARIO CONTEXT:\n" +
-            "You are a receptionist at Evergreen Medical Clinic.\n" +
-            "The caller is scheduling a doctor appointment.\n" +
-            "YOUR GOAL: Collect required information to complete the appointment booking.\n" +
+            "You are " + (spec.answererRole || "staff member") + ".\n" +
+            "The caller is " + (spec.practiceLabel || "making a call") + ".\n" +
+            "YOUR GOAL: " + (spec.goalStatement || "Help the caller complete their request") + "\n" +
             "\n" +
             "NEXT_TARGET: " + spec.nextTargetSlotId + "\n" +
             "\n" +
@@ -4728,7 +4728,7 @@ wss.on("connection", (twilioWs, req) => {
             "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='patient_name', value='Emma')\n" +
             "Caller only hears: 'Great, Emma!'\n";
 
-        } else {
+        } else if (callState.scenarioTag === "doctor_default" && callState.checklist) {
           // Fallback: use legacy behavior if config is missing
           const nextTarget = getNextRequiredChecklistId();
           const remaining = Object.keys(callState.checklist).filter(
@@ -5488,8 +5488,12 @@ wss.on("connection", (twilioWs, req) => {
       return null;
     }
 
-    // Only provide spec for doctor_default (other scenarios fall back to current behavior)
-    if (scenario.tag !== "doctor_default") {
+    // Config-driven mode enabled for all scenarios with slots and questions
+    if (!scenario.slots || !Array.isArray(scenario.slots) || scenario.slots.length === 0) {
+      return null;
+    }
+
+    if (!scenario.questions || typeof scenario.questions !== "object") {
       return null;
     }
 
