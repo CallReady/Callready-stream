@@ -4762,6 +4762,29 @@ wss.on("connection", (twilioWs, req) => {
             "Caller only hears: 'Great, Emma!'\n";
 
           // Special handling for final checklist items - explain automatic transition
+          // Special handling for questions field
+          if (spec.nextTargetSlotId === "questions") {
+            instructions +=
+              "\n" +
+              "QUESTIONS PHASE:\n" +
+              "Ask: 'Do you have any questions?'\n" +
+              "Wait for the caller's response.\n" +
+              "If they have questions or concerns, address them naturally and helpfully in character.\n" +
+              "After answering their question(s), ask: 'Do you have any other questions?'\n" +
+              "Repeat this loop until they indicate they have no further questions (e.g., 'No', 'Nope', 'That's all', etc.).\n" +
+              "Once they confirm no more questions, silently call:\n" +
+              "mark_checklist_item_complete(field_id='questions', value='completed')\n" +
+              "\n" +
+              "Example:\n" +
+              "CALLER: 'Do you deliver on Sundays?'\n" +
+              "YOU SPEAK: 'Yes, we deliver 7 days a week!'\n" +
+              "YOU SPEAK: 'Do you have any other questions?'\n" +
+              "CALLER: 'No, I think that's it.'\n" +
+              "YOU SPEAK: 'Great!'\n" +
+              "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='questions', value='completed')\n" +
+              "\n";
+          }
+
           if (spec.nextTargetSlotId === "questions_and_closing" || spec.nextTargetSlotId === "order_confirmation_and_closing" || spec.nextTargetSlotId === "closing") {
             instructions +=
               "\n" +
@@ -7004,6 +7027,18 @@ wss.on("connection", (twilioWs, req) => {
               callState.checklist.professional_close.done = true;
               callState.checklist.professional_close.value = "auto_closed";
               console.log(nowIso(), "Checklist auto-complete: professional_close", { value: "auto_closed" });
+            }
+          }
+
+          // Fallback: if the caller says they don't have questions, mark questions complete
+          if (callState.scenarioTag === "pizza_order" && callState.checklist && !callState.checklist.questions?.done) {
+            const nextTarget = getNextRequiredChecklistId();
+            // Match negative responses to "Do you have any questions?"
+            const noQuestionsRe = /\b(no|nope|nah|none|that's all|thats all|i think that's all|i think thats all|don't think so|dont think so|all set)\b/i;
+            if (nextTarget === "questions" && cleanedText && noQuestionsRe.test(cleanedText)) {
+              callState.checklist.questions.done = true;
+              callState.checklist.questions.value = "no_questions";
+              console.log(nowIso(), "Checklist auto-complete: questions", { value: "no_questions" });
             }
           }
 
