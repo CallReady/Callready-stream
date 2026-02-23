@@ -5642,7 +5642,10 @@ wss.on("connection", (twilioWs, req) => {
       nextTargetSlotId: nextTargetSlotId,
       baseQuestion: questionConfig.baseQuestion || "",
       helpIfStuck: questionConfig.helpIfStuck || "",
-      allowParaphrase: true  // Allow paraphrase for now
+      allowParaphrase: true,  // Allow paraphrase for now
+      validation: questionConfig.validation || null,
+      waitForResponse: questionConfig.waitForResponse,
+      loopUntilDone: questionConfig.loopUntilDone || false
     };
   }
 
@@ -6840,7 +6843,8 @@ wss.on("connection", (twilioWs, req) => {
                     value
                   });
                   callState.closingDelivered = true;
-                  return; // Exit function call handler - next completion check will trigger coaching transition
+                  // Don't return - let completion check run below
+                  continue; // Skip to next item in loop
                 }
 
                 // Update checklist if we're in roleplay with a checklist
