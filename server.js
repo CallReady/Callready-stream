@@ -10,6 +10,7 @@ const Stripe = require("stripe");
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
+const scenariosRegistry = require("./scenarios");
 
 const app = express();
 
@@ -4472,80 +4473,125 @@ wss.on("connection", (twilioWs, req) => {
 
       // Add checklist tracking for doctor_default
       if (callState.scenarioTag === "doctor_default" && callState.checklist) {
-        const nextTarget = getNextRequiredChecklistId();
-        const remaining = Object.keys(callState.checklist).filter(
-          id => callState.checklist[id].required && !callState.checklist[id].done
-        );
+        // Try config-driven approach first (if scenario has slots and questions)
+        const scenario = resolveScenario("doctor_default");
+        const spec = getNextTurnSpec(callState, scenario);
 
-        instructions +=
-          "\n" +
-          "SCENARIO CONTEXT:\n" +
-          "You are a receptionist at Evergreen Medical Clinic.\n" +
-          "The caller is scheduling a doctor appointment.\n" +
-          "YOUR GOAL: Collect required information to complete the appointment booking.\n" +
-          "\n" +
-          "NEXT_TARGET: " + (nextTarget || "NONE") + "\n";
-
-        // Special handling for questions_and_closing phase
-        if (nextTarget === "questions_and_closing") {
-          instructions +=
-            "\n" +
-            "QUESTIONS AND CLOSING PHASE:\n" +
-            "You have collected all required appointment information.\n" +
-            "Now ask: 'Do you have any questions for me?'\n" +
-            "Wait for the caller's response.\n" +
-            "If they have questions or concerns, address them naturally and helpfully in character.\n" +
-            "After answering their question(s), ask: 'Do you have any other questions?'\n" +
-            "Repeat this loop until they indicate they have no further questions (e.g., 'No', 'I think that's all', 'That's it', etc.).\n" +
-            "Once they confirm no more questions:\n" +
-            "Provide a professional closing statement.\n" +
-            "Thank them for calling and wish them a good day.\n" +
-            "\n" +
-            "After your closing, silently call:\n" +
-            "mark_checklist_item_complete(field_id='questions_and_closing', value='completed')\n" +
-            "\n" +
-            "Example:\n" +
-            "YOU SPEAK: 'Have a great day!'\n" +
-            "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='questions_and_closing', value='completed')\n" +
-            "Caller only hears: 'Have a great day!'\n" +
-            "\n" +
-            "AUTOMATIC TRANSITION:\n" +
-            "Once you call mark_checklist_item_complete with this final field, the server checks if all checklist items are done.\n" +
-            "If all are complete, the server automatically transitions the call to COACHING PHASE.\n" +
-            "You will stop hearing the caller and receive new coaching instructions.\n" +
-            "\n";
-        } else {
-          // Add specific field instructions if available
-          const fieldInstructions = getDoctorChecklistFieldInstructions(nextTarget);
-          if (fieldInstructions) {
-            instructions +=
-              "\n" +
-              "HOW TO COLLECT " + nextTarget.toUpperCase() + ":\n" +
-              fieldInstructions + "\n";
-          }
+        if (spec && spec.nextTargetSlotId) {
+          // Config-driven mode: use baseQuestion from scenario config
+          const remaining = Object.keys(callState.checklist).filter(
+            id => callState.checklist[id].required && !callState.checklist[id].done
+          );
           
           instructions +=
             "\n" +
-            "Your next question should primarily aim to collect NEXT_TARGET.\n" +
-            "Do not jump ahead unless the caller volunteers relevant information.\n" +
-            "\n";
-        }
+            "SCENARIO CONTEXT:\n" +
+            "You are a receptionist at Evergreen Medical Clinic.\n" +
+            "The caller is scheduling a doctor appointment.\n" +
+            "YOUR GOAL: Collect required information to complete the appointment booking.\n" +
+            "\n" +
+            "NEXT_TARGET: " + spec.nextTargetSlotId + "\n" +
+            "\n" +
+            "CONFIG-DRIVEN MODE: ASK THIS QUESTION EXACTLY (may paraphrase in ONE sentence):\n" +
+            spec.baseQuestion + "\n" +
+            "\n" +
+            "CONSTRAINT: You must ask ONLY this question. Do not ask multiple questions or jump ahead.\n" +
+            "You may paraphrase the question in a natural way, but you cannot add extra questions.\n" +
+            "\n" +
+            "HELP IF STUCK: " + (spec.helpIfStuck || "(no additional guidance)") + "\n";
 
-        instructions +=
-          (remaining.length > 0
-            ? "STILL GATHERING: " + remaining.join(", ") + "\n"
-            : "All required items are gathered. Proceed directly to wrap up without recapping the details.\n") +
-          "\n" +
-          "TRACKING COMPLETION:\n" +
-          "After EVERY response where you collect information, silently call the mark_checklist_item_complete function.\n" +
-          "This is COMPLETELY SILENT - the caller never hears it.\n" +
-          "\n" +
-          "Example: Caller says 'My name is Sarah Miller'\n" +
-          "YOU SPEAK: 'Great, Sarah!'\n" +
-          "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='patient_name', value='Sarah Miller')\n" +
-          "\n" +
-          "The caller only hears 'Great, Sarah!'\n" +
-          "The function call happens automatically without interrupting the conversation.\n";
+          if (remaining.length > 0) {
+            instructions += "\nSTILL GATHERING: " + remaining.join(", ") + "\n";
+          }
+
+          instructions +=
+            "\n" +
+            "TRACKING COMPLETION:\n" +
+            "After you collect the response to this question, silently call:\n" +
+            "mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<caller_response>')\n" +
+            "\n" +
+            "Example: If asking for name and they say 'Emma':\n" +
+            "YOU SPEAK: 'Great, Emma!'\n" +
+            "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='patient_name', value='Emma')\n" +
+            "Caller only hears: 'Great, Emma!'\n";
+
+        } else {
+          // Fallback: use legacy behavior if config is missing
+          const nextTarget = getNextRequiredChecklistId();
+          const remaining = Object.keys(callState.checklist).filter(
+            id => callState.checklist[id].required && !callState.checklist[id].done
+          );
+
+          instructions +=
+            "\n" +
+            "SCENARIO CONTEXT:\n" +
+            "You are a receptionist at Evergreen Medical Clinic.\n" +
+            "The caller is scheduling a doctor appointment.\n" +
+            "YOUR GOAL: Collect required information to complete the appointment booking.\n" +
+            "\n" +
+            "NEXT_TARGET: " + (nextTarget || "NONE") + "\n";
+
+          // Special handling for questions_and_closing phase
+          if (nextTarget === "questions_and_closing") {
+            instructions +=
+              "\n" +
+              "QUESTIONS AND CLOSING PHASE:\n" +
+              "You have collected all required appointment information.\n" +
+              "Now ask: 'Do you have any questions for me?'\n" +
+              "Wait for the caller's response.\n" +
+              "If they have questions or concerns, address them naturally and helpfully in character.\n" +
+              "After answering their question(s), ask: 'Do you have any other questions?'\n" +
+              "Repeat this loop until they indicate they have no further questions (e.g., 'No', 'I think that's all', 'That's it', etc.).\n" +
+              "Once they confirm no more questions:\n" +
+              "Provide a professional closing statement.\n" +
+              "Thank them for calling and wish them a good day.\n" +
+              "\n" +
+              "After your closing, silently call:\n" +
+              "mark_checklist_item_complete(field_id='questions_and_closing', value='completed')\n" +
+              "\n" +
+              "Example:\n" +
+              "YOU SPEAK: 'Have a great day!'\n" +
+              "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='questions_and_closing', value='completed')\n" +
+              "Caller only hears: 'Have a great day!'\n" +
+              "\n" +
+              "AUTOMATIC TRANSITION:\n" +
+              "Once you call mark_checklist_item_complete with this final field, the server checks if all checklist items are done.\n" +
+              "If all are complete, the server automatically transitions the call to COACHING PHASE.\n" +
+              "You will stop hearing the caller and receive new coaching instructions.\n" +
+              "\n";
+          } else {
+            // Add specific field instructions if available
+            const fieldInstructions = getDoctorChecklistFieldInstructions(nextTarget);
+            if (fieldInstructions) {
+              instructions +=
+                "\n" +
+                "HOW TO COLLECT " + nextTarget.toUpperCase() + ":\n" +
+                fieldInstructions + "\n";
+            }
+            
+            instructions +=
+              "\n" +
+              "Your next question should primarily aim to collect NEXT_TARGET.\n" +
+              "Do not jump ahead unless the caller volunteers relevant information.\n" +
+              "\n";
+          }
+
+          instructions +=
+            (remaining.length > 0
+              ? "STILL GATHERING: " + remaining.join(", ") + "\n"
+              : "All required items are gathered. Proceed directly to wrap up without recapping the details.\n") +
+            "\n" +
+            "TRACKING COMPLETION:\n" +
+            "After EVERY response where you collect information, silently call the mark_checklist_item_complete function.\n" +
+            "This is COMPLETELY SILENT - the caller never hears it.\n" +
+            "\n" +
+            "Example: Caller says 'My name is Sarah Miller'\n" +
+            "YOU SPEAK: 'Great, Sarah!'\n" +
+            "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='patient_name', value='Sarah Miller')\n" +
+            "\n" +
+            "The caller only hears 'Great, Sarah!'\n" +
+            "The function call happens automatically without interrupting the conversation.\n";
+        }
       }
 
       return instructions;
@@ -5123,55 +5169,64 @@ wss.on("connection", (twilioWs, req) => {
   // ===============================
   // Scenario Registry (Boot Loaded)
   // ===============================
-  var SCENARIO_REGISTRY = Object.create(null);
+  // Registry is loaded from ./scenarios at boot time
+  var SCENARIO_REGISTRY = scenariosRegistry || {};
 
-  SCENARIO_REGISTRY["doctor_default"] = {
-    tag: "doctor_default",
-    practiceLabel: "calling a doctor's office to schedule an appointment",
-    displayName: "Schedule a doctor appointment",
-    answererRole: "front desk staff at Evergreen Medical Clinic",
-    goal: "Help the caller schedule a doctor appointment by collecting the key details.",
-    openingLineTemplate: "Thanks for calling Evergreen Medical Clinic, how can I help you today?",
-    checklistType: "doctor",
-    slots: [],
-    questions: {},
-    constraints: {},
-    completion: {
-      rule: "all_required_slots_complete"
-    }
-  };
+  // Preserve legacy doctor_default, pharmacy_refill, school_office configs for non-config-driven code
+  // config-driven doctor_default will use slots and questions from loaded registry
+  if (!SCENARIO_REGISTRY["doctor_default"]) {
+    SCENARIO_REGISTRY["doctor_default"] = {
+      tag: "doctor_default",
+      practiceLabel: "calling a doctor's office to schedule an appointment",
+      displayName: "Schedule a doctor appointment",
+      answererRole: "front desk staff at Evergreen Medical Clinic",
+      goal: "Help the caller schedule a doctor appointment by collecting the key details.",
+      openingLineTemplate: "Thanks for calling Evergreen Medical Clinic, how can I help you today?",
+      checklistType: "doctor",
+      slots: [],
+      questions: {},
+      constraints: {},
+      completion: {
+        rule: "all_required_slots_complete"
+      }
+    };
+  }
 
-  SCENARIO_REGISTRY["pharmacy_refill"] = {
-    tag: "pharmacy_refill",
-    practiceLabel: "calling a pharmacy to refill a prescription",
-    displayName: "Refill a prescription",
-    answererRole: "pharmacy staff member",
-    goal: "Help the caller request a prescription refill.",
-    openingLineTemplate: "Thank you for calling the pharmacy, how can I help you today?",
-    checklistType: "doctor",
-    slots: [],
-    questions: {},
-    constraints: {},
-    completion: {
-      rule: "all_required_slots_complete"
-    }
-  };
+  if (!SCENARIO_REGISTRY["pharmacy_refill"]) {
+    SCENARIO_REGISTRY["pharmacy_refill"] = {
+      tag: "pharmacy_refill",
+      practiceLabel: "calling a pharmacy to refill a prescription",
+      displayName: "Refill a prescription",
+      answererRole: "pharmacy staff member",
+      goal: "Help the caller request a prescription refill.",
+      openingLineTemplate: "Thank you for calling the pharmacy, how can I help you today?",
+      checklistType: "doctor",
+      slots: [],
+      questions: {},
+      constraints: {},
+      completion: {
+        rule: "all_required_slots_complete"
+      }
+    };
+  }
 
-  SCENARIO_REGISTRY["school_office"] = {
-    tag: "school_office",
-    practiceLabel: "calling a school office with a question",
-    displayName: "Call a school office",
-    answererRole: "school office staff member",
-    goal: "Help the caller ask their question and get directed appropriately.",
-    openingLineTemplate: "School office, how can I help you?",
-    checklistType: "doctor",
-    slots: [],
-    questions: {},
-    constraints: {},
-    completion: {
-      rule: "all_required_slots_complete"
-    }
-  };
+  if (!SCENARIO_REGISTRY["school_office"]) {
+    SCENARIO_REGISTRY["school_office"] = {
+      tag: "school_office",
+      practiceLabel: "calling a school office with a question",
+      displayName: "Call a school office",
+      answererRole: "school office staff member",
+      goal: "Help the caller ask their question and get directed appropriately.",
+      openingLineTemplate: "School office, how can I help you?",
+      checklistType: "doctor",
+      slots: [],
+      questions: {},
+      constraints: {},
+      completion: {
+        rule: "all_required_slots_complete"
+      }
+    };
+  }
 
   function resolveScenario(tag) {
     if (!tag) return null;
@@ -5195,6 +5250,60 @@ wss.on("connection", (twilioWs, req) => {
       completion: {
         rule: "all_required_slots_complete"
       }
+    };
+  }
+
+  function getNextTurnSpec(callStateIn, scenario) {
+    // Returns deterministic spec for the next roleplay turn.
+    // Must not mutate callState.
+    // Must be safe if scenario or callState is null/undefined.
+    // 
+    // Returns: { scenarioTag, answererRole, displayName, practiceLabel, goalStatement, 
+    //            nextTargetSlotId, baseQuestion, helpIfStuck, allowParaphrase }
+    // or null if config-driven mode not available
+
+    if (!scenario || !callStateIn || !callStateIn.checklist) {
+      return null;
+    }
+
+    // Only provide spec for doctor_default (other scenarios fall back to current behavior)
+    if (scenario.tag !== "doctor_default") {
+      return null;
+    }
+
+    // Find next uncompleted slot
+    let nextTargetSlotId = null;
+    if (scenario.slots && Array.isArray(scenario.slots)) {
+      for (const slotId of scenario.slots) {
+        const item = callStateIn.checklist[slotId];
+        if (item && item.required && !item.done) {
+          nextTargetSlotId = slotId;
+          break;
+        }
+      }
+    }
+
+    // If no next target, we're done
+    if (!nextTargetSlotId) {
+      return null;
+    }
+
+    // Get question config for this slot
+    const questionConfig = scenario.questions ? scenario.questions[nextTargetSlotId] : null;
+    if (!questionConfig || !questionConfig.baseQuestion) {
+      return null;
+    }
+
+    return {
+      scenarioTag: scenario.tag,
+      answererRole: scenario.answererRole || "",
+      displayName: scenario.displayName || "",
+      practiceLabel: scenario.practiceLabel || "",
+      goalStatement: scenario.goalStatement || scenario.goal || "",
+      nextTargetSlotId: nextTargetSlotId,
+      baseQuestion: questionConfig.baseQuestion || "",
+      helpIfStuck: questionConfig.helpIfStuck || "",
+      allowParaphrase: true  // Allow paraphrase for now
     };
   }
 
@@ -6281,6 +6390,15 @@ wss.on("connection", (twilioWs, req) => {
         // Allow AI to respond after the caller finishes speaking
         requireCallerSpeechBeforeNextAI = false;
         sawCallerSpeechSinceLastAIDone = true;
+
+        // Engine logging: log config-driven spec if available (for doctor_default)
+        if (callState.phase === "roleplay" && callState.scenarioTag === "doctor_default") {
+          const scenario = resolveScenario("doctor_default");
+          const spec = getNextTurnSpec(callState, scenario);
+          if (spec && spec.nextTargetSlotId) {
+            console.log(nowIso(), "[engine] nextTarget=" + spec.nextTargetSlotId + ", baseQuestion=" + spec.baseQuestion);
+          }
+        }
 
         // Ask OpenAI to respond now, but ALWAYS include phase instructions.
         openaiResponseCreate({
