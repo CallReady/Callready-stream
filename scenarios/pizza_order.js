@@ -22,7 +22,7 @@ module.exports = {
 
   questions: {
     call_purpose: {
-      baseQuestion: "Coastline Pizza, hold please... okay, what can I get started for you?",
+      baseQuestion: "[Pizza Restaurant Name], hold please... um... okay, what can I get started for you?",
       helpIfStuck: "If unclear, try: 'You placing an order for pickup or delivery?'"
     },
 
