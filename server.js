@@ -6819,10 +6819,16 @@ wss.on("connection", (twilioWs, req) => {
         // This must happen before the tool-only followup guard so we can transition instead of creating a new response
         if (callState.phase === "roleplay" && callState.checklist) {
           const allDone = Object.keys(callState.checklist).every(
-            id => !callState.checklist[id].required || callState.checklist[id].done
+            id => {
+              // call_purpose is asked but doesn't block completion (it's just a greeting)
+              if (id === "call_purpose") return true;
+              return !callState.checklist[id].required || callState.checklist[id].done;
+            }
           );
           const doneItems = Object.keys(callState.checklist).filter(id => callState.checklist[id].done);
-          const remainingItems = Object.keys(callState.checklist).filter(id => callState.checklist[id].required && !callState.checklist[id].done);
+          const remainingItems = Object.keys(callState.checklist).filter(id => 
+            id !== "call_purpose" && callState.checklist[id].required && !callState.checklist[id].done
+          );
           const checklist_summary = Object.keys(callState.checklist).map(id => ({ 
             id, 
             required: callState.checklist[id].required, 

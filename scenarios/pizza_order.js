@@ -25,6 +25,7 @@ module.exports = {
     },
 
     slots: [
+        "call_purpose",
         "customer_name",
         "phone_number",
         "pickup_or_delivery",
@@ -40,7 +41,7 @@ module.exports = {
 
     questions: {
         call_purpose: {
-            baseQuestion: "Coastline Pizza, what can I get started for you?",
+            baseQuestion: "Coastline Pizza, how can I help you?",
             helpIfStuck: "If they don't clearly indicate they're ordering, ask: 'Are you calling to place an order?'"
         },
 
