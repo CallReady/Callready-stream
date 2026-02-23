@@ -5076,12 +5076,14 @@ wss.on("connection", (twilioWs, req) => {
   // ===============================
   var SCENARIO_REGISTRY = Object.create(null);
 
-  SCENARIO_REGISTRY["calling a doctor's office to schedule an appointment"] = {
-    tag: "calling a doctor's office to schedule an appointment",
+  SCENARIO_REGISTRY["doctor_default"] = {
+    tag: "doctor_default",
+    practiceLabel: "calling a doctor's office to schedule an appointment",
     displayName: "Schedule a doctor appointment",
     answererRole: "front desk staff at Evergreen Medical Clinic",
     goal: "Help the caller schedule a doctor appointment by collecting the key details.",
     openingLineTemplate: "Thanks for calling Evergreen Medical Clinic, how can I help you today?",
+    checklistType: "doctor",
     slots: [],
     questions: {},
     constraints: {},
@@ -5090,12 +5092,14 @@ wss.on("connection", (twilioWs, req) => {
     }
   };
 
-  SCENARIO_REGISTRY["calling a pharmacy to refill a prescription"] = {
-    tag: "calling a pharmacy to refill a prescription",
+  SCENARIO_REGISTRY["pharmacy_refill"] = {
+    tag: "pharmacy_refill",
+    practiceLabel: "calling a pharmacy to refill a prescription",
     displayName: "Refill a prescription",
     answererRole: "pharmacy staff member",
     goal: "Help the caller request a prescription refill.",
     openingLineTemplate: "Thank you for calling the pharmacy, how can I help you today?",
+    checklistType: "doctor",
     slots: [],
     questions: {},
     constraints: {},
@@ -5104,12 +5108,14 @@ wss.on("connection", (twilioWs, req) => {
     }
   };
 
-  SCENARIO_REGISTRY["calling a school office with a question"] = {
-    tag: "calling a school office with a question",
+  SCENARIO_REGISTRY["school_office"] = {
+    tag: "school_office",
+    practiceLabel: "calling a school office with a question",
     displayName: "Call a school office",
     answererRole: "school office staff member",
     goal: "Help the caller ask their question and get directed appropriately.",
     openingLineTemplate: "School office, how can I help you?",
+    checklistType: "doctor",
     slots: [],
     questions: {},
     constraints: {},
@@ -5129,6 +5135,7 @@ wss.on("connection", (twilioWs, req) => {
 
     return {
       tag: "generic_fallback",
+      practiceLabel: "practicing a phone call",
       displayName: "Generic call",
       answererRole: "business staff member",
       goal: "Help the caller complete their request.",
@@ -6732,6 +6739,9 @@ wss.on("connection", (twilioWs, req) => {
         var __scenarioTag = (callState && callState.scenarioTag) ? callState.scenarioTag : null;
         var __scenarioResolved = __scenarioTag ? resolveScenario(__scenarioTag) : null;
         console.log('[scenarios] shadow lookup tag=', __scenarioTag, 'found=', !!__scenarioResolved);
+        if (__scenarioResolved && __scenarioResolved.practiceLabel) {
+          console.log('[scenarios] practiceLabel=', __scenarioResolved.practiceLabel);
+        }
         callState.scenarioConfig = __scenarioResolved ? __scenarioResolved : null;
         if (callState.scenarioConfig) {
           console.log('[scenarios] config attached displayName=', callState.scenarioConfig.displayName);
@@ -6768,7 +6778,12 @@ wss.on("connection", (twilioWs, req) => {
           }
         } else {
           // Built-in scenario - use doctor checklist (covers all standard scenarios for now)
-          callState.checklist = buildDoctorChecklist();
+          if (callState.scenarioConfig && callState.scenarioConfig.checklistType === "doctor") {
+            callState.checklist = buildDoctorChecklist();
+          } else {
+            // Built-in scenario - use doctor checklist (covers all standard scenarios for now)
+            callState.checklist = buildDoctorChecklist();
+          }
         }
         
         console.log(nowIso(), "WS: Starting at connecting phase (scenario pre-selected)", { scenarioTag: selectedScenario });
