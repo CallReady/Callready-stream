@@ -115,7 +115,7 @@ module.exports = {
             baseQuestion: "Do you need it as soon as it's ready, or at a specific time?",
             waitForResponse: true,
             validation: {
-                requirement: "either 'asap' or a specific time they want the order"
+                requirement: "either as soon as possible, 'asap', or a specific time they want the order"
             },
             helpIfStuck: "If they give a specific time, repeat it back to confirm."
         },
@@ -134,7 +134,7 @@ module.exports = {
             waitForResponse: true,
             loopUntilDone: true,
             validation: {
-                requirement: "either confirmation of no further questions or addressing any questions they have"
+                requirement: "confirmation of no further questions"
             },
             helpIfStuck: "It's okay if you don't."
         }
