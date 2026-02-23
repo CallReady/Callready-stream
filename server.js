@@ -108,17 +108,83 @@ process.on("unhandledRejection", (err) => {
 if (!DATABASE_URL) {
   console.log(nowIso(), "Warning: DATABASE_URL is not set, DB features disabled");
 }
+
+// Global shutdown flag - set when SIGTERM/SIGINT is received
+let isShuttingDown = false;
+
 process.on("SIGTERM", () => {
-  console.log(nowIso(), "FATAL received SIGTERM, process is being terminated");
+  if (isShuttingDown) {
+    console.log(nowIso(), "SHUTDOWN: SIGTERM received again, forcing immediate exit");
+    process.exit(1);
+  }
+  
+  isShuttingDown = true;
+  console.log(nowIso(), "SHUTDOWN: SIGTERM received, starting graceful shutdown");
+  initiateGracefulShutdown();
 });
 
 process.on("SIGINT", () => {
-  console.log(nowIso(), "FATAL received SIGINT, process is being interrupted");
+  if (isShuttingDown) {
+    console.log(nowIso(), "SHUTDOWN: SIGINT received again, forcing immediate exit");
+    process.exit(1);
+  }
+  
+  isShuttingDown = true;
+  console.log(nowIso(), "SHUTDOWN: SIGINT received, starting graceful shutdown");
+  initiateGracefulShutdown();
 });
 
 process.on("exit", (code) => {
-  console.log(nowIso(), "FATAL process exit", { code });
+  console.log(nowIso(), "SHUTDOWN: process exit", { code });
 });
+
+function initiateGracefulShutdown() {
+  console.log(nowIso(), "SHUTDOWN: grace period 10 seconds, closing connections...");
+  
+  // Close HTTP server to stop accepting new requests
+  if (global.httpServer) {
+    global.httpServer.close(() => {
+      console.log(nowIso(), "SHUTDOWN: HTTP server closed");
+    });
+  }
+  
+  // Close all active WebSocket (Twilio) connections
+  if (global.activeWebSockets && global.activeWebSockets.size > 0) {
+    console.log(nowIso(), "SHUTDOWN: closing", global.activeWebSockets.size, "active WebSocket connection(s)");
+    for (const ws of global.activeWebSockets.values()) {
+      try {
+        ws.close(1000, "Server shutting down");
+      } catch (e) {
+        // Ignore close errors
+      }
+    }
+  }
+  
+  // Redirect all active calls via Twilio REST API
+  if (global.activeCalls && global.activeCalls.size > 0) {
+    console.log(nowIso(), "SHUTDOWN: redirecting", global.activeCalls.size, "active call(s)");
+    for (const callSid of global.activeCalls) {
+      try {
+        if (hasTwilioRest()) {
+          const client = twilioClient();
+          client.calls(callSid).update({
+            twiml: `<Response><Say>The service has encountered an issue. Your call will end.</Say><Hangup/></Response>`
+          }).catch(err => {
+            console.log(nowIso(), "SHUTDOWN: failed to redirect call", callSid, err.message);
+          });
+        }
+      } catch (e) {
+        // Ignore redirect errors
+      }
+    }
+  }
+  
+  // Wait grace period then exit
+  setTimeout(() => {
+    console.log(nowIso(), "SHUTDOWN: grace period expired, exiting process");
+    process.exit(0);
+  }, 10000);
+}
 
 const OPENAI_REALTIME_MODEL =
   process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-mini";
@@ -3525,6 +3591,11 @@ const twilioReturningCallerContexts = new Map();
 // Tracks how many times user has been silent in the "do you have a call" question
 const twilioChooseScenarioRetries = new Map();
 
+// Track active WebSocket connections and calls for graceful shutdown
+global.activeWebSockets = new Map(); // callSid => ws
+global.activeCalls = new Set(); // Set of active callSids
+global.httpServer = null; // Will be set when server.listen() is called
+
 // Helper function to create hash from string
 function simpleHash(str) {
   let hash = 0;
@@ -6883,6 +6954,12 @@ wss.on("connection", (twilioWs, req) => {
       usageLog.streamSid = streamSid || null;
       usageLog.startedAtMs = Date.now();
 
+      // Track this connection for graceful shutdown
+      if (callSid) {
+        global.activeWebSockets.set(callSid, twilioWs);
+        global.activeCalls.add(callSid);
+      }
+
       // Check if Twilio opener was already played via TwiML (using in-memory flag)
       if (callSid && twilioOpenerPlayedFlags.has(callSid)) {
         twilioOpenerPlayedFlags.delete(callSid); // Clean up after use
@@ -7092,6 +7169,13 @@ wss.on("connection", (twilioWs, req) => {
 
   twilioWs.on("close", () => {
     console.log(nowIso(), "Twilio WS closed");
+    
+    // Clean up tracking for graceful shutdown
+    if (callSid) {
+      global.activeWebSockets.delete(callSid);
+      global.activeCalls.delete(callSid);
+    }
+    
     closeAll("Twilio WS closed");
   });
 
@@ -7119,6 +7203,7 @@ app.post("/debug/test-turnlock", (req, res) => {
 });
 
 server.listen(PORT, () => {
+  global.httpServer = server; // Store server reference for graceful shutdown
   console.log(nowIso(), `Server listening on ${PORT}`, "version:", CALLREADY_VERSION);
   console.log(nowIso(), "POST /voice, POST /stream, WS /media");
 
