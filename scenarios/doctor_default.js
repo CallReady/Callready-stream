@@ -19,7 +19,7 @@ module.exports = {
   
   questions: {
     call_purpose: {
-      baseQuestion: "How can I help you today and what is the call about?",
+      baseQuestion: "Thanks for calling Evergreen Medical Clinic. This is Denise. How can I help you today?",
       waitForResponse: true,
       validation: {
         requirement: "confirmation that they want to schedule a doctor appointment"
