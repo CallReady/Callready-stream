@@ -35,8 +35,7 @@ module.exports = {
         "payment_method",
         "timing_preference",
         "order_total",
-        "questions",
-        "closing"
+        "questions"
     ],
 
     questions: {
@@ -71,9 +70,9 @@ module.exports = {
             baseQuestion: "What's the delivery address?",
             waitForResponse: true,
             validation: {
-                requirement: "a complete street address with number, street name, and city"
+                requirement: "a complete street address with number and street name"
             },
-            helpIfStuck: "Ask for street number, apartment number if needed, and city."
+            helpIfStuck: "Ask for street number and apartment number if needed."
         },
 
         number_of_pizzas: {
@@ -133,17 +132,15 @@ module.exports = {
         questions: {
             baseQuestion: "Do you have any questions?",
             waitForResponse: true,
+            loopUntilDone: true,
             validation: {
                 requirement: "either confirmation of no further questions or addressing any questions they have"
             },
             helpIfStuck: "It's okay if you don't."
-        },
-
-        closing: {
-            baseQuestion: "Perfect! Thanks for ordering from Coastline Pizza.",
-            waitForResponse: false
         }
     },
+
+    closingMessage: "Perfect! Thanks for ordering from Coastline Pizza.",
 
     completion: {
         mode: "all_required_slots_complete"

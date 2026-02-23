@@ -4715,10 +4715,35 @@ wss.on("connection", (twilioWs, req) => {
         const spec = getNextTurnSpec(callState, scenario);
         console.log(nowIso(), "[CONFIG_DRIVEN_CHECK] getNextTurnSpec result", { 
           hasSpec: !!spec, 
-          nextTargetSlotId: spec ? spec.nextTargetSlotId : null
+          nextTargetSlotId: spec ? spec.nextTargetSlotId : null,
+          needsClosing: callState.needsClosing
         });
 
-        if (spec && spec.nextTargetSlotId) {
+        // Handle closing message if all items are done and closing message is needed
+        if (callState.needsClosing && scenario && scenario.closingMessage) {
+          console.log(nowIso(), "[CLOSING_PHASE] Generating closing instructions", {
+            closingMessage: scenario.closingMessage
+          });
+          
+          instructions +=
+            "\n" +
+            "ALL REQUIRED INFORMATION COLLECTED!\n" +
+            "\n" +
+            "CLOSING PHASE:\n" +
+            "You have successfully collected all required information. Now deliver this closing message:\n" +
+            "\"" + scenario.closingMessage + "\"\n" +
+            "\n" +
+            "Do NOT wait for a caller response after the closing message.\n" +
+            "Deliver the message and immediately call:\n" +
+            "mark_checklist_item_complete(field_id='__closing__', value='delivered')\n" +
+            "\n" +
+            "After you call this function, the call will automatically transition to COACHING PHASE.\n" +
+            "\n";
+          
+          // Mark that we're in closing phase so we don't generate these instructions again
+          callState.closingInstructions = true;
+
+        } else if (spec && spec.nextTargetSlotId) {
           // Config-driven mode: use baseQuestion from scenario config
           console.log(nowIso(), "[CONFIG_DRIVEN_MODE] ACTIVATED for", { 
             scenarioTag: callState.scenarioTag,
@@ -4774,8 +4799,8 @@ wss.on("connection", (twilioWs, req) => {
           // Check if this field needs special handling based on waitForResponse property
           const waitForResponse = spec.waitForResponse !== false; // Default to true unless explicitly false
           
-          // Special instructions for questions fields (multi-turn interaction)
-          if ((spec.nextTargetSlotId === "questions" || spec.nextTargetSlotId === "questions_and_closing") && waitForResponse) {
+          // Special instructions for looping questions fields (multi-turn interaction)
+          if (spec.loopUntilDone && waitForResponse) {
             instructions +=
               "\n" +
               "QUESTIONS PHASE:\n" +
@@ -4801,7 +4826,7 @@ wss.on("connection", (twilioWs, req) => {
           }
 
           // For final fields (with or without response), explain automatic transition
-          if (spec.nextTargetSlotId === "questions_and_closing" || spec.nextTargetSlotId === "order_confirmation_and_closing" || spec.nextTargetSlotId === "closing" || spec.nextTargetSlotId === "questions") {
+          if (spec.loopUntilDone || spec.nextTargetSlotId === "order_confirmation_and_closing" || spec.nextTargetSlotId === "closing") {
             instructions +=
               "\n" +
               "AUTOMATIC TRANSITION:\n" +
@@ -6809,6 +6834,14 @@ wss.on("connection", (twilioWs, req) => {
                   rawArgs: item.arguments
                 });
                 
+                // Special case: closing message delivered
+                if (field_id === "__closing__") {
+                  console.log(nowIso(), "[CLOSING_DELIVERED] Closing message has been delivered", {
+                    value
+                  });
+                  callState.closingDelivered = true;
+                  return; // Exit function call handler - next completion check will trigger coaching transition
+                }
 
                 // Update checklist if we're in roleplay with a checklist
                 if (callState.phase === "roleplay" && callState.checklist && field_id in callState.checklist) {
@@ -6892,9 +6925,18 @@ wss.on("connection", (twilioWs, req) => {
             remaining: remainingItems,
             checklist: checklist_summary
           });
-          if (allDone) {
-            // Roleplay complete: transition to Twilio-based coaching
-            console.log(nowIso(), "[COACHING_TRANSITION] Roleplay checklist complete, transitioning to coaching", { 
+          if (allDone && !callState.needsClosing) {
+            // All items done - trigger closing message delivery on next turn
+            console.log(nowIso(), "[CLOSING_PENDING] All checklist items complete, triggering closing message", { 
+              scenarioTag: callState.scenarioTag,
+              totalItems: Object.keys(callState.checklist).length
+            });
+            callState.needsClosing = true;
+            // Don't transition yet - let the next turn deliver the closing message
+            
+          } else if (allDone && callState.needsClosing && callState.closingDelivered) {
+            // Closing message has been delivered - now transition to coaching
+            console.log(nowIso(), "[COACHING_TRANSITION] Closing message delivered, transitioning to coaching", { 
               scenarioTag: callState.scenarioTag,
               totalItems: Object.keys(callState.checklist).length,
               doneItems: doneItems.length

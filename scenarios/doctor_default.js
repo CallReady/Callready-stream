@@ -14,7 +14,7 @@ module.exports = {
     "insurance",
     "appointment_preference",
     "confirmation_preference",
-    "questions_and_closing"
+    "questions"
   ],
   
   questions: {
@@ -82,13 +82,19 @@ module.exports = {
       },
       helpIfStuck: "Most patients prefer text, but clarify their choice."
     },
-    questions_and_closing: {
+    questions: {
       baseQuestion: "Do you have any questions for me?",
-      helpIfStuck: "If they ask something, answer briefly and naturally in character, then ask if there is anything else.",
-      waitForResponse: true
+      waitForResponse: true,
+      loopUntilDone: true,
+      validation: {
+        requirement: "either confirmation of no further questions or addressing any questions they have"
+      },
+      helpIfStuck: "If they ask something, answer briefly and naturally in character, then ask if there is anything else."
     }
   },
-  
+
+  closingMessage: "Thank you for scheduling. We'll see you soon!",
+
   completion: {
     mode: "all_required_slots_complete"
   }
