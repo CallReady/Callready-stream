@@ -5196,6 +5196,15 @@ wss.on("connection", (twilioWs, req) => {
         "scenarioChosen=" + String(!!callState.scenarioChosen),
         "why=" + String(why || "")
       );
+      
+      // Diagnostic: log what instructions are being sent
+      if (payload && payload.response && payload.response.instructions) {
+        const inst = payload.response.instructions;
+        const instPreview = (inst || "").substring(0, 100);
+        console.log(nowIso(), "[OPENAI_SEND] instructions length=" + (inst || "").length + ", preview=" + instPreview);
+      } else {
+        console.log(nowIso(), "[OPENAI_SEND] WARNING: no instructions found in payload");
+      }
     } catch (e) { }
 
     openaiSend(payload);
@@ -6088,6 +6097,13 @@ wss.on("connection", (twilioWs, req) => {
                 // Ring finished, move to roleplay with greeting
                 setPhase("roleplay", "after_ring_twilio_flow");
                 callState.turnIndex = 0;
+                
+                console.log(nowIso(), "[GREETING_LOG] Sending initial greeting", { 
+                  scenarioTag: callState.scenarioTag,
+                  startLine: startLine,
+                  startLineTrimmed: (startLine || "").trim(),
+                  instructions: "Speak this exactly, then stop speaking and wait:\n" + startLine + "\n"
+                });
                 
                 openaiResponseCreate({
                   type: "response.create",
