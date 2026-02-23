@@ -2682,7 +2682,7 @@ app.post("/gather-confirm-suggested-scenario", async (req, res) => {
 
     // Get the scenario label from config or fallback to hardcoded
     let scenarioLabel = "";
-    const scenario = resolveScenario(scenarioTag);
+    const scenario = scenariosRegistry && scenarioTag ? scenariosRegistry[scenarioTag] : null;
     if (scenario && scenario.practiceLabel) {
       scenarioLabel = scenario.practiceLabel;
     } else {
