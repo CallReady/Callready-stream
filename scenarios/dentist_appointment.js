@@ -2,7 +2,7 @@ module.exports = {
     tag: "dentist_appointment",
     displayName: "Schedule a dentist appointment",
     practiceLabel: "calling a dental office to schedule an appointment",
-    answererRole: "front desk staff at Evergreen Dental Clinic",
+    answererRole: "front desk staff at Brightsmile Dental Clinic",
     goalStatement: "Collect required appointment information and schedule a dental visit.",
 
     slots: [
