@@ -1316,7 +1316,14 @@ function resolveScenarioTagFromSpeech(speechRaw) {
     "pizza order": "pizza_order",
     "order a pizza": "pizza_order",
     "ordering pizza": "pizza_order",
-    "ordering a pizza": "pizza_order"
+    "ordering a pizza": "pizza_order",
+    "dentist": "dentist_appointment",
+    "dentist appointment": "dentist_appointment",
+    "schedule dentist appointment": "dentist_appointment",
+    "schedule a dentist appointment": "dentist_appointment",
+    "dental appointment": "dentist_appointment",
+    "schedule dental appointment": "dentist_appointment",
+    "schedule a dental appointment": "dentist_appointment"
   };
 
   if (aliasMap[normalized]) {
@@ -1330,6 +1337,9 @@ function resolveScenarioTagFromSpeech(speechRaw) {
   }
   if (normalized.includes("pizza")) {
     if (registry && registry["pizza_order"]) return "pizza_order";
+  }
+  if (normalized.includes("dentist") || normalized.includes("dental")) {
+    if (registry && registry["dentist_appointment"]) return "dentist_appointment";
   }
 
   return null;
@@ -2324,11 +2334,25 @@ app.post("/process-choose-scenario", async (req, res) => {
     console.log(nowIso(), "scenario_choice_resolved", { callSid, speech: speechResult, resolvedTag });
 
     if (wantsUsToChoose) {
+      // Randomly select a scenario from available scenarios
+      const availableScenarios = ["doctor_default", "dentist_appointment", "pizza_order"];
+      const randomScenario = availableScenarios[Math.floor(Math.random() * availableScenarios.length)];
+      
+      console.log(nowIso(), "[RANDOM_SCENARIO_SELECTED]", { callSid, selectedScenario: randomScenario, availableCount: availableScenarios.length });
+      
       if (callSid) {
         twilioChooseScenarioRetries.delete(callSid);
-        twilioScenarioFlags.set(callSid, "doctor_default");
+        twilioScenarioFlags.set(callSid, randomScenario);
       }
-      vr.redirect({ method: "POST" }, "/gather-confirm-doctor");
+      
+      // Route to scenario-specific confirm flow
+      if (randomScenario === "doctor_default") {
+        vr.redirect({ method: "POST" }, "/gather-confirm-doctor");
+      } else {
+        // For other scenarios, use generic confirm flow
+        vr.redirect({ method: "POST" }, "/gather-confirm-suggested-scenario?tag=" + encodeURIComponent(randomScenario));
+      }
+      
       res.type("text/xml").send(vr.toString());
       return;
     }
@@ -2466,8 +2490,8 @@ app.post("/gather-scenario-menu", async (req, res) => {
     const vr = new VoiceResponse();
 
     const menuText = retry
-      ? "Would you like to practice calling a doctor's office, a pharmacy for a refill, or a school office?"
-      : "Which would you like to practice? Scheduling a doctor's appointment, calling for a pharmacy refill, or calling a school office.";
+      ? "Would you like to practice calling a doctor's office, a dentist's office, or ordering a pizza?"
+      : "Which would you like to practice? Scheduling a doctor's appointment, scheduling a dentist appointment, or ordering a pizza for delivery.";
 
     const gather = vr.gather({
       input: "speech dtmf",
@@ -2509,19 +2533,19 @@ app.post("/process-scenario-menu", async (req, res) => {
     if (digits === "1") {
       scenarioTag = "doctor_default";
     } else if (digits === "2") {
-      scenarioTag = "pharmacy_refill";
+      scenarioTag = "dentist_appointment";
     } else if (digits === "3") {
-      scenarioTag = "school_office";
+      scenarioTag = "pizza_order";
     } else if (speechResult) {
       // Parse speech result
       const text = speechResult.toLowerCase();
       
-      if (/\b(one|1|first|doctor|appointment|medical)\b/i.test(text)) {
+      if (/\b(one|1|first|doctor|medical|physician)\b/i.test(text)) {
         scenarioTag = "doctor_default";
-      } else if (/\b(two|2|second|pharmacy|prescription|refill|medicine)\b/i.test(text)) {
-        scenarioTag = "pharmacy_refill";
-      } else if (/\b(three|3|third|school|office)\b/i.test(text)) {
-        scenarioTag = "school_office";
+      } else if (/\b(two|2|second|dentist|dental|tooth|teeth)\b/i.test(text)) {
+        scenarioTag = "dentist_appointment";
+      } else if (/\b(three|3|third|pizza|food|order|delivery)\b/i.test(text)) {
+        scenarioTag = "pizza_order";
       }
     }
 
@@ -2700,8 +2724,8 @@ app.post("/gather-confirm-suggested-scenario", async (req, res) => {
     }
 
     const questionText = retry
-      ? `Does that sound right?`
-      : `Okay, I found a scenario for you. We'll practice ${scenarioLabel}. Does that sound right?`;
+      ? `Does that sound good?`
+      : `Okay, I found a scenario for you. We'll practice ${scenarioLabel}. Does that sound good?`;
 
     const gather = vr.gather({
       input: "speech",
