@@ -2129,7 +2129,11 @@ app.post("/process-choose-scenario", async (req, res) => {
     ];
     const wantsUsToChoose = choosePhrases.some((p) => normalized.includes(p));
 
+    // Try to resolve speech to a known scenario tag
+    const resolvedTag = resolveScenarioTagFromSpeech(speechResult);
+
     console.log(nowIso(), "scenario_choice", { phase: "choose_scenario", speech: speechResult, choose: wantsUsToChoose, confidence: confidence });
+    console.log(nowIso(), "scenario_choice_resolved", { callSid, speech: speechResult, resolvedTag });
 
     if (wantsUsToChoose) {
       if (callSid) {
@@ -2137,6 +2141,25 @@ app.post("/process-choose-scenario", async (req, res) => {
         twilioScenarioFlags.set(callSid, "doctor_default");
       }
       vr.redirect({ method: "POST" }, "/gather-confirm-doctor");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // If we resolved a scenario tag, redirect to confirm flow for that scenario
+    if (resolvedTag) {
+      if (callSid) {
+        twilioChooseScenarioRetries.delete(callSid);
+        twilioScenarioFlags.set(callSid, resolvedTag);
+      }
+      
+      // Route to scenario-specific confirm flow
+      if (resolvedTag === "doctor_default") {
+        vr.redirect({ method: "POST" }, "/gather-confirm-doctor");
+      } else {
+        // For other scenarios in future, use generic confirm flow
+        vr.redirect({ method: "POST" }, "/gather-confirm-suggested-scenario?scenario=" + encodeURIComponent(resolvedTag));
+      }
+      
       res.type("text/xml").send(vr.toString());
       return;
     }
@@ -2150,7 +2173,7 @@ app.post("/process-choose-scenario", async (req, res) => {
       return;
     }
 
-    const clarifyText = "I didn't quite get that. Tell me about the call you want to practice. Who is it to and what is it about, or, if you want me to pick something for us to practice, just say, 'you choose.'";
+    const clarifyText = "I didn't quite get that. Tell me about the call you want to practice. For example, you can say 'doctor appointment' or describe a call, or, if you want me to pick something for us to practice, just say, 'you choose.'";
     const gather = vr.gather({
       input: "speech",
       timeout: 3,
@@ -5231,6 +5254,53 @@ wss.on("connection", (twilioWs, req) => {
   function resolveScenario(tag) {
     if (!tag) return null;
     return SCENARIO_REGISTRY[tag] || null;
+  }
+
+  function resolveScenarioTagFromSpeech(speechRaw) {
+    // Resolve user's speech input to a known scenario tag.
+    // Returns scenario tag if found, null otherwise.
+
+    if (!speechRaw) return null;
+
+    const speech = String(speechRaw).toLowerCase().trim();
+
+    // Direct tag match (e.g., "doctor_default")
+    if (SCENARIO_REGISTRY && SCENARIO_REGISTRY[speech]) return speech;
+
+    // Normalize common fillers and punctuation
+    const normalized = speech
+      .replace(/\./g, " ")
+      .replace(/_/g, " ")
+      .replace(/-/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    // Direct match after normalization
+    if (SCENARIO_REGISTRY && SCENARIO_REGISTRY[normalized]) return normalized;
+
+    // Aliases: map common user phrases to scenario tags
+    const aliasMap = {
+      "doctor": "doctor_default",
+      "doctor default": "doctor_default",
+      "schedule doctor appointment": "doctor_default",
+      "doctor appointment": "doctor_default",
+      "schedule a doctor appointment": "doctor_default",
+      "schedule a doctors appointment": "doctor_default",
+      "schedule doctors appointment": "doctor_default",
+      "dr appointment": "doctor_default"
+    };
+
+    if (aliasMap[normalized]) {
+      const candidate = aliasMap[normalized];
+      if (SCENARIO_REGISTRY && SCENARIO_REGISTRY[candidate]) return candidate;
+    }
+
+    // Partial contains fallback, last resort
+    if (normalized.includes("doctor")) {
+      if (SCENARIO_REGISTRY && SCENARIO_REGISTRY["doctor_default"]) return "doctor_default";
+    }
+
+    return null;
   }
 
   function getScenarioOrFallback(tag) {
