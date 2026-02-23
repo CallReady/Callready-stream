@@ -6735,19 +6735,25 @@ wss.on("connection", (twilioWs, req) => {
                   
                   callState.checklist[field_id].done = true;
                   callState.checklist[field_id].value = value;
-                  console.log(nowIso(), "Checklist item updated via function call", { field_id, done: true, value });
+                  
+                  const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
+                  const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
+                  
+                  console.log(nowIso(), "Checklist item updated via function call", { 
+                    field_id, 
+                    value,
+                    done: true, 
+                    progress: `${doneItemsAfter}/${totalRequired}`
+                  });
                   
                   // Update summary at key checkpoints
                   if (doneItemsBefore === 0) {
                     updateCallSummary("first_checklist_item_done");
-                  } else {
-                    const doneItemsNow = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
-                    const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
-                    // Update at halfway point
-                    if (doneItemsNow === Math.ceil(totalRequired / 2)) {
-                      updateCallSummary("checklist_halfway");
-                    }
+                  } else if (doneItemsAfter === Math.ceil(totalRequired / 2)) {
+                    updateCallSummary("checklist_halfway");
                   }
+                } else if (!(field_id in callState.checklist)) {
+                  console.log(nowIso(), "Checklist item NOT found", { field_id, availableItems: Object.keys(callState.checklist || {}) });
                 }
               } catch (e) {
                 console.log(nowIso(), "Error processing function call", { error: e.message });
@@ -6775,85 +6781,41 @@ wss.on("connection", (twilioWs, req) => {
           // Response completed with no audio
         }
 
-        // Guard: if we got a tool-only response in roleplay, prompt for the next spoken turn.
-        if (
-          callState.phase === "roleplay" &&
-          aiAudioBytesThisResponse === 0 &&
-          sawChecklistToolCall &&
-          !endingRequested &&
-          !endRedirectRequested
-        ) {
-          openaiResponseCreate({
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              tool_choice: "none",
-              instructions: buildPhaseContext("tool_only_followup")
-            },
-          });
-        }
-
-        // Roleplay: parse and merge checklist updates from text-only JSON block (legacy doctor_default and custom scenarios)
-        // Do this BEFORE flushing pendingResponseCreate so checklist is current
-        if (callState.phase === "roleplay" && callState.checklist && (callState.scenarioTag === "doctor_default" || (callState.scenarioTag && callState.scenarioTag.startsWith("custom_")))) {
-          console.log(nowIso(), "Checking for checklist update in response text", { scenarioTag: callState.scenarioTag, rawTextLength: rawText ? rawText.length : 0 });
-          // Parse using RAW text (with markers intact)
-          const checklistUpdate = parseChecklistUpdateJson(rawText);
-          if (checklistUpdate) {
-            console.log(nowIso(), "Checklist update found", { updates: Object.keys(checklistUpdate) });
-
-            // Merge updates: only update known keys
-            for (const id in checklistUpdate) {
-              if (id in callState.checklist && typeof checklistUpdate[id] === "object") {
-                if (checklistUpdate[id].done !== undefined) {
-                  callState.checklist[id].done = !!checklistUpdate[id].done;
-                }
-                if (checklistUpdate[id].value !== undefined) {
-                  callState.checklist[id].value = checklistUpdate[id].value;
-                }
-                console.log(nowIso(), "Checklist item updated", { id, done: callState.checklist[id].done, value: callState.checklist[id].value });
-              }
-            }
-          } else {
-            console.log(nowIso(), "No checklist update JSON found in response text");
-          }
-
-          // Fallback: if the AI says a closing line at the final step, mark it complete.
-          if (callState.scenarioTag === "doctor_default" && callState.checklist && !callState.checklist.questions_and_closing?.done) {
-            const nextTarget = getNextRequiredChecklistId();
-            const closingRe = /\b(thanks for calling|thank you for calling|have a great day|have a good day|goodbye|bye|take care|see you)\b/i;
-            if (nextTarget === "questions_and_closing" && cleanedText && closingRe.test(cleanedText)) {
-              callState.checklist.questions_and_closing.done = true;
-              callState.checklist.questions_and_closing.value = "auto_closed";
-              console.log(nowIso(), "Checklist auto-complete: questions_and_closing", { value: "auto_closed" });
-            }
-          }
-
-          if (callState.scenarioTag && callState.scenarioTag.startsWith("custom_") && callState.checklist && !callState.checklist.professional_close?.done) {
-            const nextTarget = getNextRequiredChecklistId();
-            const closingRe = /\b(thanks for calling|thank you for calling|have a great day|have a good day|goodbye|bye|take care|see you|looking forward to working with you)\b/i;
-            if (nextTarget === "professional_close" && cleanedText && closingRe.test(cleanedText)) {
-              callState.checklist.professional_close.done = true;
-              callState.checklist.professional_close.value = "auto_closed";
-              console.log(nowIso(), "Checklist auto-complete: professional_close", { value: "auto_closed" });
-            }
-          }
-        }
-
-        // Check checklist completion for ALL scenarios (not just doctor_default and custom_)
+        // Check checklist completion for ALL scenarios BEFORE any other guards
+        // This must happen before the tool-only followup guard so we can transition instead of creating a new response
         if (callState.phase === "roleplay" && callState.checklist) {
           const allDone = Object.keys(callState.checklist).every(
             id => !callState.checklist[id].required || callState.checklist[id].done
           );
           const doneItems = Object.keys(callState.checklist).filter(id => callState.checklist[id].done);
           const remainingItems = Object.keys(callState.checklist).filter(id => callState.checklist[id].required && !callState.checklist[id].done);
-          console.log(nowIso(), "Checklist status check", { scenarioTag: callState.scenarioTag, allDone, doneItems, remainingItems });
+          const checklist_summary = Object.keys(callState.checklist).map(id => ({ 
+            id, 
+            required: callState.checklist[id].required, 
+            done: callState.checklist[id].done 
+          }));
+          console.log(nowIso(), "Checklist status check", { 
+            scenarioTag: callState.scenarioTag, 
+            totalItems: Object.keys(callState.checklist).length,
+            allDone, 
+            doneItems: doneItems.length, 
+            remainingCount: remainingItems.length,
+            remaining: remainingItems,
+            checklist: checklist_summary
+          });
           if (allDone) {
             // Roleplay complete: transition to Twilio-based coaching
-            console.log(nowIso(), "Roleplay checklist complete, transitioning to coaching");
+            console.log(nowIso(), "[COACHING_TRANSITION] Roleplay checklist complete, transitioning to coaching", { 
+              scenarioTag: callState.scenarioTag,
+              totalItems: Object.keys(callState.checklist).length,
+              doneItems: doneItems.length
+            });
             callState.phase = "coaching";
             
-            if (callState.redirectingToCoaching) return;
+            if (callState.redirectingToCoaching) {
+              console.log(nowIso(), "[COACHING_TRANSITION] Already redirecting, returning");
+              return;
+            }
             callState.redirectingToCoaching = true;
 
             callState.roleplayComplete = true;
@@ -6919,6 +6881,71 @@ wss.on("connection", (twilioWs, req) => {
             // No Twilio REST available, close the WebSocket
             closeAll("roleplay_checklist_complete");
             return;
+          }
+        }
+
+        // Guard: if we got a tool-only response in roleplay, prompt for the next spoken turn.
+        if (
+          callState.phase === "roleplay" &&
+          aiAudioBytesThisResponse === 0 &&
+          sawChecklistToolCall &&
+          !endingRequested &&
+          !endRedirectRequested
+        ) {
+          openaiResponseCreate({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              tool_choice: "none",
+              instructions: buildPhaseInstructions("tool_only_followup")
+            },
+          });
+        }
+
+        // Roleplay: parse and merge checklist updates from text-only JSON block (legacy doctor_default and custom scenarios)
+        // Do this BEFORE flushing pendingResponseCreate so checklist is current
+        if (callState.phase === "roleplay" && callState.checklist && (callState.scenarioTag === "doctor_default" || (callState.scenarioTag && callState.scenarioTag.startsWith("custom_")))) {
+          console.log(nowIso(), "Checking for checklist update in response text", { scenarioTag: callState.scenarioTag, rawTextLength: rawText ? rawText.length : 0 });
+          // Parse using RAW text (with markers intact)
+          const checklistUpdate = parseChecklistUpdateJson(rawText);
+          if (checklistUpdate) {
+            console.log(nowIso(), "Checklist update found", { updates: Object.keys(checklistUpdate) });
+
+            // Merge updates: only update known keys
+            for (const id in checklistUpdate) {
+              if (id in callState.checklist && typeof checklistUpdate[id] === "object") {
+                if (checklistUpdate[id].done !== undefined) {
+                  callState.checklist[id].done = !!checklistUpdate[id].done;
+                }
+                if (checklistUpdate[id].value !== undefined) {
+                  callState.checklist[id].value = checklistUpdate[id].value;
+                }
+                console.log(nowIso(), "Checklist item updated", { id, done: callState.checklist[id].done, value: callState.checklist[id].value });
+              }
+            }
+          } else {
+            console.log(nowIso(), "No checklist update JSON found in response text");
+          }
+
+          // Fallback: if the AI says a closing line at the final step, mark it complete.
+          if (callState.scenarioTag === "doctor_default" && callState.checklist && !callState.checklist.questions_and_closing?.done) {
+            const nextTarget = getNextRequiredChecklistId();
+            const closingRe = /\b(thanks for calling|thank you for calling|have a great day|have a good day|goodbye|bye|take care|see you)\b/i;
+            if (nextTarget === "questions_and_closing" && cleanedText && closingRe.test(cleanedText)) {
+              callState.checklist.questions_and_closing.done = true;
+              callState.checklist.questions_and_closing.value = "auto_closed";
+              console.log(nowIso(), "Checklist auto-complete: questions_and_closing", { value: "auto_closed" });
+            }
+          }
+
+          if (callState.scenarioTag && callState.scenarioTag.startsWith("custom_") && callState.checklist && !callState.checklist.professional_close?.done) {
+            const nextTarget = getNextRequiredChecklistId();
+            const closingRe = /\b(thanks for calling|thank you for calling|have a great day|have a good day|goodbye|bye|take care|see you|looking forward to working with you)\b/i;
+            if (nextTarget === "professional_close" && cleanedText && closingRe.test(cleanedText)) {
+              callState.checklist.professional_close.done = true;
+              callState.checklist.professional_close.value = "auto_closed";
+              console.log(nowIso(), "Checklist auto-complete: professional_close", { value: "auto_closed" });
+            }
           }
         }
 
