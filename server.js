@@ -1213,6 +1213,64 @@ function isNo(text) {
   ].some(p => t === p || t.includes(p));
 }
 
+function buildChecklistFromScenario(scenario) {
+  // Build a keyed checklist object from scenario.slots array.
+  // Returns an object like { field_id: { required: true, done: false, value: null }, ... }
+  // or null if scenario is invalid.
+  try {
+    if (!scenario) return null;
+    if (!Array.isArray(scenario.slots)) return null;
+
+    var slots = scenario.slots.filter(function (s) {
+      return typeof s === "string" && s.trim().length > 0;
+    });
+
+    if (slots.length === 0) return null;
+
+    var checklist = {};
+    slots.forEach(function (slotId) {
+      checklist[slotId] = {
+        required: true,
+        done: false,
+        value: null
+      };
+    });
+
+    return checklist;
+  } catch (e) {
+    return null;
+  }
+}
+
+function buildChecklistForScenarioTag(scenarioTag) {
+  // Attempt to build checklist from scenario registry.
+  // Returns { checklist: <checklist object or null>, source: <string> }
+  try {
+    var scenario = null;
+
+    // Try to resolve scenario using the resolveScenario function if available
+    if (typeof resolveScenario === "function") {
+      scenario = resolveScenario(scenarioTag);
+    } else {
+      // Fallback: try to access SCENARIO_REGISTRY directly
+      if (typeof SCENARIO_REGISTRY !== "undefined" && SCENARIO_REGISTRY && scenarioTag && SCENARIO_REGISTRY[scenarioTag]) {
+        scenario = SCENARIO_REGISTRY[scenarioTag];
+      } else if (typeof scenariosRegistry !== "undefined" && scenariosRegistry && scenarioTag && scenariosRegistry[scenarioTag]) {
+        scenario = scenariosRegistry[scenarioTag];
+      }
+    }
+
+    var genericChecklist = buildChecklistFromScenario(scenario);
+    if (genericChecklist) {
+      return { checklist: genericChecklist, source: "scenario_config" };
+    }
+
+    return { checklist: null, source: "none" };
+  } catch (e) {
+    return { checklist: null, source: "error" };
+  }
+}
+
 function resolveScenarioTagFromSpeech(speechRaw) {
   // Resolve user's speech input to a known scenario tag.
   // Returns scenario tag if found, null otherwise.
@@ -6388,7 +6446,17 @@ wss.on("connection", (twilioWs, req) => {
           if (againRe.test(u)) {
             // Reset scenario state and return to connecting phase for another practice round
             callState.scenarioChosen = true;
-            callState.checklist = buildDoctorChecklist();
+            
+            // Rebuild checklist from scenario config if available, else fall back
+            var checklistResult = buildChecklistForScenarioTag(callState.scenarioTag);
+            if (checklistResult && checklistResult.checklist) {
+              callState.checklist = checklistResult.checklist;
+              console.log(nowIso(), "[engine] checklist_init wrap_up_again", { scenarioTag: callState.scenarioTag, source: checklistResult.source, items: Object.keys(callState.checklist).length });
+            } else {
+              callState.checklist = buildDoctorChecklist();
+              console.log(nowIso(), "[engine] checklist_init wrap_up_again", { scenarioTag: callState.scenarioTag, source: "legacy_doctor", items: Object.keys(callState.checklist).length });
+            }
+            
             wrapUpAskedQuestion = false;
             wrapUpTimeLimitExceeded = false;
 
@@ -7125,12 +7193,14 @@ wss.on("connection", (twilioWs, req) => {
             callState.checklist = buildCustomChecklist("a phone call");
           }
         } else {
-          // Built-in scenario - use doctor checklist (covers all standard scenarios for now)
-          if (callState.scenarioConfig && callState.scenarioConfig.checklistType === "doctor") {
-            callState.checklist = buildDoctorChecklist();
+          // Built-in scenario - use generic scenario-based checklist with fallback
+          var checklistResult = buildChecklistForScenarioTag(selectedScenario);
+          if (checklistResult && checklistResult.checklist) {
+            callState.checklist = checklistResult.checklist;
+            console.log(nowIso(), "[engine] checklist_init twilio_gather", { scenarioTag: selectedScenario, source: checklistResult.source, items: Object.keys(callState.checklist).length });
           } else {
-            // Built-in scenario - use doctor checklist (covers all standard scenarios for now)
             callState.checklist = buildDoctorChecklist();
+            console.log(nowIso(), "[engine] checklist_init twilio_gather", { scenarioTag: selectedScenario, source: "legacy_doctor", items: Object.keys(callState.checklist).length });
           }
         }
         
