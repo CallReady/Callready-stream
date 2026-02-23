@@ -2,10 +2,12 @@
 // Each scenario is a config object with deterministic prompt structure
 
 const doctorDefault = require('./doctor_default');
+const pizzaOrder = require('./pizza_order');
 
 // Build SCENARIO_REGISTRY
 const SCENARIO_REGISTRY = {
-  doctor_default: doctorDefault
+  doctor_default: doctorDefault,
+  pizza_order: pizzaOrder
 };
 
 module.exports = SCENARIO_REGISTRY;

@@ -1307,7 +1307,13 @@ function resolveScenarioTagFromSpeech(speechRaw) {
     "schedule a doctor appointment": "doctor_default",
     "schedule a doctors appointment": "doctor_default",
     "schedule doctors appointment": "doctor_default",
-    "dr appointment": "doctor_default"
+    "dr appointment": "doctor_default",
+    "pizza": "pizza_order",
+    "order pizza": "pizza_order",
+    "pizza order": "pizza_order",
+    "order a pizza": "pizza_order",
+    "ordering pizza": "pizza_order",
+    "ordering a pizza": "pizza_order"
   };
 
   if (aliasMap[normalized]) {
@@ -1318,6 +1324,9 @@ function resolveScenarioTagFromSpeech(speechRaw) {
   // Partial contains fallback, last resort
   if (normalized.includes("doctor")) {
     if (registry && registry["doctor_default"]) return "doctor_default";
+  }
+  if (normalized.includes("pizza")) {
+    if (registry && registry["pizza_order"]) return "pizza_order";
   }
 
   return null;
