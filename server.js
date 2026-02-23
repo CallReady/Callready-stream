@@ -3280,7 +3280,8 @@ app.post("/debug/openai-realtime-check", async (req, res) => {
 });
 
 // Test route for dynamic scenario generation
-app.post("/generate-dynamic-scenario", express.json(), async (req, res) => {
+// Accepts application/x-www-form-urlencoded (uses global urlencoded middleware)
+app.post("/generate-dynamic-scenario", async (req, res) => {
   try {
     const { CallSid, promptText } = req.body;
 
