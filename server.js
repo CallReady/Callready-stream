@@ -7004,7 +7004,7 @@ wss.on("connection", (twilioWs, req) => {
                 }
 
                 // Validate that field_id exists in scenario definition
-                const scenario = callState.scenarioTag ? scenarios[callState.scenarioTag] : null;
+                const scenario = callState.scenarioConfig || null;
                 const validSlotIds = scenario && scenario.slots ? scenario.slots : [];
                 const isValidSlotId = validSlotIds.includes(field_id);
 
