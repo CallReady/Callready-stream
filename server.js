@@ -5201,7 +5201,8 @@ wss.on("connection", (twilioWs, req) => {
             "2. Do NOT ask about ANY other topics\n" +
             "3. Do NOT add extra questions\n" +
             "4. Do NOT skip ahead\n" +
-            "5. After response: mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<response>')\n\n";
+            "5. After response: mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<response>')\n" +
+            "6. CRITICAL: After calling mark_checklist_item_complete, STOP SPEAKING immediately - do NOT ask another question\n\n";
 
           if (spec.validation && spec.validation.requirement) {
             instructions += "Required: " + spec.validation.requirement + "\n\n";
