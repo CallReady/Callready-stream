@@ -5031,17 +5031,25 @@ wss.on("connection", (twilioWs, req) => {
       }
 
       // Scenario-specific field guidance
+      // NOTE: Only use legacy field instructions for scenarios WITHOUT config-driven baseQuestions
       if (nextTarget) {
         var fieldInstructions = null;
+        
+        // Check if scenario has config-driven mode (baseQuestions defined)
+        const scenario = resolveScenarioWithDynamic(callState, callState.scenarioTag);
+        const hasConfigMode = scenario && scenario.questions && scenario.questions[nextTarget] && scenario.questions[nextTarget].baseQuestion;
 
-        if (callState.scenarioTag === "doctor_default") {
-          fieldInstructions = getDoctorChecklistFieldInstructions(nextTarget);
-        } else if (callState.scenarioTag && String(callState.scenarioTag).startsWith("custom_")) {
-          fieldInstructions = getCustomChecklistFieldInstructions(nextTarget);
-        }
+        if (!hasConfigMode) {
+          // Only use legacy instructions if scenario doesn't have config-driven baseQuestions
+          if (callState.scenarioTag === "doctor_default") {
+            fieldInstructions = getDoctorChecklistFieldInstructions(nextTarget);
+          } else if (callState.scenarioTag && String(callState.scenarioTag).startsWith("custom_")) {
+            fieldInstructions = getCustomChecklistFieldInstructions(nextTarget);
+          }
 
-        if (fieldInstructions) {
-          context += "FIELD_GUIDANCE: " + fieldInstructions + "\n";
+          if (fieldInstructions) {
+            context += "FIELD_GUIDANCE: " + fieldInstructions + "\n";
+          }
         }
       }
     }
