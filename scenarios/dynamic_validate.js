@@ -156,12 +156,11 @@ function validateAndNormalizeScenario(rawScenario) {
     completion: { mode: "all_required_slots_complete" }
   };
 
-  // Add closingMessage if present
-  if (rawScenario.closingMessage && typeof rawScenario.closingMessage === "string") {
-    normalized.closingMessage = rawScenario.closingMessage.trim();
-  } else {
-    normalized.closingMessage = "Thank you!";
+  // closingMessage is REQUIRED for dynamic scenarios
+  if (!rawScenario.closingMessage || typeof rawScenario.closingMessage !== "string" || rawScenario.closingMessage.trim().length === 0) {
+    throw new Error("closingMessage is required and must be a non-empty string");
   }
+  normalized.closingMessage = rawScenario.closingMessage.trim();
 
   // Add pricing if present
   if (rawScenario.pricing) {

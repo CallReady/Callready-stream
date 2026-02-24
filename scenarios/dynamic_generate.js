@@ -65,7 +65,11 @@ CRITICAL REQUIREMENTS:
 - Never include placeholders like {{TOTAL}} or [generate something]
 - practiceLabel: what the caller is practicing (e.g., "calling a gym to cancel a membership")
 - goalStatement: 1-2 sentences describing success
-- closingMessage: brief, context-appropriate thank you message
+- closingMessage: REQUIRED - A brief, warm, professional closing from the business staff that wraps up the call
+  * For cancellations: "Thank you for being a member. Have a great day!"
+  * For appointments: "We'll see you on [day]. Have a great day!"
+  * For orders: "Your order is confirmed. Thanks for calling!"
+  * Must sound natural and in-character for the business type
 - The "questions" slot must have loopUntilDone: true
 
 IMPORTANT CONTEXT AWARENESS:
