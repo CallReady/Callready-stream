@@ -2486,52 +2486,18 @@ app.post("/process-choose-scenario", async (req, res) => {
         return;
       }
 
-      // No clear match - generate dynamic scenario
-      console.log(nowIso(), "/process-choose-scenario: Generating dynamic scenario", {
+      // No clear match - need to generate dynamic scenario
+      // First, inform the user and store their description
+      console.log(nowIso(), "/process-choose-scenario: Will generate dynamic scenario", {
         callSid,
         userDescription: speechResult,
         matchConfidence: matchResult.confidence
       });
 
-      const genResult = await generateDynamicScenario({
-        promptText: speechResult,
-        callSid: callSid,
-        openaiApiKey: OPENAI_API_KEY
-      });
-      
-      if (!genResult.ok) {
-        console.log(nowIso(), "[DYNAMIC_SCENARIO_FAILED]", { callSid, error: genResult.error, details: genResult.details });
-        // Failed to generate, ask them to try again
-        const failText = "I wasn't able to create that scenario. Let's try something else. Tell me about the call you want to practice, or say 'you choose' if you want me to pick.";
-        const gather = vr.gather({
-          input: "speech",
-          timeout: 3,
-          speechTimeout: 0.8,
-          action: "/process-choose-scenario",
-          method: "POST",
-          language: "en-US"
-        });
-        gather.say({ voice: TWILIO_VOICE }, failText);
-        res.type("text/xml").send(vr.toString());
-        return;
-      }
-      
-      // Success! Store the scenario
-      setDynamicScenario(callSid, genResult.scenario);
-      console.log(nowIso(), "[DYNAMIC_SCENARIO_GENERATED]", { 
-        callSid, 
-        tag: genResult.scenario.tag, 
-        slots: genResult.scenario.slots,
-        answererRole: genResult.scenario.answererRole,
-        practiceLabel: genResult.scenario.practiceLabel,
-        firstQuestion: genResult.scenario.questions && genResult.scenario.questions.call_purpose ? genResult.scenario.questions.call_purpose.baseQuestion : null
-      });
-      
+      // Store the user's description for the generation step
       if (callSid) {
         twilioChooseScenarioRetries.delete(callSid);
-        twilioScenarioFlags.set(callSid, genResult.scenario.tag);
         
-        // Store the user's description
         try {
           if (pool) {
             await pool.query(
@@ -2544,8 +2510,14 @@ app.post("/process-choose-scenario", async (req, res) => {
         }
       }
 
-      // Redirect to confirmation flow for dynamic scenario
-      vr.redirect({ method: "POST" }, `/gather-confirm-suggested-scenario?tag=${encodeURIComponent(genResult.scenario.tag)}`);
+      // Tell user we're building a custom scenario
+      vr.say({ voice: TWILIO_VOICE }, 
+        "We don't have a scenario for that exact call yet, but let me create one from scratch for you. " +
+        "It might take a little bit, so be patient while I build it."
+      );
+      
+      // Redirect to generation endpoint
+      vr.redirect({ method: "POST" }, `/generate-dynamic-scenario?description=${encodeURIComponent(speechResult)}`);
       res.type("text/xml").send(vr.toString());
       return;
     }
@@ -2568,6 +2540,78 @@ app.post("/process-choose-scenario", async (req, res) => {
     res.type("text/xml").send(vr.toString());
   } catch (err) {
     console.error("/process-choose-scenario ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+app.post("/generate-dynamic-scenario", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const description = req.query?.description || req.body?.description || "";
+    
+    console.log(nowIso(), "/generate-dynamic-scenario", { callSid, description });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    if (!description) {
+      console.error(nowIso(), "/generate-dynamic-scenario missing description", { callSid });
+      vr.say({ voice: TWILIO_VOICE }, "I didn't get your scenario description. Let's try again.");
+      vr.redirect({ method: "POST" }, "/gather-choose-scenario");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Generate the dynamic scenario
+    console.log(nowIso(), "/generate-dynamic-scenario: Generating scenario", {
+      callSid,
+      userDescription: description
+    });
+
+    const genResult = await generateDynamicScenario({
+      promptText: description,
+      callSid: callSid,
+      openaiApiKey: OPENAI_API_KEY
+    });
+    
+    if (!genResult.ok) {
+      console.log(nowIso(), "[DYNAMIC_SCENARIO_FAILED]", { callSid, error: genResult.error, details: genResult.details });
+      // Failed to generate, ask them to try again
+      const failText = "I wasn't able to create that scenario. Let's try something else. Tell me about the call you want to practice, or say 'you choose' if you want me to pick.";
+      const gather = vr.gather({
+        input: "speech",
+        timeout: 3,
+        speechTimeout: 0.8,
+        action: "/process-choose-scenario",
+        method: "POST",
+        language: "en-US"
+      });
+      gather.say({ voice: TWILIO_VOICE }, failText);
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+    
+    // Success! Store the scenario
+    setDynamicScenario(callSid, genResult.scenario);
+    console.log(nowIso(), "[DYNAMIC_SCENARIO_GENERATED]", { 
+      callSid, 
+      tag: genResult.scenario.tag, 
+      slots: genResult.scenario.slots,
+      answererRole: genResult.scenario.answererRole,
+      practiceLabel: genResult.scenario.practiceLabel,
+      firstQuestion: genResult.scenario.questions && genResult.scenario.questions.call_purpose ? genResult.scenario.questions.call_purpose.baseQuestion : null
+    });
+    
+    if (callSid) {
+      twilioScenarioFlags.set(callSid, genResult.scenario.tag);
+    }
+
+    // Redirect to confirmation flow for dynamic scenario
+    vr.redirect({ method: "POST" }, `/gather-confirm-suggested-scenario?tag=${encodeURIComponent(genResult.scenario.tag)}`);
+    res.type("text/xml").send(vr.toString());
+
+  } catch (err) {
+    console.error("/generate-dynamic-scenario ERROR:", err);
     res.status(500).send("Error");
   }
 });
