@@ -54,47 +54,75 @@ Generate a valid scenario configuration object based on the user's request.
 Rules:
 - Output ONLY valid JSON, no commentary
 - Use tag: "dynamic_${callSid}"
-- Include 4-10 slots (field identifiers like "patient_name", "appointment_date")
-- Each slot must have a question definition
+- Include 4-9 required slots PLUS a final "questions" slot (5-10 total slots)
+- The LAST slot must ALWAYS be "questions" for asking the caller if they have any questions
+- Each slot must have a question definition with baseQuestion and optional helpIfStuck
 - baseQuestion: 5-160 chars, natural spoken question
 - Never include placeholders like {{TOTAL}} or [generate something]
 - answererRole: who the AI plays (e.g., "receptionist", "customer service rep")
-- practiceLabel: what the caller is practicing (e.g., "Medical Appointment Scheduling")
+- practiceLabel: what the caller is practicing (e.g., "calling a veterinary clinic to schedule an appointment")
 - goalStatement: 1-2 sentences describing success
 - closingMessage: brief thank you message
+- The "questions" slot must have loopUntilDone: true
 
 Example structure:
 {
   "tag": "dynamic_CA123",
   "displayName": "Vet Appointment",
-  "practiceLabel": "Veterinary Appointment Scheduling",
+  "practiceLabel": "calling a veterinary clinic to schedule an appointment",
   "answererRole": "veterinary receptionist",
   "goalStatement": "Successfully schedule a vet appointment by providing all required information.",
-  "slots": ["pet_name", "pet_type", "reason", "owner_name", "phone_number", "preferred_date"],
+  "slots": ["pet_name", "pet_type", "reason", "owner_name", "phone_number", "preferred_date", "questions"],
   "questions": {
     "pet_name": {
       "baseQuestion": "What's your pet's name?",
-      "helpIfStuck": "I need the name of the pet you're bringing in."
+      "helpIfStuck": "I need the name of the pet you're bringing in.",
+      "validation": {
+        "requirement": "pet's name"
+      }
     },
     "pet_type": {
       "baseQuestion": "What kind of animal is your pet?",
-      "helpIfStuck": "Is it a dog, cat, or another type of animal?"
+      "helpIfStuck": "Is it a dog, cat, or another type of animal?",
+      "validation": {
+        "requirement": "type of animal"
+      }
     },
     "reason": {
       "baseQuestion": "What's the reason for the visit?",
-      "helpIfStuck": "Are they sick, needing a checkup, or something else?"
+      "helpIfStuck": "Are they sick, needing a checkup, or something else?",
+      "validation": {
+        "requirement": "reason for appointment"
+      }
     },
     "owner_name": {
       "baseQuestion": "Can I get your full name?",
-      "helpIfStuck": "I need the pet owner's name for the appointment."
+      "helpIfStuck": "I need the pet owner's name for the appointment.",
+      "validation": {
+        "requirement": "full name"
+      }
     },
     "phone_number": {
       "baseQuestion": "What's the best phone number to reach you?",
-      "helpIfStuck": "I need a phone number in case we need to contact you."
+      "helpIfStuck": "I need a phone number in case we need to contact you.",
+      "validation": {
+        "requirement": "valid phone number with at least 7 digits"
+      }
     },
     "preferred_date": {
       "baseQuestion": "What day works best for you?",
-      "helpIfStuck": "When would you like to bring your pet in?"
+      "helpIfStuck": "When would you like to bring your pet in?",
+      "validation": {
+        "requirement": "preferred appointment date"
+      }
+    },
+    "questions": {
+      "baseQuestion": "Do you have any questions for me?",
+      "loopUntilDone": true,
+      "helpIfStuck": "I can answer any questions you might have.",
+      "validation": {
+        "requirement": "confirmation they have no more questions"
+      }
     }
   },
   "closingMessage": "Thank you! We'll see you and your pet soon."

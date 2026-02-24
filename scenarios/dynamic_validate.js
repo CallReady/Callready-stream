@@ -26,8 +26,8 @@ function validateAndNormalizeScenario(rawScenario) {
     throw new Error("slots must be an array");
   }
   
-  if (rawScenario.slots.length < 4 || rawScenario.slots.length > 10) {
-    throw new Error("slots array must contain 4 to 10 items");
+  if (rawScenario.slots.length < 5 || rawScenario.slots.length > 10) {
+    throw new Error("slots array must contain 5 to 10 items (4-9 regular fields plus 'questions' field)");
   }
 
   // Validate slot IDs
@@ -87,6 +87,22 @@ function validateAndNormalizeScenario(rawScenario) {
     if (question.waitForResponse === undefined) {
       question.waitForResponse = true;
     }
+  }
+
+  // Ensure the last slot is "questions" with loopUntilDone
+  const lastSlotId = rawScenario.slots[rawScenario.slots.length - 1];
+  if (lastSlotId !== "questions") {
+    throw new Error("Last slot must be 'questions' for asking if caller has any questions");
+  }
+  
+  const questionsField = rawScenario.questions["questions"];
+  if (!questionsField) {
+    throw new Error("Missing 'questions' field definition");
+  }
+  
+  // Ensure loopUntilDone is set for questions field
+  if (!questionsField.loopUntilDone) {
+    questionsField.loopUntilDone = true;
   }
 
   // Validate pricing if present

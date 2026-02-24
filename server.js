@@ -2725,18 +2725,44 @@ app.post("/process-describe-call", async (req, res) => {
       return;
     }
 
-    // No clear match found - offer custom scenario
-    console.log(nowIso(), "/process-describe-call: No matching scenario, offering custom call", {
+    // No clear match found - generate dynamic scenario
+    console.log(nowIso(), "/process-describe-call: No matching scenario, generating dynamic scenario", {
       callSid,
       userDescription: speechResult,
       matchConfidence: matchResult.confidence
     });
 
+    // Generate dynamic scenario using AI
+    const genResult = await generateDynamicScenario({
+      promptText: speechResult,
+      callSid: callSid,
+      openaiApiKey: OPENAI_API_KEY
+    });
+    
+    if (!genResult.ok) {
+      console.log(nowIso(), "[DYNAMIC_SCENARIO_FAILED]", { callSid, error: genResult.error, details: genResult.details });
+      // Failed to generate, ask them to try again or choose something else
+      const failText = "I wasn't able to create that scenario. Let's try something you'd like to practice, or say 'you choose' if you want me to pick.";
+      const gather = vr.gather({
+        input: "speech",
+        timeout: 3,
+        speechTimeout: 0.8,
+        action: "/process-choose-scenario",
+        method: "POST",
+        language: "en-US"
+      });
+      gather.say({ voice: TWILIO_VOICE }, failText);
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+    
+    // Success! Store the scenario
+    setDynamicScenario(callSid, genResult.scenario);
+    console.log(nowIso(), "[DYNAMIC_SCENARIO_GENERATED]", { callSid, tag: genResult.scenario.tag, slots: genResult.scenario.slots });
+    
     if (callSid) {
-      // Store the description temporarily
-      const customHash = simpleHash(speechResult);
-      const customTag = `custom_${customHash}`;
-      twilioScenarioFlags.set(callSid, customTag);
+      twilioChooseScenarioRetries.delete(callSid);
+      twilioScenarioFlags.set(callSid, genResult.scenario.tag);
       
       // Store the user's description
       try {
@@ -2751,8 +2777,8 @@ app.post("/process-describe-call", async (req, res) => {
       }
     }
 
-    // Redirect to custom call confirmation
-    vr.redirect({ method: "POST" }, `/gather-custom-call-confirmation?description=${encodeURIComponent(speechResult)}`);
+    // Redirect to confirmation flow for dynamic scenario
+    vr.redirect({ method: "POST" }, `/gather-confirm-suggested-scenario?tag=${encodeURIComponent(genResult.scenario.tag)}`);
     res.type("text/xml").send(vr.toString());
   } catch (err) {
     console.error("/process-describe-call ERROR:", err);
@@ -2772,9 +2798,17 @@ app.post("/gather-confirm-suggested-scenario", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    // Get the scenario label from config or fallback to hardcoded
+    // Get the scenario label from config (including dynamic scenarios)
     let scenarioLabel = "";
-    const scenario = scenariosRegistry && scenarioTag ? scenariosRegistry[scenarioTag] : null;
+    let scenario = null;
+    
+    // Check if it's a dynamic scenario
+    if (scenarioTag.startsWith("dynamic_")) {
+      scenario = getDynamicScenario(callSid);
+    } else {
+      scenario = scenariosRegistry && scenarioTag ? scenariosRegistry[scenarioTag] : null;
+    }
+    
     if (scenario && scenario.practiceLabel) {
       scenarioLabel = scenario.practiceLabel;
     } else {
