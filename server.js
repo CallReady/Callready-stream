@@ -5172,49 +5172,21 @@ wss.on("connection", (twilioWs, req) => {
           
           instructions +=
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-            "⚠️  STRICT MODE: ASK ONLY THE SPECIFIED QUESTION\n" +
+            "⚠️  YOU MUST SPEAK THE EXACT WORDS BELOW - NO PARAPHRASING\n" +
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
+            "SPEAK EXACTLY:\n\n" +
+            "    \"" + spec.baseQuestion + "\"\n\n" +
+            "Then STOP and WAIT for their response.\n\n" +
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+            "CONTEXT (for your understanding only):\n" +
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
             "Role: " + (spec.answererRole || "staff member") + "\n" +
-            "Goal: " + (spec.goalStatement || "Help the caller") + "\n\n" +
-            "CURRENT TARGET: " + spec.nextTargetSlotId + "\n\n" +
-            "YOUR NEXT QUESTION:\n\n" +
-            "    " + spec.baseQuestion + "\n\n" +
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-            "STRICT RULES:\n" +
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
-          
-          // Show what NOT to ask about
-          const allSlots = scenario.slots || [];
-          const currentIndex = allSlots.indexOf(spec.nextTargetSlotId);
-          if (currentIndex >= 0 && currentIndex < allSlots.length - 1) {
-            const futureSlots = allSlots.slice(currentIndex + 1, Math.min(currentIndex + 4, allSlots.length));
-            instructions += "DO NOT ASK ABOUT:\n";
-            futureSlots.forEach(function(slotId) {
-              instructions += "  ✗ " + slotId + "\n";
-            });
-            instructions += "\n";
-          }
+            "Current field: " + spec.nextTargetSlotId + "\n\n";
           
           instructions +=
-            "MANDATORY:\n" +
-            "1. Ask ONLY the question shown above - word for word\n" +
-            "2. Do NOT ask about ANY other topics\n" +
-            "3. Do NOT add extra questions\n" +
-            "4. Do NOT skip ahead\n" +
-            "5. After response: mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<response>')\n" +
-            "6. CRITICAL: After calling mark_checklist_item_complete, STOP SPEAKING immediately - do NOT ask another question\n\n";
-
-          if (spec.validation && spec.validation.requirement) {
-            instructions += "Required: " + spec.validation.requirement + "\n\n";
-          }
-
-          if (spec.helpIfStuck) {
-            instructions += "If stuck: " + spec.helpIfStuck + "\n\n";
-          }
-
-          if (remaining.length > 0) {
-            instructions += "Still need: " + remaining.join(", ") + "\n\n";
-          }
+            "AFTER THEY RESPOND:\n" +
+            "1. Call: mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<their response>')\n" +
+            "2. IMMEDIATELY STOP SPEAKING\n\n";
 
           // Special handling for looping questions
           if (spec.loopUntilDone) {
