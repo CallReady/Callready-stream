@@ -5176,7 +5176,12 @@ wss.on("connection", (twilioWs, req) => {
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
             "SPEAK EXACTLY:\n\n" +
             "    \"" + spec.baseQuestion + "\"\n\n" +
-            "Do NOT add any words before or after the quoted question.\n\n" +
+            (spec.transitionPhrase
+              ? ("OPTIONAL TRANSITION (BEFORE THE QUESTION):\n" +
+                 "    \"" + spec.transitionPhrase + "\"\n\n" +
+                 "If you use the transition, say it verbatim, then immediately say the quoted question verbatim.\n" +
+                 "Do NOT add any other words.\n\n")
+              : "Do NOT add any words before or after the quoted question.\n\n") +
             "Then STOP and WAIT for their response.\n\n" +
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
             "CONTEXT (for your understanding only):\n" +
@@ -5884,6 +5889,7 @@ wss.on("connection", (twilioWs, req) => {
       goalStatement: scenario.goalStatement || scenario.goal || "",
       nextTargetSlotId: nextTargetSlotId,
       baseQuestion: questionConfig.baseQuestion || "",
+      transitionPhrase: questionConfig.transitionPhrase || "",
       helpIfStuck: questionConfig.helpIfStuck || "",
       allowParaphrase: true,  // Allow paraphrase for now
       validation: questionConfig.validation || null,
