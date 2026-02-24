@@ -4591,7 +4591,11 @@ wss.on("connection", (twilioWs, req) => {
     connectingTimeoutFired: false, // flag to fire connecting timeout only once
     checklist: null,             // { id: { required: bool, done: bool, value: string|null }, ... }
     roleplayTranscript: [],      // Array of {speaker: "caller"|"ai", text: string, timestamp: number}
-    questionsAndClosingSawQuestion: false
+    questionsAndClosingSawQuestion: false,
+    validationFailedFor: null,
+    validationFailedUnrelated: false,
+    validationFailedAt: null,
+    validationFailCounts: {}
   };
 
   LAST_CALL_STATE = callState;
@@ -4743,6 +4747,15 @@ wss.on("connection", (twilioWs, req) => {
         console.log(nowIso(), "callState.scenarioTag ->", callState.scenarioTag, "why:", why || "");
       } catch (e) { }
     }
+  }
+
+  function isLikelyQuestion(utterance) {
+    if (!utterance) return false;
+    const t = String(utterance).toLowerCase().trim();
+    if (!t) return false;
+    if (t.indexOf("?") >= 0) return true;
+    const questionRe = /\b(what|when|where|why|how|can|could|would|should|do|does|is|are|will|may|did|who)\b/;
+    return questionRe.test(t);
   }
 
   function validateCallerResponse(utterance, fieldConfig, fieldId) {
@@ -5203,19 +5216,41 @@ wss.on("connection", (twilioWs, req) => {
           const remaining = Object.keys(callState.checklist).filter(
             id => callState.checklist[id].required && !callState.checklist[id].done
           );
+
+          const needsRetry = callState.validationFailedFor === spec.nextTargetSlotId;
+          const retryIsUnrelated = needsRetry && callState.validationFailedUnrelated;
+          let retryClarificationLine = "";
+          if (needsRetry) {
+            if (retryIsUnrelated) {
+              retryClarificationLine = "We'll get to that in a moment, but first I need to ask:";
+            } else if (spec.helpIfStuck) {
+              retryClarificationLine = spec.helpIfStuck;
+            } else if (spec.validation && spec.validation.requirement) {
+              retryClarificationLine = "Just to clarify, I need " + spec.validation.requirement + ".";
+            } else {
+              retryClarificationLine = "I still need that information.";
+            }
+          }
           
           instructions +=
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
             "⚠️  YOU MUST SPEAK THE EXACT WORDS BELOW - NO PARAPHRASING\n" +
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
             "SPEAK EXACTLY:\n\n" +
+            (needsRetry
+              ? ("First say exactly:\n\n" +
+                 "    \"" + retryClarificationLine + "\"\n\n" +
+                 "Then ask exactly:\n\n")
+              : "") +
             "    \"" + spec.baseQuestion + "\"\n\n" +
             (spec.transitionPhrase
               ? ("OPTIONAL TRANSITION (BEFORE THE QUESTION):\n" +
                  "    \"" + spec.transitionPhrase + "\"\n\n" +
                  "If you use the transition, say it verbatim, then immediately say the quoted question verbatim.\n" +
                  "Do NOT add any other words.\n\n")
-              : "Do NOT add any words before or after the quoted question.\n\n") +
+              : (needsRetry
+                ? "Do NOT add any other words beyond the clarification line and the quoted question.\n\n"
+                : "Do NOT add any words before or after the quoted question.\n\n")) +
             "Then STOP and WAIT for their response.\n\n" +
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
             "CONTEXT (for your understanding only):\n" +
@@ -6702,6 +6737,12 @@ wss.on("connection", (twilioWs, req) => {
                   if (isValid) {
                     callState.checklist[fieldId].done = true;
                     callState.checklist[fieldId].value = utter;
+
+                    if (callState.validationFailedFor === fieldId) {
+                      callState.validationFailedFor = null;
+                      callState.validationFailedUnrelated = false;
+                      callState.validationFailedAt = null;
+                    }
                     
                     const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
                     const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
@@ -6712,6 +6753,11 @@ wss.on("connection", (twilioWs, req) => {
                       callState.needsClosing = true;
                       console.log(nowIso(), "[AUTO_COMPLETE] All items complete, setting needsClosing=true");
                     }
+                  } else {
+                    callState.validationFailedFor = fieldId;
+                    callState.validationFailedUnrelated = isLikelyQuestion(utter);
+                    callState.validationFailedAt = Date.now();
+                    callState.validationFailCounts[fieldId] = (callState.validationFailCounts[fieldId] || 0) + 1;
                   }
                 }
               }
@@ -7137,6 +7183,10 @@ wss.on("connection", (twilioWs, req) => {
                         utterance: utterForValidation,
                         requirement: fieldConfig && fieldConfig.validation ? fieldConfig.validation.requirement : null
                       });
+                      callState.validationFailedFor = field_id;
+                      callState.validationFailedUnrelated = isLikelyQuestion(utterForValidation);
+                      callState.validationFailedAt = Date.now();
+                      callState.validationFailCounts[field_id] = (callState.validationFailCounts[field_id] || 0) + 1;
                       continue;
                     }
                   } else if (!utterForValidation) {
@@ -7153,6 +7203,12 @@ wss.on("connection", (twilioWs, req) => {
                   
                   callState.checklist[field_id].done = true;
                   callState.checklist[field_id].value = value;
+
+                  if (callState.validationFailedFor === field_id) {
+                    callState.validationFailedFor = null;
+                    callState.validationFailedUnrelated = false;
+                    callState.validationFailedAt = null;
+                  }
                   
                   console.log(nowIso(), "[CHECKLIST_COMPLETE]", {
                     field_id,
