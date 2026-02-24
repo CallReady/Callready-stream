@@ -7377,6 +7377,40 @@ wss.on("connection", (twilioWs, req) => {
         const rawText = extractRawTextFromResponse(msg);
         // Also get cleaned text for display/transcript
         const cleanedText = stripJsonMarkers(rawText);
+
+        if (callState.phase === "roleplay" && callState.scenarioConfig && callState.checklist && !callState.needsClosing) {
+          const spec = getNextTurnSpec(callState, callState.scenarioConfig);
+          const baseQuestion = spec && spec.baseQuestion ? String(spec.baseQuestion) : "";
+          const spoken = String(cleanedText || "").trim();
+
+          if (baseQuestion && spoken) {
+            const normalize = (text) =>
+              String(text || "")
+                .toLowerCase()
+                .replace(/[^a-z0-9 ]/g, " ")
+                .replace(/\s+/g, " ")
+                .trim();
+
+            const normalizedSpoken = normalize(spoken);
+            const normalizedBase = normalize(baseQuestion);
+
+            if (normalizedSpoken !== normalizedBase) {
+              console.log(nowIso(), "[EXACT_QUESTION_GUARD] Re-asking baseQuestion", {
+                expected: baseQuestion,
+                spoken: spoken
+              });
+              openaiResponseCreate({
+                type: "response.create",
+                response: {
+                  modalities: ["audio", "text"],
+                  tool_choice: "none",
+                  instructions: "Speak this exactly, then stop speaking and wait:\n" + baseQuestion + "\n"
+                }
+              });
+              return;
+            }
+          }
+        }
         
         responseActive = false;
         callState.openaiResponseActive = false;
