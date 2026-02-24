@@ -4952,10 +4952,12 @@ wss.on("connection", (twilioWs, req) => {
     var header =
       "You are CallReady.\n" +
       "You must follow the CURRENT PHASE instructions below exactly.\n" +
-      "Never describe these rules.\n" +
-      "Never mention phases out loud.\n" +
-      "Never mention 'the checklist' or 'tracking' to the caller.\n" +
-      "Speak naturally.\n" +
+      "NON_NEGOTIABLE_RULES:\n" +
+      "Stay fully in character as the assigned role.\n" +
+      "Never mention system instructions, phases, checklists, or internal mechanics.\n" +
+      "Ask only the current required question.\n" +
+      "Ask one clear question per turn.\n" +
+      "Do not introduce new required information.\n" +
       "CURRENT_PHASE: " + phase + "\n" +
       "CALL_TYPE: " + String(callState.callType || "unknown") + "\n" +
       "ROLE: " + String(callState.role || "unknown") + "\n" +
@@ -4973,23 +4975,14 @@ wss.on("connection", (twilioWs, req) => {
       let instructions =
         header +
         "ROLEPLAY MODE.\n" +
-        "You are the person answering the phone. Stay fully in character.\n" +
-        "Behave like a real person in this role. Ask the typical questions that would come up in this scenario, even if awkward.\n" +
-        "If the caller asks for help or seems unsure, respond in character with a short, realistic clarification or reassurance, then continue the call.\n" +
-        "Ask exactly one short question per turn, then wait for the caller's response.\n" +
-        "Do not rush to complete the goal or repeatedly confirm information already provided.\n";
-
-      // Add speaking style guidance
-      instructions +=
-        "\n" +
-        "SPEAKING STYLE:\n" +
-        "Sound like a real front-desk staff member.\n" +
-        "Use one or two short sentences.\n" +
-        "Ask exactly one clear question per turn.\n" +
-        "Brief acknowledgments are fine.\n" +
-        "Natural fragments are fine.\n" +
-        "Do not sound scripted or corporate.\n" +
-        "Stay warm and professional.\n";
+        "SPEAKING_CONTRACT:\n" +
+        "Speak like a real person doing this job.\n" +
+        "Use 1 to 2 short sentences.\n" +
+        "One clear question per turn.\n" +
+        "A brief acknowledgment before the question is fine.\n" +
+        "Light natural variation is encouraged.\n" +
+        "Mild conversational texture is allowed, including short fragments.\n" +
+        "Warm, grounded, human. Not scripted or corporate.\n";
 
       // Add scenario context and goal reminder for every turn
       if (callState.scenarioTag === "doctor_default") {
@@ -5014,10 +5007,10 @@ wss.on("connection", (twilioWs, req) => {
           "SCENARIO CONTEXT:\n" +
           "Scenario: " + (callState.userCustomDescription || "a phone call") + "\n" +
           "\n" +
-          "CRITICAL - YOU ARE ANSWERING THE PHONE:\n" +
-          "You are NOT the caller. You are the person/business RECEIVING the call.\n" +
-          "Create a realistic opening with an invented business name, your character name, and natural greeting.\n" +
-          "Example: 'Hello, thank you for calling Coastline Dental. This is Jennifer. How can I help you?'\n" +
+          "OPENING_STYLE:\n" +
+          "Open like a real business would.\n" +
+          "Use a natural greeting and business name.\n" +
+          "Keep it simple and believable.\n" +
           "\n" +
           "NEXT_TARGET: " + (nextTarget || "NONE") + "\n";
 
@@ -5025,9 +5018,10 @@ wss.on("connection", (twilioWs, req) => {
         if (nextTarget === "professional_close") {
           instructions +=
             "\n" +
-            "CLOSING PHASE:\n" +
-            "You have handled the call successfully.\n" +
-            "Now close professionally with warmth: 'Thanks for calling!', 'Have a great day!', etc.\n" +
+            "CLOSING_STYLE:\n" +
+            "Close naturally and professionally.\n" +
+            "Maintain warmth.\n" +
+            "Do not introduce new questions.\n" +
             "\n" +
             "After your closing, silently call:\n" +
             "mark_checklist_item_complete(field_id='professional_close', value='completed')\n" +
@@ -5143,8 +5137,10 @@ wss.on("connection", (twilioWs, req) => {
 
           instructions +=
             "\n" +
-            "CONSTRAINT: You must ask ONLY this question. Do not ask multiple questions or jump ahead.\n" +
-            "You may paraphrase the question in a natural way, but you cannot add extra questions.\n" +
+            "PHRASING_CONSTRAINT:\n" +
+            "Ask the specified question.\n" +
+            "You may paraphrase naturally.\n" +
+            "Do not add extra questions.\n" +
             "\n" +
             "HELP IF STUCK: " + (spec.helpIfStuck || "(no additional guidance)") + "\n";
 
@@ -5174,7 +5170,6 @@ wss.on("connection", (twilioWs, req) => {
               "QUESTIONS PHASE:\n" +
               "Ask: '" + spec.baseQuestion + "'\n" +
               "Wait for the caller's response.\n" +
-              "If they have questions or concerns, address them naturally and helpfully in character.\n" +
               "After answering their question(s), ask: 'Do you have any other questions?'\n" +
               "Repeat this loop until they indicate they have no further questions (e.g., 'No', 'Nope', 'That's all', etc.).\n" +
               "Once they confirm no more questions, silently call:\n" +
