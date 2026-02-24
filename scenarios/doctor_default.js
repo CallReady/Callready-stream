@@ -31,7 +31,7 @@ module.exports = {
       helpIfStuck: "If unclear, try: 'Are you calling to schedule an appointment?'"
     },
     new_or_returning_patient: {
-      baseQuestion: "Are you a new patient or a returning patient?",
+      baseQuestion: "For sure, we can do that. Are you a new patient with us or have you been in before?",
       waitForResponse: true,
       validation: {
         requirement: "confirmation of whether they are a new or returning patient"
@@ -39,7 +39,7 @@ module.exports = {
       helpIfStuck: "If they are unsure, clarify whether they have visited before."
     },
     birthdate: {
-      baseQuestion: "What is your date of birth?",
+      baseQuestion: "Let's access your account. What is your date of birth?",
       waitForResponse: true,
       validation: {
         requirement: "a complete date of birth in any common format (MM/DD/YYYY, MM/DD/YY, or spoken date)"
@@ -47,7 +47,7 @@ module.exports = {
       helpIfStuck: "Accept any format: MM/DD/YYYY, MM/DD/YY, spoken date, etc."
     },
     patient_name: {
-      baseQuestion: "What is your full name?",
+      baseQuestion: "Great, let's verify your information. What is your full name?",
       waitForResponse: true,
       validation: {
         requirement: "a full name for the patient"
@@ -55,7 +55,7 @@ module.exports = {
       helpIfStuck: "If unclear, ask them to repeat it."
     },
     reason_for_appointment: {
-      baseQuestion: "What are you coming in for?",
+      baseQuestion: "And what are you needing to come in for?",
       waitForResponse: true,
       validation: {
         requirement: "a brief reason for the appointment (e.g., 'checkup', 'broken ankle', 'sore throat')"
@@ -63,15 +63,15 @@ module.exports = {
       helpIfStuck: "A brief reason is sufficient. For example: 'checkup', 'broken ankle', 'sore throat'."
     },
     insurance: {
-      baseQuestion: "Do you have insurance or are you self-pay?",
+      baseQuestion: "Do you have insurance or are you going to pay out of pocket?",
       waitForResponse: true,
       validation: {
-        requirement: "either an insurance company name or confirmation of self-pay"
+        requirement: "either an insurance company name or confirmation of our of pocket"
       },
       helpIfStuck: "If they have insurance, ask the insurance company name. Otherwise note self-pay."
     },
     appointment_preference: {
-      baseQuestion: "What day and time works best for you?",
+      baseQuestion: "What day and time would work best for you?",
       waitForResponse: true,
       validation: {
         requirement: "a preferred day and time for their appointment"
@@ -79,7 +79,7 @@ module.exports = {
       helpIfStuck: "If they are unsure, offer two available options."
     },
     confirmation_preference: {
-      baseQuestion: "Would you prefer a text reminder, a phone call reminder, or no reminder?",
+      baseQuestion: "We can send you a reminder for that appointment. Is text or a phone call better?",
       waitForResponse: true,
       validation: {
         requirement: "confirmation of reminder preference (text, phone call, or no reminder)"
@@ -87,7 +87,7 @@ module.exports = {
       helpIfStuck: "Most patients prefer text, but clarify their choice."
     },
     questions: {
-      baseQuestion: "Do you have any questions for me?",
+      baseQuestion: "Alright, I think we're set. Do you have any questions for me?",
       waitForResponse: true,
       loopUntilDone: true,
       validation: {
@@ -97,7 +97,7 @@ module.exports = {
     }
   },
 
-  closingMessage: "Thank you for scheduling. We'll see you soon!",
+  closingMessage: "Okay, thanks for scheduling. We'll see you soon!",
 
   completion: {
     mode: "all_required_slots_complete"
