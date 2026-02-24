@@ -4699,7 +4699,12 @@ wss.on("connection", (twilioWs, req) => {
         context += "ASK_ONLY_ABOUT: " + (nextTarget || "STILL_GATHERING") + "\n";
       } else {
         context += "CHECKLIST_STATUS: All required items are gathered\n";
-        context += "TASK: Move toward a natural close or any scenario closing step.\n";
+        if (callState.needsClosing && !callState.closingDelivered) {
+          context += "CRITICAL: Deliver your closing statement NOW. Summarize what you collected, confirm the appointment/order/details. Then IMMEDIATELY use the mark_checklist_item_complete function with field_id=\"__closing__\" and value=\"completed\" to mark the closing as delivered.\n";
+          context += "TASK: Deliver closing and mark __closing__ as complete. Do not ask for more information.\n";
+        } else {
+          context += "TASK: Move toward a natural close or any scenario closing step.\n";
+        }
       }
 
       // Scenario-specific field guidance
@@ -6677,13 +6682,20 @@ wss.on("connection", (twilioWs, req) => {
                     
                     const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
                     const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
+                    const allNowDone = doneItemsAfter === totalRequired;
                     
                     console.log(nowIso(), "[AUTO_COMPLETE] Loop field completed (no more indicated)", {
                       fieldId,
                       utterance: utter,
                       progress: `${doneItemsAfter}/${totalRequired}`,
-                      isFinalItem: doneItemsAfter === totalRequired
+                      isFinalItem: allNowDone
                     });
+                    
+                    // If all items are complete, flag for immediate closing delivery
+                    if (allNowDone && !callState.needsClosing) {
+                      callState.autoCompletedFinalField = true;
+                      console.log(nowIso(), "[AUTO_COMPLETE] All items complete, flagging for closing delivery");
+                    }
                   } else {
                     console.log(nowIso(), "[AUTO_COMPLETE] Loop field - caller has more to say, continuing loop", {
                       fieldId,
@@ -6700,13 +6712,20 @@ wss.on("connection", (twilioWs, req) => {
                     
                     const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
                     const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
+                    const allNowDone = doneItemsAfter === totalRequired;
                     
                     console.log(nowIso(), "[AUTO_COMPLETE] Field marked complete based on caller response", {
                       fieldId,
                       value: utter,
                       progress: `${doneItemsAfter}/${totalRequired}`,
-                      isFinalItem: doneItemsAfter === totalRequired
+                      isFinalItem: allNowDone
                     });
+                    
+                    // If all items are complete, flag for immediate closing delivery
+                    if (allNowDone && !callState.needsClosing) {
+                      callState.autoCompletedFinalField = true;
+                      console.log(nowIso(), "[AUTO_COMPLETE] All items complete, flagging for closing delivery");
+                    }
                   } else {
                     console.log(nowIso(), "[AUTO_COMPLETE] Caller response did not pass validation", {
                       fieldId,
@@ -7044,9 +7063,15 @@ wss.on("connection", (twilioWs, req) => {
         if (callState.phase === "roleplay" && callState.scenarioTag === "doctor_default") {
           const scenario = resolveScenario("doctor_default");
           const spec = getNextTurnSpec(callState, scenario);
-          if (spec && spec.nextTargetSlotId) {
+          if (spec && spec.nextTargetSlotId && !callState.needsClosing) {
             console.log(nowIso(), "[engine] nextTarget=" + spec.nextTargetSlotId + ", baseQuestion=" + spec.baseQuestion);
           }
+        }
+
+        // Check if we need to deliver closing immediately (e.g., after auto-complete marked final field)
+        if (callState.phase === "roleplay" && callState.needsClosing && !callState.closingDelivered) {
+          console.log(nowIso(), "[engine] Skipping normal response, forcing closing delivery");
+          // The next turn context via buildPhaseContext will include the CRITICAL instruction to deliver closing
         }
 
         // Ask OpenAI to respond now, but ALWAYS include phase instructions.
