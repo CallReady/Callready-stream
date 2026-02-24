@@ -6,7 +6,7 @@ module.exports = {
   goalStatement: "Collect required appointment information and schedule a doctor visit.",
 
   validation: {
-    mode: "server"
+    mode: "trust_ai"
   },
   
   slots: [
