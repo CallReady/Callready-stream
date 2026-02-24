@@ -7158,6 +7158,19 @@ wss.on("connection", (twilioWs, req) => {
             });
           }
         }
+
+        // If we just delivered the closing message, mark it as delivered even if the tool call was skipped.
+        if (
+          callState.phase === "roleplay" &&
+          callState.needsClosing &&
+          callState.closingInstructions &&
+          !callState.closingDelivered &&
+          cleanedText &&
+          cleanedText.trim()
+        ) {
+          callState.closingDelivered = true;
+          console.log(nowIso(), "[CLOSING_DELIVERED_AUTO] Closing message spoken without tool call");
+        }
         
         if ((callState.phase === "connecting" || callState.phase === "roleplay") && aiAudioBytesThisResponse === 0) {
           // Response completed with no audio
