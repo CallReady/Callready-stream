@@ -3728,6 +3728,24 @@ app.post("/debug/prompt-contract", (req, res) => {
   }
 });
 
+app.post("/debug/last-instructions", async (req, res) => {
+  try {
+    const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
+    if (!callSid) {
+      res.status(400).json({ ok: false, error: "missing_CallSid" });
+      return;
+    }
+    const data = lastInstructionsByCallSid.get(callSid);
+    if (!data) {
+      res.status(404).json({ ok: false, error: "not_found", callSid: callSid });
+      return;
+    }
+    res.status(200).json({ ok: true, callSid: callSid, data: data });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: "server_error" });
+  }
+});
+
 app.post("/create-checkout", async (req, res) => {
   try {
     if (!stripe) {
@@ -3967,6 +3985,9 @@ const twilioOpenerPlayedFlags = new Map();
 // In-memory store for scenario selection (callSid => scenarioTag)
 // Allows /gather-scenario-menu or /gather-confirm-doctor to pass scenario to WebSocket
 const twilioScenarioFlags = new Map();
+
+// In-memory store for last built instructions (callSid => { at, scenarioTag, personaStyle, instructions })
+const lastInstructionsByCallSid = new Map();
 
 // In-memory store for coaching context (callSid => { transcript, scenarioTag, feedback })
 // Allows coaching endpoints to generate and deliver feedback
@@ -4527,6 +4548,7 @@ wss.on("connection", (twilioWs, req) => {
     phase: "boot",               // boot, opener, choose_scenario, roleplay, coaching, wrap_up, ending
     callType: "outgoing",        // Always outgoing (user is caller, AI is receptionist/answerer)
     role: "answerer",            // Always answerer (AI answers as receptionist)
+    personaStyle: null,          // one of: "brisk", "warm", "laid_back"
     scenarioTag: null,           // snake_case tag once known
     goal: null,                  // short goal text once known
     scenarioChosen: false,
@@ -4945,6 +4967,14 @@ wss.on("connection", (twilioWs, req) => {
     }
   }
 
+  function pickPersonaStyle(seed) {
+    var s = String(seed || "");
+    var sum = 0;
+    for (var i = 0; i < s.length; i++) sum = (sum + s.charCodeAt(i)) % 1000;
+    var styles = ["brisk", "warm", "laid_back"];
+    return styles[sum % styles.length];
+  }
+
   function buildPhaseInstructions(why) {
     var phase = String(callState.phase || "").trim(); // Log: current phase used to build AI instructions
 
@@ -4975,11 +5005,17 @@ wss.on("connection", (twilioWs, req) => {
       let instructions =
         header +
         "ROLEPLAY MODE.\n" +
+        "PERSONA_STYLE: " + String(callState.personaStyle || "warm") + "\n" +
+        "PERSONA_GUIDE:\n" +
+        "- brisk: efficient, minimal small talk, friendly but quick.\n" +
+        "- warm: welcoming, supportive tone, brief friendly acknowledgments.\n" +
+        "- laid_back: calm, slightly casual phrasing, still professional.\n" +
         "SPEAKING_CONTRACT:\n" +
         "Speak like a real person doing this job.\n" +
         "Use 1 to 2 short sentences.\n" +
         "One clear question per turn.\n" +
         "A brief acknowledgment before the question is fine.\n" +
+        "You may add one short human lead-in (for realism) before the required question, but you must still ask only one question.\n" +
         "Light natural variation is encouraged.\n" +
         "Mild conversational texture is allowed, including short fragments.\n" +
         "Warm, grounded, human. Not scripted or corporate.\n";
@@ -5127,7 +5163,7 @@ wss.on("connection", (twilioWs, req) => {
             "\n" +
             "NEXT_TARGET: " + spec.nextTargetSlotId + "\n" +
             "\n" +
-            "CONFIG-DRIVEN MODE: ASK THIS QUESTION EXACTLY (may paraphrase in ONE sentence):\n" +
+            "CONFIG-DRIVEN MODE: Ask this question with the same meaning. You may add one short human lead-in, but you must still ask only one question:\n" +
             spec.baseQuestion + "\n";
 
           // Add validation requirement if defined
@@ -5138,9 +5174,10 @@ wss.on("connection", (twilioWs, req) => {
           instructions +=
             "\n" +
             "PHRASING_CONSTRAINT:\n" +
-            "Ask the specified question.\n" +
-            "You may paraphrase naturally.\n" +
+            "Ask the specified question with the same meaning.\n" +
+            "You may add one short human lead-in before the question.\n" +
             "Do not add extra questions.\n" +
+            "Do not introduce new required information.\n" +
             "\n" +
             "HELP IF STUCK: " + (spec.helpIfStuck || "(no additional guidance)") + "\n";
 
@@ -5749,6 +5786,15 @@ wss.on("connection", (twilioWs, req) => {
         console.log(nowIso(), "[OPENAI_SEND] WARNING: no instructions found in payload");
       }
     } catch (e) { }
+
+    if (callSid && payload && payload.response && payload.response.instructions) {
+      lastInstructionsByCallSid.set(callSid, {
+        at: nowIso(),
+        scenarioTag: callState && callState.scenarioTag ? callState.scenarioTag : null,
+        personaStyle: callState && callState.personaStyle ? callState.personaStyle : null,
+        instructions: payload.response.instructions
+      });
+    }
 
     openaiSend(payload);
   }
@@ -7795,6 +7841,9 @@ wss.on("connection", (twilioWs, req) => {
       
       // Set callSid in callState so dynamic scenarios can be resolved
       callState.callSid = callSid;
+      if (!callState.personaStyle) {
+        callState.personaStyle = pickPersonaStyle(callSid);
+      }
 
       // Track this connection for graceful shutdown
       if (callSid) {
