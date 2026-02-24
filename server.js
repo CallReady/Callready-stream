@@ -4566,10 +4566,6 @@ wss.on("connection", (twilioWs, req) => {
 
   LAST_CALL_STATE = callState;
 
-  console.log("═══════════════════════════════════════════════════════════════");
-  console.log(nowIso(), "NEW CALL STARTED");
-  console.log("═══════════════════════════════════════════════════════════════");
-
   function setPhase(nextPhase, why) {
     var prev = String(callState.phase || "unknown").trim(); // State: previous phase for transition validation
     var next = String(nextPhase || "").trim();
@@ -7833,6 +7829,9 @@ wss.on("connection", (twilioWs, req) => {
       streamSid = msg.start && msg.start.streamSid ? msg.start.streamSid : null;
       callSid = msg.start && msg.start.callSid ? msg.start.callSid : null;
 
+      console.log("═══════════════════════════════════════════════════════════════");
+      console.log(nowIso(), "NEW CALL STARTED");
+      console.log("═══════════════════════════════════════════════════════════════");
       console.log(nowIso(), "Twilio stream start:", streamSid || "(no streamSid)");
       console.log(nowIso(), "Twilio callSid:", callSid || "(no callSid)");
       usageLog.callSid = callSid || null;
