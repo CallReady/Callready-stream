@@ -5795,65 +5795,16 @@ wss.on("connection", (twilioWs, req) => {
   // Registry is loaded from ./scenarios at boot time
   var SCENARIO_REGISTRY = scenariosRegistry || {};
 
-  // Preserve legacy doctor_default, pharmacy_refill, school_office configs for non-config-driven code
-  // config-driven doctor_default will use slots and questions from loaded registry
-  if (!SCENARIO_REGISTRY["doctor_default"]) {
-    SCENARIO_REGISTRY["doctor_default"] = {
-      tag: "doctor_default",
-      practiceLabel: "calling a doctor's office to schedule an appointment",
-      displayName: "Schedule a doctor appointment",
-      answererRole: "front desk staff at Evergreen Medical Clinic",
-      goal: "Help the caller schedule a doctor appointment by collecting the key details.",
-      openingLineTemplate: "Thanks for calling Evergreen Medical Clinic, how can I help you today?",
-      checklistType: "doctor",
-      slots: [],
-      questions: {},
-      constraints: {},
-      completion: {
-        rule: "all_required_slots_complete"
-      }
-    };
-  }
-
-  if (!SCENARIO_REGISTRY["pharmacy_refill"]) {
-    SCENARIO_REGISTRY["pharmacy_refill"] = {
-      tag: "pharmacy_refill",
-      practiceLabel: "calling a pharmacy to refill a prescription",
-      displayName: "Refill a prescription",
-      answererRole: "pharmacy staff member",
-      goal: "Help the caller request a prescription refill.",
-      openingLineTemplate: "Thank you for calling the pharmacy, how can I help you today?",
-      checklistType: "doctor",
-      slots: [],
-      questions: {},
-      constraints: {},
-      completion: {
-        rule: "all_required_slots_complete"
-      }
-    };
-  }
-
-  if (!SCENARIO_REGISTRY["school_office"]) {
-    SCENARIO_REGISTRY["school_office"] = {
-      tag: "school_office",
-      practiceLabel: "calling a school office with a question",
-      displayName: "Call a school office",
-      answererRole: "school office staff member",
-      goal: "Help the caller ask their question and get directed appropriately.",
-      openingLineTemplate: "School office, how can I help you?",
-      checklistType: "doctor",
-      slots: [],
-      questions: {},
-      constraints: {},
-      completion: {
-        rule: "all_required_slots_complete"
-      }
-    };
-  }
-
   function resolveScenario(tag) {
     if (!tag) return null;
-    return SCENARIO_REGISTRY[tag] || null;
+    const scenario = SCENARIO_REGISTRY[tag] || null;
+    
+    // Log warning if scenario not found - this should not happen if scenarios are loading correctly
+    if (!scenario) {
+      console.error(nowIso(), "[SCENARIO_NOT_FOUND]", { tag, availableScenarios: Object.keys(SCENARIO_REGISTRY) });
+    }
+    
+    return scenario;
   }
 
   /**
@@ -5877,26 +5828,6 @@ wss.on("connection", (twilioWs, req) => {
     }
     
     return resolveScenario(scenarioTag);
-  }
-
-  function getScenarioOrFallback(tag) {
-    var scenario = resolveScenario(tag);
-    if (scenario) return scenario;
-
-    return {
-      tag: "generic_fallback",
-      practiceLabel: "practicing a phone call",
-      displayName: "Generic call",
-      answererRole: "business staff member",
-      goal: "Help the caller complete their request.",
-      openingLineTemplate: "Hello, how can I help you today?",
-      slots: [],
-      questions: {},
-      constraints: {},
-      completion: {
-        rule: "all_required_slots_complete"
-      }
-    };
   }
 
   function getNextTurnSpec(callStateIn, scenario) {
@@ -5958,33 +5889,6 @@ wss.on("connection", (twilioWs, req) => {
       waitForResponse: questionConfig.waitForResponse,
       loopUntilDone: questionConfig.loopUntilDone || false
     };
-  }
-
-  function buildScenarioIntro() {
-    var openingOverride = (callState && callState.scenarioConfig && callState.scenarioConfig.openingLineTemplate)
-      ? String(callState.scenarioConfig.openingLineTemplate)
-      : null;
-    const scenarios = {
-      doctor_default: {
-        title: "A simple appointment scheduling call.",
-        goal: "Successfully schedule a time."
-      }
-    };
-
-    const s = scenarios[callState.scenarioTag];
-
-    if (!s) {
-      return "We are practicing a realistic phone call scenario.";
-    }
-
-    var openingLine = "We are practicing this scenario:";
-    openingLine = openingOverride || openingLine;
-
-    return (
-      openingLine + "\n" +
-      s.title + "\n" +
-      "Goal: " + s.goal
-    );
   }
 
   function buildDoctorChecklist() {
@@ -6542,7 +6446,7 @@ wss.on("connection", (twilioWs, req) => {
             // Ring file is ~3 seconds, schedule roleplay greeting after
             let startLine = "";
             
-            // Try to get baseQuestion from scenario config (config-driven scenarios)
+            // Get baseQuestion from scenario config - this should ALWAYS exist
             const greetingScenario = resolveScenarioWithDynamic(callState, callState.scenarioTag);
             if (greetingScenario && greetingScenario.slots && greetingScenario.slots.length > 0 && greetingScenario.questions) {
               const firstSlotId = greetingScenario.slots[0];
@@ -6552,17 +6456,16 @@ wss.on("connection", (twilioWs, req) => {
               }
             }
             
-            // Fallback to hardcoded greetings if no config-driven greeting found
+            // If no greeting found, log error clearly - scenario config should always have first question
             if (!startLine) {
-              if (callState.scenarioTag === "doctor_default") {
-                startLine = "Thank you for calling Evergreen Medical Clinic. This is Denise. How can I help you?";
-              } else if (callState.scenarioTag === "pharmacy_refill") {
-                startLine = "Thank you for calling Central Pharmacy. This is Alex. How can I help you?";
-              } else if (callState.scenarioTag === "school_office") {
-                startLine = "Good morning, this is Oak Ridge Elementary. This is Sarah. How may I help you?";
-              } else {
-                startLine = "Hello, thanks for calling. How can I help you?";
-              }
+              console.error(nowIso(), "[SCENARIO_CONFIG_ERROR] No greeting found for scenario", {
+                scenarioTag: callState.scenarioTag,
+                hasScenario: !!greetingScenario,
+                hasSlots: greetingScenario ? !!greetingScenario.slots : false,
+                hasQuestions: greetingScenario ? !!greetingScenario.questions : false,
+                firstSlotId: greetingScenario && greetingScenario.slots ? greetingScenario.slots[0] : null
+              });
+              startLine = "Hello, how can I help you?"; // Minimal fallback
             }
             
             setTimeout(() => {
@@ -7469,7 +7372,7 @@ wss.on("connection", (twilioWs, req) => {
             // Ring file is approximately 3 seconds, so schedule the roleplay greeting after that
             let startLine = "";
             
-            // Try to get baseQuestion from scenario config (config-driven scenarios)
+            // Get baseQuestion from scenario config - this should ALWAYS exist
             const greetingScenario = resolveScenarioWithDynamic(callState, callState.scenarioTag);
             if (greetingScenario && greetingScenario.slots && greetingScenario.slots.length > 0 && greetingScenario.questions) {
               const firstSlotId = greetingScenario.slots[0];
@@ -7479,13 +7382,16 @@ wss.on("connection", (twilioWs, req) => {
               }
             }
             
-            // Fallback to hardcoded greetings if no config-driven greeting found
+            // If no greeting found, log error clearly - scenario config should always have first question
             if (!startLine) {
-              if (callState.scenarioTag === "doctor_default") {
-                startLine = "Thank you for calling Evergreen Medical Clinic. This is Denise. How can I help you?";
-              } else {
-                startLine = "Hello, thanks for calling. How can I help you?";
-              }
+              console.error(nowIso(), "[SCENARIO_CONFIG_ERROR] No greeting found for scenario", {
+                scenarioTag: callState.scenarioTag,
+                hasScenario: !!greetingScenario,
+                hasSlots: greetingScenario ? !!greetingScenario.slots : false,
+                hasQuestions: greetingScenario ? !!greetingScenario.questions : false,
+                firstSlotId: greetingScenario && greetingScenario.slots ? greetingScenario.slots[0] : null
+              });
+              startLine = "Hello, how can I help you?"; // Minimal fallback
             }
 
             setTimeout(() => {
