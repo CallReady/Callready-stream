@@ -6691,10 +6691,10 @@ wss.on("connection", (twilioWs, req) => {
                       isFinalItem: allNowDone
                     });
                     
-                    // If all items are complete, flag for immediate closing delivery
+                    // If all items are complete, trigger closing delivery immediately
                     if (allNowDone && !callState.needsClosing) {
-                      callState.autoCompletedFinalField = true;
-                      console.log(nowIso(), "[AUTO_COMPLETE] All items complete, flagging for closing delivery");
+                      callState.needsClosing = true;
+                      console.log(nowIso(), "[AUTO_COMPLETE] All items complete, setting needsClosing=true");
                     }
                   } else {
                     console.log(nowIso(), "[AUTO_COMPLETE] Loop field - caller has more to say, continuing loop", {
@@ -6721,10 +6721,10 @@ wss.on("connection", (twilioWs, req) => {
                       isFinalItem: allNowDone
                     });
                     
-                    // If all items are complete, flag for immediate closing delivery
+                    // If all items are complete, trigger closing delivery immediately
                     if (allNowDone && !callState.needsClosing) {
-                      callState.autoCompletedFinalField = true;
-                      console.log(nowIso(), "[AUTO_COMPLETE] All items complete, flagging for closing delivery");
+                      callState.needsClosing = true;
+                      console.log(nowIso(), "[AUTO_COMPLETE] All items complete, setting needsClosing=true");
                     }
                   } else {
                     console.log(nowIso(), "[AUTO_COMPLETE] Caller response did not pass validation", {
