@@ -2509,7 +2509,14 @@ app.post("/process-choose-scenario", async (req, res) => {
       
       // Success! Store the scenario
       setDynamicScenario(callSid, genResult.scenario);
-      console.log(nowIso(), "[DYNAMIC_SCENARIO_GENERATED]", { callSid, tag: genResult.scenario.tag, slots: genResult.scenario.slots });
+      console.log(nowIso(), "[DYNAMIC_SCENARIO_GENERATED]", { 
+        callSid, 
+        tag: genResult.scenario.tag, 
+        slots: genResult.scenario.slots,
+        answererRole: genResult.scenario.answererRole,
+        practiceLabel: genResult.scenario.practiceLabel,
+        firstQuestion: genResult.scenario.questions && genResult.scenario.questions.call_purpose ? genResult.scenario.questions.call_purpose.baseQuestion : null
+      });
       
       if (callSid) {
         twilioChooseScenarioRetries.delete(callSid);
@@ -7838,6 +7845,12 @@ wss.on("connection", (twilioWs, req) => {
         if (__scenarioResolved && __scenarioResolved.practiceLabel) {
           console.log('[scenarios] practiceLabel=', __scenarioResolved.practiceLabel);
         }
+        if (__scenarioResolved && __scenarioResolved.answererRole) {
+          console.log('[scenarios] answererRole=', __scenarioResolved.answererRole);
+        }
+        if (__scenarioResolved && __scenarioResolved.slots) {
+          console.log('[scenarios] slots=', __scenarioResolved.slots);
+        }
         callState.scenarioConfig = __scenarioResolved ? __scenarioResolved : null;
         if (callState.scenarioConfig) {
           console.log('[scenarios] config attached displayName=', callState.scenarioConfig.displayName);
@@ -7858,7 +7871,28 @@ wss.on("connection", (twilioWs, req) => {
         callState.scenarioChosen = true;
         
         // Initialize checklist based on scenario type
-        if (selectedScenario.startsWith("custom_")) {
+        if (selectedScenario.startsWith("dynamic_")) {
+          // Dynamic scenario - use scenario-based checklist from generated config
+          var checklistResult = buildChecklistForScenarioTag(selectedScenario, callState);
+          if (checklistResult && checklistResult.checklist) {
+            callState.checklist = checklistResult.checklist;
+            console.log(nowIso(), "[engine] checklist_init dynamic_scenario", { 
+              scenarioTag: selectedScenario, 
+              source: checklistResult.source, 
+              items: Object.keys(callState.checklist).length,
+              scenarioConfigFound: !!callState.scenarioConfig
+            });
+          } else {
+            console.error(nowIso(), "[engine] FAILED to build checklist for dynamic scenario", { 
+              scenarioTag: selectedScenario,
+              hasScenarioConfig: !!callState.scenarioConfig,
+              checklistResult
+            });
+            // Fallback to doctor checklist as last resort
+            callState.checklist = buildDoctorChecklist();
+            console.log(nowIso(), "[engine] checklist_init twilio_gather", { scenarioTag: selectedScenario, source: "fallback_to_doctor", items: Object.keys(callState.checklist).length });
+          }
+        } else if (selectedScenario.startsWith("custom_")) {
           // Custom scenario - fetch user description from DB and use custom checklist
           if (callSid && pool) {
             try {
@@ -7887,7 +7921,7 @@ wss.on("connection", (twilioWs, req) => {
           }
         } else {
           // Built-in scenario - use generic scenario-based checklist with fallback
-          var checklistResult = buildChecklistForScenarioTag(selectedScenario);
+          var checklistResult = buildChecklistForScenarioTag(selectedScenario, callState);
           if (checklistResult && checklistResult.checklist) {
             callState.checklist = checklistResult.checklist;
             console.log(nowIso(), "[engine] checklist_init twilio_gather", { scenarioTag: selectedScenario, source: checklistResult.source, items: Object.keys(callState.checklist).length });
