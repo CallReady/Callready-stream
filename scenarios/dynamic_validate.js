@@ -151,6 +151,7 @@ function validateAndNormalizeScenario(rawScenario) {
     practiceLabel: rawScenario.practiceLabel.trim(),
     answererRole: rawScenario.answererRole.trim(),
     goalStatement: rawScenario.goalStatement.trim(),
+    validation: { mode: "trust_ai" },
     slots: rawScenario.slots,
     questions: rawScenario.questions,
     completion: { mode: "all_required_slots_complete" }

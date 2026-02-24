@@ -5,6 +5,10 @@ module.exports = {
     answererRole: "front desk staff at Brightsmile Dental Clinic",
     goalStatement: "Collect required appointment information and schedule a dental visit.",
 
+    validation: {
+        mode: "trust_ai"
+    },
+
     slots: [
         "call_purpose",
         "new_or_returning_patient",

@@ -5,6 +5,10 @@ module.exports = {
     answererRole: "busy counter staff at Coastline Pizza",
     goalStatement: "Quickly take a pizza order for delivery, handle multiple pizzas if needed, and confirm the total and delivery time.",
 
+    validation: {
+        mode: "trust_ai"
+    },
+
     pricing: {
         taxRate: 0.08,
         deliveryFee: 4.0,

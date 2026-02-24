@@ -4720,45 +4720,167 @@ wss.on("connection", (twilioWs, req) => {
   function validateCallerResponse(utterance, fieldConfig, fieldId) {
     // Validate a caller's response against the field's validation requirement
     // Returns true if the response is valid, false otherwise
-    
+
     if (!utterance || utterance.trim().length === 0) {
       return false;
     }
 
     const u = utterance.toLowerCase().trim();
-    
+
     // Don't mark complete if caller is deflecting or doesn't know
-    const deflectRe = /\b(i don't know|not sure|not sure|unsure|unclear|can't say|not certain|idk|dunno)\b/i;
+    const deflectRe = /\b(i don't know|not sure|unsure|unclear|can't say|not certain|idk|dunno)\b/i;
     if (deflectRe.test(u)) {
       return false;
     }
 
-    // Field-specific validation
-    if (fieldId === "phone_number" || fieldId === "contact_phone") {
-      // Must have at least some digits
-      const digitCount = (u.match(/\d/g) || []).length;
-      return digitCount >= 7; // At least 7 digits for a phone number
+    function countDigits(text) {
+      return (String(text || "").match(/\d/g) || []).length;
     }
 
-    if (fieldId === "delivery_address") {
-      // Should have street address components
-      return u.length >= 5 && /\d/.test(u); // At least a street number
+    function containsAny(text, values) {
+      if (!Array.isArray(values) || values.length === 0) return false;
+      const t = String(text || "").toLowerCase();
+      return values.some(v => t.indexOf(String(v || "").toLowerCase()) >= 0);
     }
 
-    if (fieldId === "order_total" || fieldId === "order_confirmation_and_closing") {
-      // Look for confirmation words
-      const confirmRe = /\b(ok|okay|yes|yep|yeah|sounds good|perfect|great|fine|works|alright|all right)\b/i;
-      return confirmRe.test(u);
+    function isLikelyDate(text) {
+      const t = String(text || "").toLowerCase();
+      const numericDateRe = /\b(0?[1-9]|1[0-2])[\/\-\.](0?[1-9]|[12]\d|3[01])([\/\-\.](\d{2}|\d{4}))?\b/;
+      const monthNameRe = /\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/;
+      const dayRe = /\b(0?[1-9]|[12]\d|3[01])\b/;
+      return numericDateRe.test(t) || (monthNameRe.test(t) && dayRe.test(t));
     }
 
-    if (fieldId === "questions" || fieldId === "questions_and_closing" || fieldId === "professional_close") {
-      // These are loop fields - any substantive response is valid
-      // Caller either has questions (substantive response) or says no (also substantive)
-      return u.length >= 2;
+    function isLikelyTime(text) {
+      const t = String(text || "").toLowerCase();
+      const timeRe = /\b([01]?\d|2[0-3])(:[0-5]\d)?\s?(am|pm)?\b/;
+      const timeWordRe = /\b(morning|afternoon|evening|tonight|noon)\b/;
+      return timeRe.test(t) || timeWordRe.test(t);
     }
 
-    // Generic validation: caller said something substantive (at least 2 characters)
-    // Most fields just need confirmation they answered
+    function isLikelyName(text, minWords) {
+      const words = String(text || "").trim().split(/\s+/).filter(w => /[a-zA-Z]/.test(w));
+      const min = typeof minWords === "number" ? minWords : 2;
+      return words.length >= min;
+    }
+
+    function evaluateRule(rule) {
+      if (!rule || typeof rule !== "object") return null;
+
+      if (Array.isArray(rule.anyOf)) {
+        return rule.anyOf.some(r => evaluateRule(r) === true);
+      }
+
+      if (Array.isArray(rule.allOf)) {
+        return rule.allOf.every(r => evaluateRule(r) === true);
+      }
+
+      if (Array.isArray(rule.keywords)) {
+        return containsAny(u, rule.keywords);
+      }
+
+      if (typeof rule.pattern === "string" && rule.pattern.trim()) {
+        try {
+          const re = new RegExp(rule.pattern, "i");
+          return re.test(u);
+        } catch (e) {
+          return null;
+        }
+      }
+
+      if (typeof rule.minLength === "number") {
+        return u.length >= rule.minLength;
+      }
+
+      if (typeof rule.minDigits === "number") {
+        return countDigits(u) >= rule.minDigits;
+      }
+
+      if (rule.type === "enum") {
+        return containsAny(u, rule.values || []);
+      }
+
+      if (rule.type === "contains_any") {
+        return containsAny(u, rule.values || []);
+      }
+
+      if (rule.type === "regex") {
+        if (typeof rule.regex === "string") {
+          try {
+            return new RegExp(rule.regex, "i").test(u);
+          } catch (e) {
+            return null;
+          }
+        }
+        return null;
+      }
+
+      if (rule.type === "min_length") {
+        return typeof rule.minLength === "number" ? u.length >= rule.minLength : u.length >= 2;
+      }
+
+      if (rule.type === "number") {
+        const digits = countDigits(u);
+        if (digits === 0) return false;
+        const parsed = parseInt(String(u).replace(/[^0-9]/g, ""), 10);
+        if (Number.isNaN(parsed)) return false;
+        if (typeof rule.min === "number" && parsed < rule.min) return false;
+        if (typeof rule.max === "number" && parsed > rule.max) return false;
+        return true;
+      }
+
+      if (rule.type === "phone") {
+        const minDigits = typeof rule.minDigits === "number" ? rule.minDigits : 10;
+        return countDigits(u) >= minDigits;
+      }
+
+      if (rule.type === "address") {
+        const minLen = typeof rule.minLength === "number" ? rule.minLength : 5;
+        return u.length >= minLen && /\d/.test(u);
+      }
+
+      if (rule.type === "date") {
+        return isLikelyDate(u);
+      }
+
+      if (rule.type === "time") {
+        return isLikelyTime(u);
+      }
+
+      if (rule.type === "day_time") {
+        const dayRe = /\b(mon|monday|tue|tues|tuesday|wed|weds|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday|sun|sunday)\b/;
+        return dayRe.test(u) || (isLikelyDate(u) && isLikelyTime(u)) || isLikelyTime(u);
+      }
+
+      if (rule.type === "yes_no") {
+        const yesNoRe = /\b(yes|yeah|yep|yup|no|nope|nah|ok|okay|sure|sounds good)\b/i;
+        return yesNoRe.test(u);
+      }
+
+      if (rule.type === "name") {
+        return isLikelyName(u, rule.minWords);
+      }
+
+      if (rule.type === "pizza_details") {
+        const sizeValues = Array.isArray(rule.sizes) ? rule.sizes : ["small", "medium", "large"];
+        const hasSize = containsAny(u, sizeValues);
+        if (!hasSize) return false;
+        if (Array.isArray(rule.toppings) && rule.toppings.length > 0) {
+          return containsAny(u, rule.toppings);
+        }
+        return u.split(/\s+/).length >= 3;
+      }
+
+      return null;
+    }
+
+    const validation = fieldConfig && fieldConfig.validation ? fieldConfig.validation : null;
+    const ruleResult = evaluateRule(validation);
+    if (typeof ruleResult === "boolean") {
+      return ruleResult;
+    }
+
+    // Generic fallback: caller said something substantive (at least 2 characters)
     return u.length >= 2;
   }
 
@@ -7393,6 +7515,37 @@ wss.on("connection", (twilioWs, req) => {
 
                 // Update checklist if we're in roleplay with a checklist
                 if (callState.phase === "roleplay" && callState.checklist && field_id in callState.checklist) {
+                  const fieldConfig = scenario && scenario.questions ? scenario.questions[field_id] : null;
+                  const utterForValidation = String(callState.lastUserUtterance || value || "").trim();
+                  const validationMode = scenario && scenario.validation ? scenario.validation.mode : null;
+                  const trustAiValidation = validationMode === "trust_ai";
+
+                  if (!trustAiValidation) {
+                    let isValid = true;
+                    if (fieldConfig && fieldConfig.loopUntilDone) {
+                      const noMoreRe = /\b(no|nope|nah|none|nothing|no questions|no more|i'm good|im good|all good|that's all|that's it|we're good|we're set)\b/i;
+                      isValid = noMoreRe.test(utterForValidation.toLowerCase());
+                    } else {
+                      isValid = validateCallerResponse(utterForValidation, fieldConfig, field_id);
+                    }
+
+                    if (!isValid) {
+                      console.log(nowIso(), "[CHECKLIST_VALIDATION] Rejected tool call", {
+                        field_id,
+                        value,
+                        utterance: utterForValidation,
+                        requirement: fieldConfig && fieldConfig.validation ? fieldConfig.validation.requirement : null
+                      });
+                      continue;
+                    }
+                  } else if (!utterForValidation) {
+                    console.log(nowIso(), "[CHECKLIST_VALIDATION] Rejected empty tool call", {
+                      field_id,
+                      value
+                    });
+                    continue;
+                  }
+
                   // Track if this is the first item done
                   const doneItemsBefore = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
                   const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;

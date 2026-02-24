@@ -4,6 +4,10 @@ module.exports = {
   practiceLabel: "calling a doctor's office to schedule an appointment",
   answererRole: "front desk staff at Evergreen Medical Clinic",
   goalStatement: "Collect required appointment information and schedule a doctor visit.",
+
+  validation: {
+    mode: "trust_ai"
+  },
   
   slots: [
     "call_purpose",
