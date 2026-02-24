@@ -5151,16 +5151,8 @@ wss.on("connection", (twilioWs, req) => {
         "Mild conversational texture is allowed, including short fragments.\n" +
         "Warm, grounded, human. Not scripted or corporate.\n";
 
-      // Add scenario context and goal reminder for every turn
-      if (callState.scenarioTag === "doctor_default") {
-        instructions +=
-          "\n" +
-          "SCENARIO CONTEXT (reminder for this turn):\n" +
-          "You are a receptionist at Evergreen Medical Clinic.\n" +
-          "The caller is scheduling a doctor appointment.\n" +
-          "YOUR GOAL: Collect required information to complete the appointment booking.\n" +
-            "You must stay focused on gathering: call purpose, new/returning patient status, name, birthdate, reason for visit, insurance or self-pay, preferred appointment time, caller questions\n";
-      }
+      // Scenario-specific context is now handled in CONFIG-DRIVEN mode below
+      // (removed redundant doctor_default context that conflicted with CONFIG-DRIVEN instructions)
 
       // Add checklist tracking for CUSTOM scenarios (unified with doctor_default infrastructure)
       if (callState.scenarioTag && callState.scenarioTag.startsWith("custom_") && callState.checklist) {
@@ -5292,28 +5284,46 @@ wss.on("connection", (twilioWs, req) => {
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
             "\n" +
             "OVERRIDE ALL PREVIOUS INSTRUCTIONS ABOUT \"NATURAL VARIATION\".\n" +
+            "DO NOT DEVIATE FROM THE EXACT QUESTION BELOW.\n" +
             "\n" +
             "You are " + (spec.answererRole || "staff member") + ".\n" +
             "The caller is " + (spec.practiceLabel || "making a call") + ".\n" +
             "YOUR GOAL: " + (spec.goalStatement || "Help the caller complete their request") + "\n" +
             "\n" +
-            "CURRENT TARGET FIELD: " + spec.nextTargetSlotId + "\n" +
-            "\n" +
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-            "YOUR NEXT QUESTION (SPEAK THIS VERBATIM):\n" +
+            "CURRENT TARGET: " + spec.nextTargetSlotId + "\n" +
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
             "\n" +
-            "\"" + spec.baseQuestion + "\"\n" +
+            "YOUR NEXT QUESTION (COPY THIS WORD-FOR-WORD):\n" +
+            "\n" +
+            "    " + spec.baseQuestion + "\n" +
             "\n" +
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+            "STRICT ORDER ENFORCEMENT:\n" +
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+            "\n" +
+            "DO NOT ask about:\n";
+          
+          // Show what NOT to ask about (later fields)
+          const allSlots = scenario && scenario.slots ? scenario.slots : [];
+          const currentIndex = allSlots.indexOf(spec.nextTargetSlotId);
+          if (currentIndex >= 0 && currentIndex < allSlots.length - 1) {
+            const futureSlots = allSlots.slice(currentIndex + 1, Math.min(currentIndex + 4, allSlots.length));
+            futureSlots.forEach(function(slotId) {
+              instructions += "  ✗ " + slotId + "\n";
+            });
+          }
+          
+          instructions +=
+            "\n" +
+            "ONLY ask about: " + spec.nextTargetSlotId + "\n" +
             "\n" +
             "MANDATORY RULES:\n" +
-            "✓ Ask ONLY the question shown above\n" +
-            "✓ Do NOT ask about other topics\n" +
-            "✓ Do NOT skip ahead to later questions\n" +
-            "✓ Do NOT add extra questions\n" +
-            "✓ You may add ONE brief acknowledgment (e.g., 'Got it' or 'Okay') before the question\n" +
-            "✓ After caller responds, call: mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<response>')\n" +
+            "1. Ask ONLY the question shown above\n" +
+            "2. Do NOT ask about ANY other topics\n" +
+            "3. Do NOT skip ahead\n" +
+            "4. Do NOT vary the wording\n" +
+            "5. After caller responds: mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<response>')\n" +
             "\n";
 
           // Add validation requirement if defined
