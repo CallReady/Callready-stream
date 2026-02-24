@@ -7285,6 +7285,9 @@ wss.on("connection", (twilioWs, req) => {
                   try {
                     const coachingUrl = `${process.env.PUBLIC_BASE_URL}/gather-coaching-feedback?callSid=${encodeURIComponent(callSid)}`;
 
+                    const remainingAudioMs = Math.max(0, listenBlockUntilMs - Date.now());
+                    const coachingDelayMs = Math.max(COACHING_REDIRECT_DELAY_MS, remainingAudioMs + 200);
+
                     setTimeout(async () => {
                       try {
                         await client.calls(callSid).update({
