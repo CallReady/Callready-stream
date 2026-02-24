@@ -6646,63 +6646,74 @@ wss.on("connection", (twilioWs, req) => {
 
           // AUTO-COMPLETION FOR CONFIG-DRIVEN MODE
           // If in roleplay phase with config-driven mode active, auto-mark fields complete when caller responds
-          if (
-            callState.phase === "roleplay" &&
-            callState.scenarioConfig &&
-            callState.checklist &&
-            msg.type === "conversation.item.input_audio_transcription.completed"
-          ) {
-            const spec = getNextTurnSpec(callState.scenarioConfig, callState);
-            if (spec && spec.nextTargetSlotId && callState.checklist[spec.nextTargetSlotId] && !callState.checklist[spec.nextTargetSlotId].done) {
-              const fieldId = spec.nextTargetSlotId;
-              const fieldConfig = callState.scenarioConfig.questions ? callState.scenarioConfig.questions[fieldId] : null;
-              
-              // Special handling for loopUntilDone fields (like "questions")
-              // These only complete when caller explicitly says they have no more
-              if (fieldConfig && fieldConfig.loopUntilDone) {
-                const noMoreRe = /\b(no|nope|nah|none|nothing|no questions|no more|i'm good|im good|all good|that's all|that's it|we're good|we're set)\b/i;
-                if (noMoreRe.test(u)) {
-                  callState.checklist[fieldId].done = true;
-                  callState.checklist[fieldId].value = "completed_loop";
-                  
-                  const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
-                  const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
-                  
-                  console.log(nowIso(), "[AUTO_COMPLETE] Loop field completed (no more indicated)", {
-                    fieldId,
-                    utterance: utter,
-                    progress: `${doneItemsAfter}/${totalRequired}`,
-                    isFinalItem: doneItemsAfter === totalRequired
-                  });
-                } else {
-                  console.log(nowIso(), "[AUTO_COMPLETE] Loop field - caller has more to say, continuing loop", {
-                    fieldId,
-                    utterance: utter
-                  });
-                }
-              } else {
-                // Non-loop fields: auto-complete if response is valid
-                const isValid = validateCallerResponse(utter, fieldConfig, fieldId);
+          if (callState.phase === "roleplay" && msg.type === "conversation.item.input_audio_transcription.completed") {
+            const hasScenarioConfig = !!callState.scenarioConfig;
+            const hasChecklist = !!callState.checklist;
+            
+            if (!hasScenarioConfig || !hasChecklist) {
+              console.log(nowIso(), "[AUTO_COMPLETE_DEBUG] Missing config or checklist", {
+                hasScenarioConfig,
+                hasChecklist,
+                scenarioTag: callState.scenarioTag
+              });
+            } else {
+              const spec = getNextTurnSpec(callState.scenarioConfig, callState);
+              if (!spec) {
+                console.log(nowIso(), "[AUTO_COMPLETE_DEBUG] getNextTurnSpec returned null", {
+                  scenarioTag: callState.scenarioTag,
+                  utterance: utter
+                });
+              } else if (spec && spec.nextTargetSlotId && callState.checklist[spec.nextTargetSlotId] && !callState.checklist[spec.nextTargetSlotId].done) {
+                const fieldId = spec.nextTargetSlotId;
+                const fieldConfig = callState.scenarioConfig.questions ? callState.scenarioConfig.questions[fieldId] : null;
                 
-                if (isValid) {
-                  callState.checklist[fieldId].done = true;
-                  callState.checklist[fieldId].value = utter;
-                  
-                  const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
-                  const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
-                  
-                  console.log(nowIso(), "[AUTO_COMPLETE] Field marked complete based on caller response", {
-                    fieldId,
-                    value: utter,
-                    progress: `${doneItemsAfter}/${totalRequired}`,
-                    isFinalItem: doneItemsAfter === totalRequired
-                  });
+                // Special handling for loopUntilDone fields (like "questions")
+                // These only complete when caller explicitly says they have no more
+                if (fieldConfig && fieldConfig.loopUntilDone) {
+                  const noMoreRe = /\b(no|nope|nah|none|nothing|no questions|no more|i'm good|im good|all good|that's all|that's it|we're good|we're set)\b/i;
+                  if (noMoreRe.test(u)) {
+                    callState.checklist[fieldId].done = true;
+                    callState.checklist[fieldId].value = "completed_loop";
+                    
+                    const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
+                    const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
+                    
+                    console.log(nowIso(), "[AUTO_COMPLETE] Loop field completed (no more indicated)", {
+                      fieldId,
+                      utterance: utter,
+                      progress: `${doneItemsAfter}/${totalRequired}`,
+                      isFinalItem: doneItemsAfter === totalRequired
+                    });
+                  } else {
+                    console.log(nowIso(), "[AUTO_COMPLETE] Loop field - caller has more to say, continuing loop", {
+                      fieldId,
+                      utterance: utter
+                    });
+                  }
                 } else {
-                  console.log(nowIso(), "[AUTO_COMPLETE] Caller response did not pass validation", {
-                    fieldId,
-                    utterance: utter,
-                    requirement: fieldConfig?.validation?.requirement
-                  });
+                  // Non-loop fields: auto-complete if response is valid
+                  const isValid = validateCallerResponse(utter, fieldConfig, fieldId);
+                  
+                  if (isValid) {
+                    callState.checklist[fieldId].done = true;
+                    callState.checklist[fieldId].value = utter;
+                    
+                    const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
+                    const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
+                    
+                    console.log(nowIso(), "[AUTO_COMPLETE] Field marked complete based on caller response", {
+                      fieldId,
+                      value: utter,
+                      progress: `${doneItemsAfter}/${totalRequired}`,
+                      isFinalItem: doneItemsAfter === totalRequired
+                    });
+                  } else {
+                    console.log(nowIso(), "[AUTO_COMPLETE] Caller response did not pass validation", {
+                      fieldId,
+                      utterance: utter,
+                      requirement: fieldConfig?.validation?.requirement
+                    });
+                  }
                 }
               }
             }
