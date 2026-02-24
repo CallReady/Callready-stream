@@ -51,84 +51,90 @@ async function generateDynamicScenario({ promptText, callSid, openaiApiKey }) {
 
 Generate a valid scenario configuration object based on the user's request.
 
-Rules:
+CRITICAL REQUIREMENTS:
 - Output ONLY valid JSON, no commentary
 - Use tag: "dynamic_${callSid}"
-- Include 4-9 required slots PLUS a final "questions" slot (5-10 total slots)
-- The LAST slot must ALWAYS be "questions" for asking the caller if they have any questions
-- Each slot must have a question definition with baseQuestion and optional helpIfStuck
-- baseQuestion: 5-160 chars, natural spoken question
+- Include 3-10 total slots with "call_purpose" as FIRST and "questions" as LAST
+- The FIRST slot must ALWAYS be "call_purpose" with a proper greeting
+- The LAST slot must ALWAYS be "questions" for asking if they have any questions
+- Between call_purpose and questions, include 1-8 relevant fields for the scenario
+- Create a realistic business name that fits the scenario context
+- answererRole must include the business name and staff role (e.g., "front desk staff at BodyBuilders Gym")
+- The call_purpose baseQuestion must be a natural greeting: "Thanks for calling [Business Name]. This is [Staff Name]. How can I help you?"
+- All other questions should follow naturally in conversation order
 - Never include placeholders like {{TOTAL}} or [generate something]
-- answererRole: who the AI plays (e.g., "receptionist", "customer service rep")
-- practiceLabel: what the caller is practicing (e.g., "calling a veterinary clinic to schedule an appointment")
+- practiceLabel: what the caller is practicing (e.g., "calling a gym to cancel a membership")
 - goalStatement: 1-2 sentences describing success
-- closingMessage: brief thank you message
+- closingMessage: brief, context-appropriate thank you message
 - The "questions" slot must have loopUntilDone: true
 
-Example structure:
+IMPORTANT CONTEXT AWARENESS:
+- Understand what the user wants to practice (e.g., canceling, scheduling, ordering, etc.)
+- Choose appropriate fields to collect based on the call type
+- For cancellations: get member/account info, reason, confirmation
+- For appointments: get name, contact, reason, date/time preference
+- For orders: get items, delivery/pickup, contact, payment
+- Make the staff name realistic (use common first names appropriate to the business type)
+- Make the business name creative and realistic for the industry
+
+Example for "calling a gym to cancel membership":
 {
   "tag": "dynamic_CA123",
-  "displayName": "Vet Appointment",
-  "practiceLabel": "calling a veterinary clinic to schedule an appointment",
-  "answererRole": "veterinary receptionist",
-  "goalStatement": "Successfully schedule a vet appointment by providing all required information.",
-  "slots": ["pet_name", "pet_type", "reason", "owner_name", "phone_number", "preferred_date", "questions"],
+  "displayName": "Cancel Gym Membership",
+  "practiceLabel": "calling a gym to cancel a membership",
+  "answererRole": "customer service representative at FitLife Gym",
+  "goalStatement": "Successfully cancel a gym membership by providing required information and completing the cancellation process.",
+  "slots": ["call_purpose", "member_name", "membership_number", "reason_for_cancellation", "confirmation", "questions"],
   "questions": {
-    "pet_name": {
-      "baseQuestion": "What's your pet's name?",
-      "helpIfStuck": "I need the name of the pet you're bringing in.",
+    "call_purpose": {
+      "baseQuestion": "Thanks for calling FitLife Gym. This is Sarah. How can I help you today?",
+      "waitForResponse": true,
       "validation": {
-        "requirement": "pet's name"
-      }
+        "requirement": "confirmation they want to cancel their membership"
+      },
+      "helpIfStuck": "If unclear, try: 'Are you calling about your membership?'"
     },
-    "pet_type": {
-      "baseQuestion": "What kind of animal is your pet?",
-      "helpIfStuck": "Is it a dog, cat, or another type of animal?",
-      "validation": {
-        "requirement": "type of animal"
-      }
-    },
-    "reason": {
-      "baseQuestion": "What's the reason for the visit?",
-      "helpIfStuck": "Are they sick, needing a checkup, or something else?",
-      "validation": {
-        "requirement": "reason for appointment"
-      }
-    },
-    "owner_name": {
-      "baseQuestion": "Can I get your full name?",
-      "helpIfStuck": "I need the pet owner's name for the appointment.",
+    "member_name": {
+      "baseQuestion": "Can I get your full name please?",
+      "helpIfStuck": "I need the name on the membership account.",
       "validation": {
         "requirement": "full name"
       }
     },
-    "phone_number": {
-      "baseQuestion": "What's the best phone number to reach you?",
-      "helpIfStuck": "I need a phone number in case we need to contact you.",
+    "membership_number": {
+      "baseQuestion": "What's your membership number or the phone number on your account?",
+      "helpIfStuck": "I can look you up by your membership ID or phone number.",
       "validation": {
-        "requirement": "valid phone number with at least 7 digits"
+        "requirement": "membership number or phone number"
       }
     },
-    "preferred_date": {
-      "baseQuestion": "What day works best for you?",
-      "helpIfStuck": "When would you like to bring your pet in?",
+    "reason_for_cancellation": {
+      "baseQuestion": "I see. May I ask why you'd like to cancel?",
+      "helpIfStuck": "Understanding the reason helps us improve our services.",
       "validation": {
-        "requirement": "preferred appointment date"
+        "requirement": "reason for cancellation"
+      }
+    },
+    "confirmation": {
+      "baseQuestion": "Just to confirm, you'd like to cancel your membership effective immediately. Is that correct?",
+      "helpIfStuck": "I need you to confirm the cancellation.",
+      "validation": {
+        "requirement": "confirmation of cancellation"
       }
     },
     "questions": {
-      "baseQuestion": "Do you have any questions for me?",
+      "baseQuestion": "Do you have any questions about the cancellation or your final bill?",
       "loopUntilDone": true,
-      "helpIfStuck": "I can answer any questions you might have.",
+      "helpIfStuck": "I'm happy to answer any questions before we finalize this.",
       "validation": {
         "requirement": "confirmation they have no more questions"
       }
     }
   },
-  "closingMessage": "Thank you! We'll see you and your pet soon."
+  "closingMessage": "Thank you for being a member. Have a great day!"
 }
 
-Now generate a scenario based on the user's request.`;
+Now generate a scenario based on the user's request. Be creative with business names, make them realistic and appropriate. Use natural conversational questions.`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {

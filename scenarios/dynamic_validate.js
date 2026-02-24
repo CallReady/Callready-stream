@@ -26,8 +26,8 @@ function validateAndNormalizeScenario(rawScenario) {
     throw new Error("slots must be an array");
   }
   
-  if (rawScenario.slots.length < 5 || rawScenario.slots.length > 10) {
-    throw new Error("slots array must contain 5 to 10 items (4-9 regular fields plus 'questions' field)");
+  if (rawScenario.slots.length < 3 || rawScenario.slots.length > 10) {
+    throw new Error("slots array must contain 3 to 10 items (must have call_purpose, questions, and 1-8 other fields)");
   }
 
   // Validate slot IDs
@@ -87,6 +87,23 @@ function validateAndNormalizeScenario(rawScenario) {
     if (question.waitForResponse === undefined) {
       question.waitForResponse = true;
     }
+  }
+
+  // Ensure the first slot is "call_purpose" with a proper greeting
+  const firstSlotId = rawScenario.slots[0];
+  if (firstSlotId !== "call_purpose") {
+    throw new Error("First slot must be 'call_purpose' for the opening greeting");
+  }
+  
+  const callPurposeField = rawScenario.questions["call_purpose"];
+  if (!callPurposeField) {
+    throw new Error("Missing 'call_purpose' field definition");
+  }
+  
+  // Validate that call_purpose has a greeting-style baseQuestion
+  const greeting = callPurposeField.baseQuestion;
+  if (!greeting || greeting.length < 20) {
+    throw new Error("call_purpose baseQuestion must be a proper greeting (at least 20 characters)");
   }
 
   // Ensure the last slot is "questions" with loopUntilDone
