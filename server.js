@@ -4183,9 +4183,11 @@ async function generateCoachingFeedback(transcript) {
           {
             role: "system",
             content:
-              "You are a coaching assistant for phone call practice. Review the conversation transcript and provide exactly two sentences of feedback:\n" +
+              "You are a coaching assistant for phone call practice. Your feedback must be for the HUMAN caller only, not the receptionist/AI.\n" +
+              "Review the conversation transcript and provide exactly two sentences of feedback:\n" +
               "1) One sentence about something specific the caller did well during the call (e.g., clarity, asking questions, providing information clearly).\n" +
               "2) One sentence about what they might try next time to improve (be specific and constructive based on the conversation).\n" +
+              "Address the caller as \"you\" and do not coach the receptionist/AI.\n" +
               "Format: [Positive feedback sentence] [Improvement suggestion sentence]\n" +
               "Be encouraging and specific. Do not include introductions or explanations.",
           },
@@ -5341,9 +5343,11 @@ wss.on("connection", (twilioWs, req) => {
         
         return (
           header +
-          "The caller wants feedback. Review the conversation transcript below and provide exactly two sentences:\n" +
+          "The caller wants feedback. This feedback is for the HUMAN caller only, not the receptionist/AI.\n" +
+          "Review the conversation transcript below and provide exactly two sentences addressed to the caller:\n" +
           "1) One sentence about something specific they did well during the call (e.g., clarity, asking questions, providing info).\n" +
           "2) One sentence about what they might try next time to improve (be specific based on the conversation).\n" +
+          "Use \"you\" to refer to the caller and do not coach the receptionist/AI.\n" +
           "Then say: 'Great practice session!'\n" +
           "Stop speaking after that.\n" +
           transcriptText
