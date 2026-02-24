@@ -1204,7 +1204,7 @@ function normalizeSpeech(text) {
 function isYes(text) {
   const t = normalizeSpeech(text);
   return [
-    "yes", "yeah", "yep", "yup", "correct", "right", "thats right", "that is right", "sure", "ok", "okay"
+    "yes", "yeah", "yep", "yup", "correct", "right", "thats right", "that is right", "sure", "ok", "okay", "it does"
   ].some(p => t === p || t.includes(p));
 }
 
@@ -2361,7 +2361,7 @@ app.post("/process-choose-scenario", async (req, res) => {
     
     // If custom scenario requested with valid prompt, generate it now
     if (isCustomRequest && promptText.length >= 10) {
-      console.log(nowIso(), "[CUSTOM_SCENARIO_REQUEST]", { callSid, promptText });
+      console.log(nowIso(), "[DYNAMIC_SCENARIO_REQUEST]", { callSid, promptText });
       
       const genResult = await generateDynamicScenario({
         promptText,
@@ -2370,7 +2370,7 @@ app.post("/process-choose-scenario", async (req, res) => {
       });
       
       if (!genResult.ok) {
-        console.log(nowIso(), "[CUSTOM_SCENARIO_FAILED]", { callSid, error: genResult.error, details: genResult.details });
+        console.log(nowIso(), "[DYNAMIC_SCENARIO_FAILED]", { callSid, error: genResult.error, details: genResult.details });
         // Failed to generate, ask them to try again
         const failText = "I wasn't able to create that scenario. Let's try something else. Tell me about the call you want to practice, or say 'you choose' if you want me to pick.";
         const gather = vr.gather({
@@ -2388,7 +2388,7 @@ app.post("/process-choose-scenario", async (req, res) => {
       
       // Success! Store the scenario and route to confirm flow
       setDynamicScenario(callSid, genResult.scenario);
-      console.log(nowIso(), "[CUSTOM_SCENARIO_GENERATED]", { callSid, tag: genResult.scenario.tag, slots: genResult.scenario.slots });
+      console.log(nowIso(), "[DYNAMIC_SCENARIO_GENERATED]", { callSid, tag: genResult.scenario.tag, slots: genResult.scenario.slots });
       
       if (callSid) {
         twilioChooseScenarioRetries.delete(callSid);
@@ -3113,27 +3113,27 @@ app.post("/process-custom-call-confirmation", async (req, res) => {
 
     const text = speechResult.toLowerCase().trim();
 
-    const yesRe = /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|let's do it|lets do it|go ahead|fine|alright|right|ready)\b/i;
+    const yesRe = /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|let's do it|lets do it|go ahead|fine|alright|right|ready|it does)\b/i;
     const noRe = /\b(no|nope|nah|not really|don't|dont|no thanks|pass|end|stop|hang up|goodbye)\b/i;
 
     if (yesRe.test(text)) {
-      // User agreed to custom call
-      // The scenario tag was already set (custom_${hash}) in /process-describe-call
-      const customTag = twilioScenarioFlags.get(callSid) || "custom_unknown";
+      // User agreed to dynamic scenario (was already generated)
+      // The scenario tag was already set (dynamic_${callSid}) by /process-describe-call
+      const dynamicTag = twilioScenarioFlags.get(callSid) || "dynamic_unknown";
       
       if (callSid && pool) {
         try {
           await pool.query(
             `UPDATE calls SET scenario_tag = $1 WHERE call_sid = $2`,
-            [customTag, callSid]
+            [dynamicTag, callSid]
           );
-          console.log(nowIso(), "/process-custom-call-confirmation set custom scenario_tag in DB", { callSid, scenarioTag: customTag });
+          console.log(nowIso(), "/process-custom-call-confirmation set dynamic scenario_tag in DB", { callSid, scenarioTag: dynamicTag });
         } catch (err) {
           console.error(nowIso(), "/process-custom-call-confirmation DB error", err);
         }
       }
 
-      vr.redirect({ method: "POST" }, `/stream-roleplay?scenario=${encodeURIComponent(customTag)}`);
+      vr.redirect({ method: "POST" }, `/stream-roleplay?scenario=${encodeURIComponent(dynamicTag)}`);
       res.type("text/xml").send(vr.toString());
       return;
     }
@@ -3202,7 +3202,7 @@ app.post("/process-confirm-doctor", async (req, res) => {
 
     const text = speechResult.toLowerCase().trim();
 
-    const yesRe = /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|let's do it|lets do it|go ahead|whatever|fine|alright)\b/i;
+    const yesRe = /\b(yes|yeah|yep|yup|sure|okay|ok|sounds good|that works|let's do it|lets do it|go ahead|whatever|fine|alright|it does)\b/i;
     const noRe = /\b(no|nope|nah|not really|don't|dont|different|something else|another|change)\b/i;
 
     if (yesRe.test(text)) {
@@ -4226,16 +4226,7 @@ async function generateCoachingFeedback(transcript) {
 }
 
 // Build checklist for custom scenarios
-function buildCustomChecklist(userDescription) {
-  return {
-    caller_identity: { required: true, done: false, value: null },
-    call_purpose: { required: true, done: false, value: null },
-    required_details: { required: true, done: false, value: null },
-    friction_point: { required: true, done: false, value: null },
-    next_step: { required: true, done: false, value: null },
-    professional_close: { required: true, done: false, value: null }
-  };
-}
+
 
 // POST /gather-coaching-feedback
 // Asks if the caller wants feedback about the call
@@ -4893,8 +4884,6 @@ wss.on("connection", (twilioWs, req) => {
     let preferredOrder;
     if (callState.scenarioTag === "doctor_default") {
       preferredOrder = getDoctorChecklistOrder();
-    } else if (callState.scenarioTag && callState.scenarioTag.startsWith("custom_")) {
-      preferredOrder = getCustomChecklistOrder();
     } else if (callState.scenarioTag) {
       // For other scenarios like pizza_order, use the slots array as preferred order
       const scenario = resolveScenarioWithDynamic(callState, callState.scenarioTag);
@@ -5043,8 +5032,6 @@ wss.on("connection", (twilioWs, req) => {
           // Only use legacy instructions if scenario doesn't have config-driven baseQuestions
           if (callState.scenarioTag === "doctor_default") {
             fieldInstructions = getDoctorChecklistFieldInstructions(nextTarget);
-          } else if (callState.scenarioTag && String(callState.scenarioTag).startsWith("custom_")) {
-            fieldInstructions = getCustomChecklistFieldInstructions(nextTarget);
           }
 
           if (fieldInstructions) {
@@ -5073,8 +5060,6 @@ wss.on("connection", (twilioWs, req) => {
     if (!callState.summary) {
       if (callState.scenarioTag === "doctor_default") {
         callState.summary = "Patient called Evergreen Medical Clinic to schedule a doctor appointment.";
-      } else if (callState.scenarioTag && callState.scenarioTag.startsWith("custom_")) {
-        callState.summary = "Caller initiated a practice call for custom scenario.";
       } else {
         callState.summary = "Practice call in progress.";
       }
@@ -5133,106 +5118,23 @@ wss.on("connection", (twilioWs, req) => {
     }
 
     if (phase === "roleplay") {
-      let instructions =
-        header +
-        "ROLEPLAY MODE.\n" +
-        "PERSONA_STYLE: " + String(callState.personaStyle || "warm") + "\n" +
-        "PERSONA_GUIDE:\n" +
-        "- brisk: efficient, minimal small talk, friendly but quick.\n" +
-        "- warm: welcoming, supportive tone, brief friendly acknowledgments.\n" +
-        "- laid_back: calm, slightly casual phrasing, still professional.\n" +
-        "SPEAKING_CONTRACT:\n" +
-        "Speak like a real person doing this job.\n" +
-        "Use 1 to 2 short sentences.\n" +
-        "One clear question per turn.\n" +
-        "A brief acknowledgment before the question is fine.\n" +
-        "You may add one short human lead-in (for realism) before the required question, but you must still ask only one question.\n" +
-        "Light natural variation is allowed in phrasing UNLESS overridden by CONFIG-DRIVEN MODE.\n" +
-        "Mild conversational texture is allowed, including short fragments.\n" +
-        "Warm, grounded, human. Not scripted or corporate.\n";
-
-      // Scenario-specific context is now handled in CONFIG-DRIVEN mode below
-      // (removed redundant doctor_default context that conflicted with CONFIG-DRIVEN instructions)
-
-      // Add checklist tracking for CUSTOM scenarios (unified with doctor_default infrastructure)
-      if (callState.scenarioTag && callState.scenarioTag.startsWith("custom_") && callState.checklist) {
-        const nextTarget = getNextRequiredChecklistId();
-        const remaining = Object.keys(callState.checklist).filter(
-          id => callState.checklist[id].required && !callState.checklist[id].done
-        );
-
-        instructions +=
-          "\n" +
-          "SCENARIO CONTEXT:\n" +
-          "Scenario: " + (callState.userCustomDescription || "a phone call") + "\n" +
-          "\n" +
-          "OPENING_STYLE:\n" +
-          "Open like a real business would.\n" +
-          "Use a natural greeting and business name.\n" +
-          "Keep it simple and believable.\n" +
-          "\n" +
-          "NEXT_TARGET: " + (nextTarget || "NONE") + "\n";
-
-        // Special handling for professional_close phase
-        if (nextTarget === "professional_close") {
-          instructions +=
-            "\n" +
-            "CLOSING_STYLE:\n" +
-            "Close naturally and professionally.\n" +
-            "Maintain warmth.\n" +
-            "Do not introduce new questions.\n" +
-            "\n" +
-            "After your closing, silently call:\n" +
-            "mark_checklist_item_complete(field_id='professional_close', value='completed')\n" +
-            "\n" +
-            "Example:\n" +
-            "YOU SPEAK: 'Have a great day!'\n" +
-            "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='professional_close', value='completed')\n" +
-            "Caller only hears: 'Have a great day!'\n" +
-            "\n";
-        } else if (nextTarget) {
-          const customInstructions = getCustomChecklistFieldInstructions(nextTarget);
-          if (customInstructions) {
-            instructions +=
-              "\n" +
-              "HOW TO COLLECT " + nextTarget.toUpperCase() + ":\n" +
-              customInstructions + "\n";
-          }
-          
-          instructions +=
-            "\n" +
-            "Your next question should primarily aim to collect NEXT_TARGET.\n" +
-            "Do not jump ahead unless the caller volunteers relevant information.\n" +
-            "\n";
-        }
-
-        instructions +=
-          (remaining.length > 0
-            ? "STILL GATHERING: " + remaining.join(", ") + "\n"
-            : "All required items are gathered. Close the call professionally.\n") +
-          "\n" +
-          "TRACKING COMPLETION:\n" +
-          "After EVERY response where you collect information, silently call the mark_checklist_item_complete function.\n" +
-          "This is COMPLETELY SILENT - the caller never hears it.\n" +
-          "\n" +
-          "Example: After caller says 'My name is Alex':\n" +
-          "YOU SPEAK: 'Nice to meet you, Alex!'\n" +
-          "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='caller_identity', value='Alex')\n" +
-          "\n" +
-          "The caller only hears 'Nice to meet you, Alex!'\n" +
-          "Only include checklist IDs you are updating this turn.\n";
-      }
-
-      // Add checklist tracking for scenarios with config-driven mode
-      if (callState.scenarioTag && callState.checklist) {
-        // Try config-driven approach first (if scenario has slots and questions)
-        const scenario = resolveScenarioWithDynamic(callState, callState.scenarioTag);
+      // Check for config-driven mode FIRST
+      const scenario = callState.scenarioTag ? resolveScenarioWithDynamic(callState, callState.scenarioTag) : null;
+      const hasConfigMode = scenario && scenario.questions && scenario.slots;
+      
+      let instructions = header;
+      
+      // If CONFIG-DRIVEN mode is available, use it exclusively and skip general SPEAKING_CONTRACT
+      if (hasConfigMode && callState.checklist) {
+        instructions += "ROLEPLAY MODE - CONFIG-DRIVEN.\n\n";
+        
         console.log(nowIso(), "[CONFIG_DRIVEN_CHECK] Resolved scenario", { 
           scenarioTag: callState.scenarioTag, 
           hasScenario: !!scenario,
-          hasSlots: scenario ? !!scenario.slots : false,
-          hasQuestions: scenario ? !!scenario.questions : false
+          hasSlots: !!scenario.slots,
+          hasQuestions: !!scenario.questions
         });
+        
         const spec = getNextTurnSpec(callState, scenario);
         console.log(nowIso(), "[CONFIG_DRIVEN_CHECK] getNextTurnSpec result", { 
           hasSpec: !!spec, 
@@ -5240,239 +5142,105 @@ wss.on("connection", (twilioWs, req) => {
           needsClosing: callState.needsClosing
         });
 
-        // Handle closing message if all items are done and closing message is needed
-        if (callState.needsClosing && scenario && scenario.closingMessage) {
+        // Handle closing message if all items are done
+        if (callState.needsClosing && scenario.closingMessage) {
           console.log(nowIso(), "[CLOSING_PHASE] Generating closing instructions", {
             closingMessage: scenario.closingMessage
           });
           
           instructions +=
-            "\n" +
-            "ALL REQUIRED INFORMATION COLLECTED!\n" +
-            "\n" +
+            "ALL REQUIRED INFORMATION COLLECTED!\n\n" +
             "CLOSING PHASE:\n" +
-            "You have successfully collected all required information. Now deliver this closing message:\n" +
-            "\"" + scenario.closingMessage + "\"\n" +
-            "\n" +
-            "Do NOT wait for a caller response after the closing message.\n" +
-            "Deliver the message and immediately call:\n" +
-            "mark_checklist_item_complete(field_id='__closing__', value='delivered')\n" +
-            "\n" +
-            "After you call this function, the call will automatically transition to COACHING PHASE.\n" +
-            "\n";
+            "Deliver this closing message:\n" +
+            "\"" + scenario.closingMessage + "\"\n\n" +
+            "Do NOT wait for a response.\n" +
+            "Immediately call: mark_checklist_item_complete(field_id='__closing__', value='delivered')\n\n";
           
-          // Mark that we're in closing phase so we don't generate these instructions again
           callState.closingInstructions = true;
 
         } else if (spec && spec.nextTargetSlotId) {
-          // Config-driven mode: use baseQuestion from scenario config
+          // CONFIG-DRIVEN mode with specific question
           console.log(nowIso(), "[CONFIG_DRIVEN_MODE] ACTIVATED for", { 
             scenarioTag: callState.scenarioTag,
             nextTarget: spec.nextTargetSlotId,
             baseQuestion: spec.baseQuestion
           });
-          
 
           const remaining = Object.keys(callState.checklist).filter(
             id => callState.checklist[id].required && !callState.checklist[id].done
           );
           
           instructions +=
-            "\n" +
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-            "⚠️  CRITICAL: CONFIG-DRIVEN MODE ACTIVE\n" +
+            "⚠️  STRICT MODE: ASK ONLY THE SPECIFIED QUESTION\n" +
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
+            "Role: " + (spec.answererRole || "staff member") + "\n" +
+            "Goal: " + (spec.goalStatement || "Help the caller") + "\n\n" +
+            "CURRENT TARGET: " + spec.nextTargetSlotId + "\n\n" +
+            "YOUR NEXT QUESTION:\n\n" +
+            "    " + spec.baseQuestion + "\n\n" +
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-            "\n" +
-            "OVERRIDE ALL PREVIOUS INSTRUCTIONS ABOUT \"NATURAL VARIATION\".\n" +
-            "DO NOT DEVIATE FROM THE EXACT QUESTION BELOW.\n" +
-            "\n" +
-            "You are " + (spec.answererRole || "staff member") + ".\n" +
-            "The caller is " + (spec.practiceLabel || "making a call") + ".\n" +
-            "YOUR GOAL: " + (spec.goalStatement || "Help the caller complete their request") + "\n" +
-            "\n" +
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-            "CURRENT TARGET: " + spec.nextTargetSlotId + "\n" +
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-            "\n" +
-            "YOUR NEXT QUESTION (COPY THIS WORD-FOR-WORD):\n" +
-            "\n" +
-            "    " + spec.baseQuestion + "\n" +
-            "\n" +
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-            "STRICT ORDER ENFORCEMENT:\n" +
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-            "\n" +
-            "DO NOT ask about:\n";
+            "STRICT RULES:\n" +
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
           
-          // Show what NOT to ask about (later fields)
-          const allSlots = scenario && scenario.slots ? scenario.slots : [];
+          // Show what NOT to ask about
+          const allSlots = scenario.slots || [];
           const currentIndex = allSlots.indexOf(spec.nextTargetSlotId);
           if (currentIndex >= 0 && currentIndex < allSlots.length - 1) {
             const futureSlots = allSlots.slice(currentIndex + 1, Math.min(currentIndex + 4, allSlots.length));
+            instructions += "DO NOT ASK ABOUT:\n";
             futureSlots.forEach(function(slotId) {
               instructions += "  ✗ " + slotId + "\n";
             });
+            instructions += "\n";
           }
           
           instructions +=
-            "\n" +
-            "ONLY ask about: " + spec.nextTargetSlotId + "\n" +
-            "\n" +
-            "MANDATORY RULES:\n" +
-            "1. Ask ONLY the question shown above\n" +
+            "MANDATORY:\n" +
+            "1. Ask ONLY the question shown above - word for word\n" +
             "2. Do NOT ask about ANY other topics\n" +
-            "3. Do NOT skip ahead\n" +
-            "4. Do NOT vary the wording\n" +
-            "5. After caller responds: mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<response>')\n" +
-            "\n";
+            "3. Do NOT add extra questions\n" +
+            "4. Do NOT skip ahead\n" +
+            "5. After response: mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<response>')\n\n";
 
-          // Add validation requirement if defined
           if (spec.validation && spec.validation.requirement) {
-            instructions += "VALIDATION: Get " + spec.validation.requirement + "\n\n";
+            instructions += "Required: " + spec.validation.requirement + "\n\n";
           }
 
-          instructions += "HELP IF STUCK: " + (spec.helpIfStuck || "(no additional guidance)") + "\n";
+          if (spec.helpIfStuck) {
+            instructions += "If stuck: " + spec.helpIfStuck + "\n\n";
+          }
 
           if (remaining.length > 0) {
-            instructions += "\nSTILL GATHERING: " + remaining.join(", ") + "\n";
+            instructions += "Still need: " + remaining.join(", ") + "\n\n";
           }
 
-          instructions +=
-            "\n" +
-            "TRACKING COMPLETION:\n" +
-            "After you collect the response to this question, silently call:\n" +
-            "mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<caller_response>')\n" +
-            "\n" +
-            "Example: If asking for name and they say 'Emma':\n" +
-            "YOU SPEAK: 'Great, Emma!'\n" +
-            "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='patient_name', value='Emma')\n" +
-            "Caller only hears: 'Great, Emma!'\n";
-
-          // Special handling for final checklist items - explain automatic transition
-          // Check if this field needs special handling based on waitForResponse property
-          const waitForResponse = spec.waitForResponse !== false; // Default to true unless explicitly false
-          
-          // Special instructions for looping questions fields (multi-turn interaction)
-          if (spec.loopUntilDone && waitForResponse) {
+          // Special handling for looping questions
+          if (spec.loopUntilDone) {
             instructions +=
-              "\n" +
-              "QUESTIONS PHASE:\n" +
-              "Ask: '" + spec.baseQuestion + "'\n" +
-              "Wait for the caller's response.\n" +
-              "After answering their question(s), ask: 'Do you have any other questions?'\n" +
-              "Repeat this loop until they indicate they have no further questions (e.g., 'No', 'Nope', 'That's all', etc.).\n" +
-              "Once they confirm no more questions, silently call:\n" +
-              "mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='completed')\n" +
-              "\n";
-          }
-          
-          if (!waitForResponse) {
-            // Field doesn't wait for response - statement only
-            instructions +=
-              "\n" +
-              "IMPORTANT: This is a closing statement, not a question.\n" +
-              "Say the line, then immediately and silently call:\n" +
-              "mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='completed')\n" +
-              "Do NOT wait for a caller response. The closing triggers the transition to COACHING PHASE.\n" +
-              "\n";
+              "LOOP UNTIL DONE:\n" +
+              "After answering questions, ask: 'Do you have any other questions?'\n" +
+              "When they say no: mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='completed')\n\n";
           }
 
-          // For final fields (with or without response), explain automatic transition
           if (spec.loopUntilDone || spec.nextTargetSlotId === "order_confirmation_and_closing" || spec.nextTargetSlotId === "closing") {
             instructions +=
-              "\n" +
-              "AUTOMATIC TRANSITION:\n" +
-              "Once you call mark_checklist_item_complete with this final field, the server checks if all checklist items are done.\n" +
-              "If all are complete, the server automatically transitions the call to COACHING PHASE.\n" +
-              "You will stop hearing the caller and receive new coaching instructions.\n" +
-              "\n";
+              "NOTE: After marking this field complete, the call automatically transitions to COACHING PHASE.\n\n";
           }
-
-        } else {
-          // Fallback: use legacy behavior if config is missing (applies to all scenarios with checklists)
-          console.log(nowIso(), "[CONFIG_DRIVEN_MODE] FALLBACK - config not available, using legacy instructions", { 
-            scenarioTag: callState.scenarioTag,
-            hasSpec: !!spec,
-            hasNextTargetSlotId: spec ? !!spec.nextTargetSlotId : false
-          });
-          const nextTarget = getNextRequiredChecklistId();
-          const remaining = Object.keys(callState.checklist).filter(
-            id => callState.checklist[id].required && !callState.checklist[id].done
-          );
-
-          instructions +=
-            "\n" +
-            "SCENARIO CONTEXT:\n" +
-            "You are a receptionist at Evergreen Medical Clinic.\n" +
-            "The caller is scheduling a doctor appointment.\n" +
-            "YOUR GOAL: Collect required information to complete the appointment booking.\n" +
-            "\n" +
-            "NEXT_TARGET: " + (nextTarget || "NONE") + "\n";
-
-          // Special handling for questions_and_closing phase
-          if (nextTarget === "questions_and_closing") {
-            instructions +=
-              "\n" +
-              "QUESTIONS AND CLOSING PHASE:\n" +
-              "You have collected all required appointment information.\n" +
-              "Now ask: 'Do you have any questions for me?'\n" +
-              "Wait for the caller's response.\n" +
-              "If they have questions or concerns, address them naturally and helpfully in character.\n" +
-              "After answering their question(s), ask: 'Do you have any other questions?'\n" +
-              "Repeat this loop until they indicate they have no further questions (e.g., 'No', 'I think that's all', 'That's it', etc.).\n" +
-              "Once they confirm no more questions:\n" +
-              "Provide a professional closing statement.\n" +
-              "Thank them for calling and wish them a good day.\n" +
-              "\n" +
-              "After your closing, silently call:\n" +
-              "mark_checklist_item_complete(field_id='questions_and_closing', value='completed')\n" +
-              "\n" +
-              "Example:\n" +
-              "YOU SPEAK: 'Have a great day!'\n" +
-              "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='questions_and_closing', value='completed')\n" +
-              "Caller only hears: 'Have a great day!'\n" +
-              "\n" +
-              "AUTOMATIC TRANSITION:\n" +
-              "Once you call mark_checklist_item_complete with this final field, the server checks if all checklist items are done.\n" +
-              "If all are complete, the server automatically transitions the call to COACHING PHASE.\n" +
-              "You will stop hearing the caller and receive new coaching instructions.\n" +
-              "\n";
-          } else {
-            // Add specific field instructions if available
-            const fieldInstructions = getDoctorChecklistFieldInstructions(nextTarget);
-            if (fieldInstructions) {
-              instructions +=
-                "\n" +
-                "HOW TO COLLECT " + nextTarget.toUpperCase() + ":\n" +
-                fieldInstructions + "\n";
-            }
-            
-            instructions +=
-              "\n" +
-              "Your next question should primarily aim to collect NEXT_TARGET.\n" +
-              "Do not jump ahead unless the caller volunteers relevant information.\n" +
-              "\n";
-          }
-
-          instructions +=
-            (remaining.length > 0
-              ? "STILL GATHERING: " + remaining.join(", ") + "\n"
-              : "All required items are gathered. Proceed directly to wrap up without recapping the details.\n") +
-            "\n" +
-            "TRACKING COMPLETION:\n" +
-            "After EVERY response where you collect information, silently call the mark_checklist_item_complete function.\n" +
-            "This is COMPLETELY SILENT - the caller never hears it.\n" +
-            "\n" +
-            "Example: Caller says 'My name is Sarah Miller'\n" +
-            "YOU SPEAK: 'Great, Sarah!'\n" +
-            "YOU SILENTLY CALL: mark_checklist_item_complete(field_id='patient_name', value='Sarah Miller')\n" +
-            "\n" +
-            "The caller only hears 'Great, Sarah!'\n" +
-            "The function call happens automatically without interrupting the conversation.\n";
         }
+        
+        // Return early - skip all fallback code
+        return instructions;
       }
-
-      return instructions;
+      
+      // If we reach here, no checklist exists - should not happen for roleplay phase
+      console.error(nowIso(), "[ROLEPLAY_ERROR] No config-driven mode and no checklist", {
+        scenarioTag: callState.scenarioTag,
+        hasScenario: !!scenario,
+        hasChecklist: !!callState.checklist
+      });
+      
+      return header + "ROLEPLAY MODE.\nWaiting for scenario configuration...\n";
     }
 
     if (phase === "coaching") {
@@ -6266,10 +6034,7 @@ wss.on("connection", (twilioWs, req) => {
     return ["call_purpose", "new_or_returning_patient", "birthdate", "patient_name", "reason_for_appointment", "insurance", "appointment_preference", "confirmation_preference", "questions_and_closing"];
   }
 
-  function getCustomChecklistOrder() {
-    // Define the preferred order for custom scenario checklist items
-    return ["caller_identity", "call_purpose", "required_details", "friction_point", "next_step", "professional_close"];
-  }
+
 
   function getDoctorChecklistFieldInstructions(fieldName) {
     // Tight per-field guidance to reduce drift in smaller models.
@@ -6324,43 +6089,7 @@ wss.on("connection", (twilioWs, req) => {
     return instructions[fieldName] || "";
   }
 
-  function getCustomChecklistFieldInstructions(fieldName) {
-    // Tight per-field guidance to reduce drift in smaller models.
-    // Format: PROMPT + ACCEPT + TOOL_CALL. Keep it short.
-    var instructions = {
-      caller_identity:
-        "PROMPT: Ask for their name.\n" +
-        "ACCEPT: If uncommon, ask them to spell it.\n" +
-        "TOOL_CALL: mark_checklist_item_complete(field_id='caller_identity', value='<their name>').",
 
-      call_purpose:
-        "PROMPT: Ask why they are calling.\n" +
-        "ACCEPT: Restate it back to confirm understanding.\n" +
-        "TOOL_CALL: mark_checklist_item_complete(field_id='call_purpose', value='<their reason>').",
-
-      required_details:
-        "PROMPT: Ask for one scenario-specific detail (phone number, account number, time preference, etc.).\n" +
-        "ACCEPT: What matters depends on your role and the call purpose.\n" +
-        "TOOL_CALL: mark_checklist_item_complete(field_id='required_details', value='<the detail>').",
-
-      friction_point:
-        "PROMPT: Present ONE realistic constraint or limitation.\n" +
-        "ACCEPT: Examples: booking delay, fee, stock issue.\n" +
-        "TOOL_CALL: mark_checklist_item_complete(field_id='friction_point', value='<what you presented>').",
-
-      next_step:
-        "PROMPT: State what happens next or what you can offer.\n" +
-        "ACCEPT: Be specific (appointment time, delivery date, follow-up action).\n" +
-        "TOOL_CALL: mark_checklist_item_complete(field_id='next_step', value='<the next step>').",
-
-      professional_close:
-        "PROMPT: Close professionally with warmth.\n" +
-        "ACCEPT: Brief and friendly.\n" +
-        "TOOL_CALL: mark_checklist_item_complete(field_id='professional_close', value='completed')."
-    };
-
-    return instructions[fieldName] || "";
-  }
 
   function prepForEnding() {
     endingRequested = true;
@@ -7610,7 +7339,7 @@ wss.on("connection", (twilioWs, req) => {
                 callSid,
                 transcriptLength: callState.roleplayTranscript ? callState.roleplayTranscript.length : 0,
                 scenarioTag: callState.scenarioTag,
-                isCustom: callState.scenarioTag ? callState.scenarioTag.startsWith("custom_") : false
+                isDynamic: callState.scenarioTag ? callState.scenarioTag.startsWith("dynamic_") : false
               });
             }
             
@@ -7675,7 +7404,7 @@ wss.on("connection", (twilioWs, req) => {
 
         // Roleplay: parse and merge checklist updates from text-only JSON block (legacy doctor_default and custom scenarios)
         // Do this BEFORE flushing pendingResponseCreate so checklist is current
-        if (callState.phase === "roleplay" && callState.checklist && (callState.scenarioTag === "doctor_default" || (callState.scenarioTag && callState.scenarioTag.startsWith("custom_")))) {
+        if (callState.phase === "roleplay" && callState.checklist && callState.scenarioTag === "doctor_default") {
           // Parse using RAW text (with markers intact)
           const checklistUpdate = parseChecklistUpdateJson(rawText);
           if (checklistUpdate) {
@@ -7703,7 +7432,7 @@ wss.on("connection", (twilioWs, req) => {
             }
           }
 
-          if (callState.scenarioTag && callState.scenarioTag.startsWith("custom_") && callState.checklist && !callState.checklist.professional_close?.done) {
+          if (callState.scenarioTag && callState.scenarioTag.startsWith("dynamic_") && callState.checklist && !callState.checklist.professional_close?.done) {
             const nextTarget = getNextRequiredChecklistId();
             const closingRe = /\b(thanks for calling|thank you for calling|have a great day|have a good day|goodbye|bye|take care|see you|looking forward to working with you)\b/i;
             if (nextTarget === "professional_close" && cleanedText && closingRe.test(cleanedText)) {
@@ -8084,33 +7813,6 @@ wss.on("connection", (twilioWs, req) => {
             // Fallback to doctor checklist as last resort
             callState.checklist = buildDoctorChecklist();
             console.log(nowIso(), "[engine] checklist_init twilio_gather", { scenarioTag: selectedScenario, source: "fallback_to_doctor", items: Object.keys(callState.checklist).length });
-          }
-        } else if (selectedScenario.startsWith("custom_")) {
-          // Custom scenario - fetch user description from DB and use custom checklist
-          if (callSid && pool) {
-            try {
-              const result = await pool.query(
-                `SELECT user_custom_description FROM calls WHERE call_sid = $1`,
-                [callSid]
-              );
-              if (result.rows && result.rows[0] && result.rows[0].user_custom_description) {
-                callState.userCustomDescription = result.rows[0].user_custom_description;
-                callState.checklist = buildCustomChecklist(callState.userCustomDescription);
-                console.log(nowIso(), "WS: Loaded custom scenario with user description", {
-                  callSid,
-                  customTag: selectedScenario,
-                  description: callState.userCustomDescription
-                });
-              } else {
-                // Fallback to generic custom checklist
-                callState.checklist = buildCustomChecklist("a phone call");
-              }
-            } catch (err) {
-              console.error(nowIso(), "WS: Error fetching custom description from DB", err.message);
-              callState.checklist = buildCustomChecklist("a phone call");
-            }
-          } else {
-            callState.checklist = buildCustomChecklist("a phone call");
           }
         } else {
           // Built-in scenario - use generic scenario-based checklist with fallback
