@@ -2408,6 +2408,9 @@ app.post("/process-choose-scenario", async (req, res) => {
     console.log(nowIso(), "scenario_choice_resolved", { callSid, speech: speechResult, resolvedTag });
 
     if (wantsUsToChoose) {
+      vr.say({ voice: TWILIO_VOICE }, "Okay, I'll find something for you. Give me a few moments.");
+      vr.pause({ length: 2 });
+
       // Randomly select a scenario from available scenarios
       const availableScenarios = ["doctor_default", "dentist_appointment", "pizza_order"];
       const randomScenario = availableScenarios[Math.floor(Math.random() * availableScenarios.length)];
