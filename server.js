@@ -5286,7 +5286,7 @@ wss.on("connection", (twilioWs, req) => {
             "\n" +
             "NEXT_TARGET: " + spec.nextTargetSlotId + "\n" +
             "\n" +
-            "CONFIG-DRIVEN MODE: Ask this question with the same meaning. You may add one short human lead-in, but you must still ask only one question:\n" +
+            "CONFIG-DRIVEN MODE: ASK THIS QUESTION EXACTLY (verbatim). Ask only this single question with no additions or lead-ins:\n" +
             spec.baseQuestion + "\n";
 
           // Add validation requirement if defined
@@ -5297,8 +5297,8 @@ wss.on("connection", (twilioWs, req) => {
           instructions +=
             "\n" +
             "PHRASING_CONSTRAINT:\n" +
-            "Ask the specified question with the same meaning.\n" +
-            "You may add one short human lead-in before the question.\n" +
+            "Ask the specified question exactly as written.\n" +
+            "Do not add a lead-in or extra words.\n" +
             "Do not add extra questions.\n" +
             "Do not introduce new required information.\n" +
             "\n" +
