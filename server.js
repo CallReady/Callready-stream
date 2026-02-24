@@ -2441,11 +2441,95 @@ app.post("/process-choose-scenario", async (req, res) => {
       return;
     }
 
+    // User described a call but it didn't match a predefined scenario
+    // Try AI matching first, then generate dynamic scenario if needed
     if (normalized && confidence >= 0.4) {
+      console.log(nowIso(), "/process-choose-scenario: Attempting to match or generate scenario", {
+        callSid,
+        userDescription: speechResult,
+        confidence
+      });
+      
+      // Try to match the user's description to an existing scenario
+      const matchResult = await matchScenarioByDescription(speechResult);
+
+      if (matchResult.matched && matchResult.confidence >= 75) {
+        // Found matching scenario, redirect to confirmation
+        if (callSid) {
+          twilioChooseScenarioRetries.delete(callSid);
+          twilioScenarioFlags.set(callSid, matchResult.scenario_tag);
+          
+          // Store the user's description
+          try {
+            if (pool) {
+              await pool.query(
+                `UPDATE calls SET user_custom_description = $1 WHERE call_sid = $2`,
+                [speechResult.trim(), callSid]
+              );
+            }
+          } catch (err) {
+            console.log(nowIso(), "Note: Could not store user description in DB", err.message);
+          }
+        }
+
+        vr.redirect({ method: "POST" }, `/gather-confirm-suggested-scenario?tag=${encodeURIComponent(matchResult.scenario_tag)}`);
+        res.type("text/xml").send(vr.toString());
+        return;
+      }
+
+      // No clear match - generate dynamic scenario
+      console.log(nowIso(), "/process-choose-scenario: Generating dynamic scenario", {
+        callSid,
+        userDescription: speechResult,
+        matchConfidence: matchResult.confidence
+      });
+
+      const genResult = await generateDynamicScenario({
+        promptText: speechResult,
+        callSid: callSid,
+        openaiApiKey: OPENAI_API_KEY
+      });
+      
+      if (!genResult.ok) {
+        console.log(nowIso(), "[DYNAMIC_SCENARIO_FAILED]", { callSid, error: genResult.error, details: genResult.details });
+        // Failed to generate, ask them to try again
+        const failText = "I wasn't able to create that scenario. Let's try something else. Tell me about the call you want to practice, or say 'you choose' if you want me to pick.";
+        const gather = vr.gather({
+          input: "speech",
+          timeout: 3,
+          speechTimeout: 0.8,
+          action: "/process-choose-scenario",
+          method: "POST",
+          language: "en-US"
+        });
+        gather.say({ voice: TWILIO_VOICE }, failText);
+        res.type("text/xml").send(vr.toString());
+        return;
+      }
+      
+      // Success! Store the scenario
+      setDynamicScenario(callSid, genResult.scenario);
+      console.log(nowIso(), "[DYNAMIC_SCENARIO_GENERATED]", { callSid, tag: genResult.scenario.tag, slots: genResult.scenario.slots });
+      
       if (callSid) {
         twilioChooseScenarioRetries.delete(callSid);
+        twilioScenarioFlags.set(callSid, genResult.scenario.tag);
+        
+        // Store the user's description
+        try {
+          if (pool) {
+            await pool.query(
+              `UPDATE calls SET user_custom_description = $1 WHERE call_sid = $2`,
+              [speechResult.trim(), callSid]
+            );
+          }
+        } catch (err) {
+          console.log(nowIso(), "Note: Could not store user description in DB", err.message);
+        }
       }
-      vr.redirect({ method: "POST" }, "/gather-describe-call");
+
+      // Redirect to confirmation flow for dynamic scenario
+      vr.redirect({ method: "POST" }, `/gather-confirm-suggested-scenario?tag=${encodeURIComponent(genResult.scenario.tag)}`);
       res.type("text/xml").send(vr.toString());
       return;
     }
