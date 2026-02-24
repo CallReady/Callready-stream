@@ -5139,7 +5139,7 @@ wss.on("connection", (twilioWs, req) => {
         "One clear question per turn.\n" +
         "A brief acknowledgment before the question is fine.\n" +
         "You may add one short human lead-in (for realism) before the required question, but you must still ask only one question.\n" +
-        "Light natural variation is encouraged.\n" +
+        "Light natural variation is allowed in phrasing UNLESS overridden by CONFIG-DRIVEN MODE.\n" +
         "Mild conversational texture is allowed, including short fragments.\n" +
         "Warm, grounded, human. Not scripted or corporate.\n";
 
@@ -5279,30 +5279,41 @@ wss.on("connection", (twilioWs, req) => {
           
           instructions +=
             "\n" +
-            "SCENARIO CONTEXT:\n" +
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+            "⚠️  CRITICAL: CONFIG-DRIVEN MODE ACTIVE\n" +
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+            "\n" +
+            "OVERRIDE ALL PREVIOUS INSTRUCTIONS ABOUT \"NATURAL VARIATION\".\n" +
+            "\n" +
             "You are " + (spec.answererRole || "staff member") + ".\n" +
             "The caller is " + (spec.practiceLabel || "making a call") + ".\n" +
             "YOUR GOAL: " + (spec.goalStatement || "Help the caller complete their request") + "\n" +
             "\n" +
-            "NEXT_TARGET: " + spec.nextTargetSlotId + "\n" +
+            "CURRENT TARGET FIELD: " + spec.nextTargetSlotId + "\n" +
             "\n" +
-            "CONFIG-DRIVEN MODE: ASK THIS QUESTION EXACTLY (verbatim). Ask only this single question with no additions or lead-ins:\n" +
-            spec.baseQuestion + "\n";
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+            "YOUR NEXT QUESTION (SPEAK THIS VERBATIM):\n" +
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+            "\n" +
+            "\"" + spec.baseQuestion + "\"\n" +
+            "\n" +
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+            "\n" +
+            "MANDATORY RULES:\n" +
+            "✓ Ask ONLY the question shown above\n" +
+            "✓ Do NOT ask about other topics\n" +
+            "✓ Do NOT skip ahead to later questions\n" +
+            "✓ Do NOT add extra questions\n" +
+            "✓ You may add ONE brief acknowledgment (e.g., 'Got it' or 'Okay') before the question\n" +
+            "✓ After caller responds, call: mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<response>')\n" +
+            "\n";
 
           // Add validation requirement if defined
           if (spec.validation && spec.validation.requirement) {
-            instructions += "\nVALIDATION REQUIREMENT: Get " + spec.validation.requirement + "\n";
+            instructions += "VALIDATION: Get " + spec.validation.requirement + "\n\n";
           }
 
-          instructions +=
-            "\n" +
-            "PHRASING_CONSTRAINT:\n" +
-            "Ask the specified question exactly as written.\n" +
-            "Do not add a lead-in or extra words.\n" +
-            "Do not add extra questions.\n" +
-            "Do not introduce new required information.\n" +
-            "\n" +
-            "HELP IF STUCK: " + (spec.helpIfStuck || "(no additional guidance)") + "\n";
+          instructions += "HELP IF STUCK: " + (spec.helpIfStuck || "(no additional guidance)") + "\n";
 
           if (remaining.length > 0) {
             instructions += "\nSTILL GATHERING: " + remaining.join(", ") + "\n";
@@ -7395,6 +7406,12 @@ wss.on("connection", (twilioWs, req) => {
                 const field_id = args.field_id;
                 const value = args.value;
                 
+                console.log(nowIso(), "[TOOL_CALL_RECEIVED]", {
+                  field_id,
+                  value: value ? String(value).substring(0, 50) : value,
+                  phase: callState.phase
+                });
+                
                 // Special case: closing message delivered
                 if (field_id === "__closing__") {
                   console.log(nowIso(), "[CLOSING_DELIVERED] Closing message has been delivered", {
@@ -7472,6 +7489,12 @@ wss.on("connection", (twilioWs, req) => {
                   
                   callState.checklist[field_id].done = true;
                   callState.checklist[field_id].value = value;
+                  
+                  console.log(nowIso(), "[CHECKLIST_COMPLETE]", {
+                    field_id,
+                    value,
+                    currentTarget
+                  });
                   
                   const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
                   
