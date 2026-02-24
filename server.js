@@ -6993,7 +6993,7 @@ wss.on("connection", (twilioWs, req) => {
           type: "response.create",
           response: {
             modalities: ["audio", "text"],
-            instructions: buildPhaseContext("speech_stopped_auto_turn")
+            instructions: buildPhaseInstructions("speech_stopped_auto_turn")
           },
         });
 
