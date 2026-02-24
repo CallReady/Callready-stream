@@ -6657,7 +6657,7 @@ wss.on("connection", (twilioWs, req) => {
                 scenarioTag: callState.scenarioTag
               });
             } else {
-              const spec = getNextTurnSpec(callState.scenarioConfig, callState);
+              const spec = getNextTurnSpec(callState, callState.scenarioConfig);
               if (!spec) {
                 console.log(nowIso(), "[AUTO_COMPLETE_DEBUG] getNextTurnSpec returned null", {
                   scenarioTag: callState.scenarioTag,
