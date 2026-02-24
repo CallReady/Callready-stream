@@ -5176,6 +5176,7 @@ wss.on("connection", (twilioWs, req) => {
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
             "SPEAK EXACTLY:\n\n" +
             "    \"" + spec.baseQuestion + "\"\n\n" +
+            "Do NOT add any words before or after the quoted question.\n\n" +
             "Then STOP and WAIT for their response.\n\n" +
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
             "CONTEXT (for your understanding only):\n" +
