@@ -5892,8 +5892,14 @@ wss.on("connection", (twilioWs, req) => {
     
     if (scenarioTag.startsWith("dynamic_")) {
       const callSid = callState && callState.callSid ? callState.callSid : null;
-      if (!callSid) return null;
-      return getDynamicScenario(callSid);
+      console.log('[scenarios] resolveScenarioWithDynamic', { scenarioTag, callSid, hasCallState: !!callState });
+      if (!callSid) {
+        console.log('[scenarios] WARNING: Cannot resolve dynamic scenario - callSid missing from callState');
+        return null;
+      }
+      const scenario = getDynamicScenario(callSid);
+      console.log('[scenarios] getDynamicScenario result', { callSid, found: !!scenario });
+      return scenario;
     }
     
     return resolveScenario(scenarioTag);
@@ -7737,6 +7743,9 @@ wss.on("connection", (twilioWs, req) => {
       usageLog.callSid = callSid || null;
       usageLog.streamSid = streamSid || null;
       usageLog.startedAtMs = Date.now();
+      
+      // Set callSid in callState so dynamic scenarios can be resolved
+      callState.callSid = callSid;
 
       // Track this connection for graceful shutdown
       if (callSid) {
