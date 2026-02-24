@@ -1247,14 +1247,16 @@ function buildChecklistFromScenario(scenario) {
   }
 }
 
-function buildChecklistForScenarioTag(scenarioTag) {
+function buildChecklistForScenarioTag(scenarioTag, callState) {
   // Attempt to build checklist from scenario registry.
   // Returns { checklist: <checklist object or null>, source: <string> }
   try {
     var scenario = null;
 
-    // Try to resolve scenario using the resolveScenario function if available
-    if (typeof resolveScenario === "function") {
+    // Try to resolve scenario using the resolveScenarioWithDynamic function if available and callState provided
+    if (callState && typeof resolveScenarioWithDynamic === "function") {
+      scenario = resolveScenarioWithDynamic(callState, scenarioTag);
+    } else if (typeof resolveScenario === "function") {
       scenario = resolveScenario(scenarioTag);
     } else {
       // Fallback: try to access SCENARIO_REGISTRY directly
@@ -2328,6 +2330,67 @@ app.post("/process-choose-scenario", async (req, res) => {
       "i dont care"
     ];
     const wantsUsToChoose = choosePhrases.some((p) => normalized.includes(p));
+
+    // Check for custom scenario request
+    const customPrefixes = [
+      "custom:",
+      "custom scenario:",
+      "make a scenario:",
+      "new scenario:"
+    ];
+    
+    let isCustomRequest = false;
+    let promptText = "";
+    
+    for (const prefix of customPrefixes) {
+      if (normalized.startsWith(prefix)) {
+        isCustomRequest = true;
+        promptText = speechResult.substring(prefix.length).trim();
+        break;
+      }
+    }
+    
+    // If custom scenario requested with valid prompt, generate it now
+    if (isCustomRequest && promptText.length >= 10) {
+      console.log(nowIso(), "[CUSTOM_SCENARIO_REQUEST]", { callSid, promptText });
+      
+      const genResult = await generateDynamicScenario({
+        promptText,
+        callSid: callSid,
+        openaiApiKey: OPENAI_API_KEY
+      });
+      
+      if (!genResult.ok) {
+        console.log(nowIso(), "[CUSTOM_SCENARIO_FAILED]", { callSid, error: genResult.error, details: genResult.details });
+        // Failed to generate, ask them to try again
+        const failText = "I wasn't able to create that scenario. Let's try something else. Tell me about the call you want to practice, or say 'you choose' if you want me to pick.";
+        const gather = vr.gather({
+          input: "speech",
+          timeout: 3,
+          speechTimeout: 0.8,
+          action: "/process-choose-scenario",
+          method: "POST",
+          language: "en-US"
+        });
+        gather.say({ voice: TWILIO_VOICE }, failText);
+        res.type("text/xml").send(vr.toString());
+        return;
+      }
+      
+      // Success! Store the scenario and route to confirm flow
+      setDynamicScenario(callSid, genResult.scenario);
+      console.log(nowIso(), "[CUSTOM_SCENARIO_GENERATED]", { callSid, tag: genResult.scenario.tag, slots: genResult.scenario.slots });
+      
+      if (callSid) {
+        twilioChooseScenarioRetries.delete(callSid);
+        twilioScenarioFlags.set(callSid, genResult.scenario.tag);
+      }
+      
+      // Route to generic confirm flow
+      vr.redirect({ method: "POST" }, "/gather-confirm-suggested-scenario?tag=" + encodeURIComponent(genResult.scenario.tag));
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
 
     // Try to resolve speech to a known scenario tag
     const resolvedTag = resolveScenarioTagFromSpeech(speechResult);
@@ -4466,7 +4529,7 @@ wss.on("connection", (twilioWs, req) => {
       preferredOrder = getCustomChecklistOrder();
     } else if (callState.scenarioTag) {
       // For other scenarios like pizza_order, use the slots array as preferred order
-      const scenario = resolveScenario(callState.scenarioTag);
+      const scenario = resolveScenarioWithDynamic(callState, callState.scenarioTag);
       if (scenario && Array.isArray(scenario.slots)) {
         preferredOrder = scenario.slots;
       } else {
@@ -4781,7 +4844,7 @@ wss.on("connection", (twilioWs, req) => {
       // Add checklist tracking for scenarios with config-driven mode
       if (callState.scenarioTag && callState.checklist) {
         // Try config-driven approach first (if scenario has slots and questions)
-        const scenario = resolveScenario(callState.scenarioTag);
+        const scenario = resolveScenarioWithDynamic(callState, callState.scenarioTag);
         console.log(nowIso(), "[CONFIG_DRIVEN_CHECK] Resolved scenario", { 
           scenarioTag: callState.scenarioTag, 
           hasScenario: !!scenario,
@@ -6364,7 +6427,7 @@ wss.on("connection", (twilioWs, req) => {
             let startLine = "";
             
             // Try to get baseQuestion from scenario config (config-driven scenarios)
-            const greetingScenario = resolveScenario(callState.scenarioTag);
+            const greetingScenario = resolveScenarioWithDynamic(callState, callState.scenarioTag);
             if (greetingScenario && greetingScenario.slots && greetingScenario.slots.length > 0 && greetingScenario.questions) {
               const firstSlotId = greetingScenario.slots[0];
               const firstQuestion = greetingScenario.questions[firstSlotId];
@@ -6684,7 +6747,7 @@ wss.on("connection", (twilioWs, req) => {
             callState.scenarioChosen = true;
             
             // Rebuild checklist from scenario config if available, else fall back
-            var checklistResult = buildChecklistForScenarioTag(callState.scenarioTag);
+            var checklistResult = buildChecklistForScenarioTag(callState.scenarioTag, callState);
             if (checklistResult && checklistResult.checklist) {
               callState.checklist = checklistResult.checklist;
               console.log(nowIso(), "[engine] checklist_init wrap_up_again", { scenarioTag: callState.scenarioTag, source: checklistResult.source, items: Object.keys(callState.checklist).length });
@@ -6940,6 +7003,23 @@ wss.on("connection", (twilioWs, req) => {
                   continue; // Skip to next item in loop
                 }
 
+                // Validate that field_id exists in scenario definition
+                const scenario = callState.scenarioTag ? scenarios[callState.scenarioTag] : null;
+                const validSlotIds = scenario && scenario.slots ? scenario.slots : [];
+                const isValidSlotId = validSlotIds.includes(field_id);
+
+                if (!isValidSlotId) {
+                  console.error(nowIso(), "[INVALID_SLOT_ID] AI attempted to mark non-existent slot complete", { 
+                    field_id, 
+                    value,
+                    scenarioTag: callState.scenarioTag,
+                    validSlotIds: validSlotIds,
+                    phase: callState.phase
+                  });
+                  // Don't mark the checklist - continue to next function call
+                  continue;
+                }
+
                 // Update checklist if we're in roleplay with a checklist
                 if (callState.phase === "roleplay" && callState.checklist && field_id in callState.checklist) {
                   // Track if this is the first item done
@@ -6967,9 +7047,10 @@ wss.on("connection", (twilioWs, req) => {
                   }
                 } else if (!(field_id in callState.checklist)) {
                   const availableItems = Object.keys(callState.checklist || {});
-                  console.log(nowIso(), "Checklist item NOT found", { 
+                  console.error(nowIso(), "[CHECKLIST_INITIALIZATION_ERROR] Valid slot not in checklist object", { 
                     field_id, 
                     availableItems,
+                    scenarioTag: callState.scenarioTag,
                     phase: callState.phase,
                     hasChecklist: !!callState.checklist
                   });
@@ -7233,7 +7314,7 @@ wss.on("connection", (twilioWs, req) => {
             let startLine = "";
             
             // Try to get baseQuestion from scenario config (config-driven scenarios)
-            const greetingScenario = resolveScenario(callState.scenarioTag);
+            const greetingScenario = resolveScenarioWithDynamic(callState, callState.scenarioTag);
             if (greetingScenario && greetingScenario.slots && greetingScenario.slots.length > 0 && greetingScenario.questions) {
               const firstSlotId = greetingScenario.slots[0];
               const firstQuestion = greetingScenario.questions[firstSlotId];
@@ -7489,7 +7570,7 @@ wss.on("connection", (twilioWs, req) => {
         // Set scenario state
         callState.scenarioTag = selectedScenario;
         var __scenarioTag = (callState && callState.scenarioTag) ? callState.scenarioTag : null;
-        var __scenarioResolved = __scenarioTag ? resolveScenario(__scenarioTag) : null;
+        var __scenarioResolved = __scenarioTag ? resolveScenarioWithDynamic(callState, __scenarioTag) : null;
         console.log('[scenarios] shadow lookup tag=', __scenarioTag, 'found=', !!__scenarioResolved);
         if (__scenarioResolved && __scenarioResolved.practiceLabel) {
           console.log('[scenarios] practiceLabel=', __scenarioResolved.practiceLabel);

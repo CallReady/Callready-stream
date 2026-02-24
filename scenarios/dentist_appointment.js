@@ -15,6 +15,7 @@ module.exports = {
         "insurance",
         "appointment_preference",
         "confirmation_preference",
+        "contact_phone",
         "questions"
     ],
 
@@ -98,6 +99,15 @@ module.exports = {
                 requirement: "confirmation of reminder preference"
             },
             helpIfStuck: "Most patients prefer text, but clarify their choice."
+        },
+
+        contact_phone: {
+            baseQuestion: "What's the best phone number to send the reminder to?",
+            waitForResponse: true,
+            validation: {
+                requirement: "a complete phone number with area code"
+            },
+            helpIfStuck: "A phone number with area code is needed for the text or call reminder."
         },
 
         questions: {
