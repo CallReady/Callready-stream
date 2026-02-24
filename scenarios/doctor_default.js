@@ -52,7 +52,7 @@ module.exports = {
       validation: {
         requirement: "a full name for the patient"
       },
-      helpIfStuck: "If unclear, ask them to spell it."
+      helpIfStuck: "If unclear, ask them to repeat it."
     },
     reason_for_appointment: {
       baseQuestion: "What are you coming in for?",

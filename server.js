@@ -5876,7 +5876,6 @@ wss.on("connection", (twilioWs, req) => {
 
           if (hasAudio && callState && String(callState.phase || "") === "roleplay") { // Roleplay: only count turns during roleplay audio
             callState.turnIndex = (typeof callState.turnIndex === "number" ? callState.turnIndex : 0) + 1;
-            console.log(nowIso(), "turnIndex++ (roleplay audio)", { turnIndex: callState.turnIndex });
           }
         } catch { }
       }
@@ -5889,22 +5888,7 @@ wss.on("connection", (twilioWs, req) => {
 
   function openaiResponseCreate(payload, why) {
     try {
-      console.log(
-        nowIso(),
-        "RESPONSE_CREATE",
-        "phase=" + String(callState.phase || ""), // Log: include phase in RESPONSE_CREATE log
-        "callType=" + String(callState.callType || ""),
-        "scenarioTag=" + String(callState.scenarioTag || ""),
-        "scenarioChosen=" + String(!!callState.scenarioChosen),
-        "why=" + String(why || "")
-      );
-      
-      // Diagnostic: log what instructions are being sent
-      if (payload && payload.response && payload.response.instructions) {
-        const inst = payload.response.instructions;
-        const instPreview = (inst || "").substring(0, 100);
-        console.log(nowIso(), "[OPENAI_SEND] instructions length=" + (inst || "").length + ", preview=" + instPreview);
-      } else {
+      if (!payload || !payload.response || !payload.response.instructions) {
         console.log(nowIso(), "[OPENAI_SEND] WARNING: no instructions found in payload");
       }
     } catch (e) { }
@@ -7002,20 +6986,15 @@ wss.on("connection", (twilioWs, req) => {
           if (callState.phase === "roleplay" && msg.type === "conversation.item.input_audio_transcription.completed") {
             const hasScenarioConfig = !!callState.scenarioConfig;
             const hasChecklist = !!callState.checklist;
+            const validationMode = callState.scenarioConfig && callState.scenarioConfig.validation ? callState.scenarioConfig.validation.mode : null;
+            const trustAiValidation = validationMode === "trust_ai";
             
             if (!hasScenarioConfig || !hasChecklist) {
-              console.log(nowIso(), "[AUTO_COMPLETE_DEBUG] Missing config or checklist", {
-                hasScenarioConfig,
-                hasChecklist,
-                scenarioTag: callState.scenarioTag
-              });
+              // Missing config or checklist; skip auto-complete.
             } else {
               const spec = getNextTurnSpec(callState, callState.scenarioConfig);
               if (!spec) {
-                console.log(nowIso(), "[AUTO_COMPLETE_DEBUG] getNextTurnSpec returned null", {
-                  scenarioTag: callState.scenarioTag,
-                  utterance: utter
-                });
+                // No next spec; skip auto-complete.
               } else if (spec && spec.nextTargetSlotId && callState.checklist[spec.nextTargetSlotId] && !callState.checklist[spec.nextTargetSlotId].done) {
                 const fieldId = spec.nextTargetSlotId;
                 const fieldConfig = callState.scenarioConfig.questions ? callState.scenarioConfig.questions[fieldId] : null;
@@ -7023,7 +7002,7 @@ wss.on("connection", (twilioWs, req) => {
                 // Special handling for loopUntilDone fields (like "questions")
                 // These only complete when caller explicitly says they have no more
                 if (fieldConfig && fieldConfig.loopUntilDone) {
-                  const noMoreRe = /\b(no|nope|nah|none|nothing|no questions|no more|i'm good|im good|all good|that's all|that's it|we're good|we're set)\b/i;
+                  const noMoreRe = /\b(no|nope|nah|none|nothing|nothing else|no questions?|no other questions|no further questions|no more|no thanks|no thank you|thanks but no|i don't|i dont|i'm good|im good|i'm all set|im all set|all good|all set|that's all|thats all|that's it|thats it|that's everything|thats everything|that covers it|i think that's all|i think thats all|we're good|were good|we're set|were set|we're all set|were all set)\b/i;
                   if (noMoreRe.test(u)) {
                     callState.checklist[fieldId].done = true;
                     callState.checklist[fieldId].value = "completed_loop";
@@ -7032,25 +7011,13 @@ wss.on("connection", (twilioWs, req) => {
                     const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
                     const allNowDone = doneItemsAfter === totalRequired;
                     
-                    console.log(nowIso(), "[AUTO_COMPLETE] Loop field completed (no more indicated)", {
-                      fieldId,
-                      utterance: utter,
-                      progress: `${doneItemsAfter}/${totalRequired}`,
-                      isFinalItem: allNowDone
-                    });
-                    
                     // If all items are complete, trigger closing delivery immediately
                     if (allNowDone && !callState.needsClosing) {
                       callState.needsClosing = true;
                       console.log(nowIso(), "[AUTO_COMPLETE] All items complete, setting needsClosing=true");
                     }
-                  } else {
-                    console.log(nowIso(), "[AUTO_COMPLETE] Loop field - caller has more to say, continuing loop", {
-                      fieldId,
-                      utterance: utter
-                    });
                   }
-                } else {
+                } else if (!trustAiValidation) {
                   // Non-loop fields: auto-complete if response is valid
                   const isValid = validateCallerResponse(utter, fieldConfig, fieldId);
                   
@@ -7062,24 +7029,11 @@ wss.on("connection", (twilioWs, req) => {
                     const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
                     const allNowDone = doneItemsAfter === totalRequired;
                     
-                    console.log(nowIso(), "[AUTO_COMPLETE] Field marked complete based on caller response", {
-                      fieldId,
-                      value: utter,
-                      progress: `${doneItemsAfter}/${totalRequired}`,
-                      isFinalItem: allNowDone
-                    });
-                    
                     // If all items are complete, trigger closing delivery immediately
                     if (allNowDone && !callState.needsClosing) {
                       callState.needsClosing = true;
                       console.log(nowIso(), "[AUTO_COMPLETE] All items complete, setting needsClosing=true");
                     }
-                  } else {
-                    console.log(nowIso(), "[AUTO_COMPLETE] Caller response did not pass validation", {
-                      fieldId,
-                      utterance: utter,
-                      requirement: fieldConfig?.validation?.requirement
-                    });
                   }
                 }
               }
@@ -7340,15 +7294,8 @@ wss.on("connection", (twilioWs, req) => {
 
         sawSpeechStarted = true;
 
-        console.log(nowIso(), "Caller speech_started", {
-          phase: callState.phase,
-          waitingForFirstCallerSpeech,
-          sawCallerSpeechSinceLastAIDone
-        });
-
         if (waitingForFirstCallerSpeech) {
           waitingForFirstCallerSpeech = false;
-          console.log(nowIso(), "Caller speech detected, AI may respond now");
         }
 
         if (turnDetectionEnabled) {
@@ -7361,15 +7308,6 @@ wss.on("connection", (twilioWs, req) => {
       if (msg.type === "input_audio_buffer.speech_stopped") {
         if (!turnDetectionEnabled) return;
         if (endingRequested || endRedirectRequested) return;
-
-        console.log(nowIso(), "Caller speech_stopped", {
-          phase: callState.phase,
-          sawSpeechStarted,
-          sawCallerSpeechSinceLastAIDone,
-          responseActive
-        });
-
-
 
         // In roleplay phase, do not auto-trigger AI unless the caller actually spoke
         if (callState.phase === "roleplay" && !sawCallerSpeechSinceLastAIDone) { // Roleplay: ignore speech_stopped unless caller actually spoke
@@ -7407,15 +7345,6 @@ wss.on("connection", (twilioWs, req) => {
         requireCallerSpeechBeforeNextAI = false;
         sawCallerSpeechSinceLastAIDone = true;
 
-        // Engine logging: log config-driven spec if available (for doctor_default)
-        if (callState.phase === "roleplay" && callState.scenarioTag === "doctor_default") {
-          const scenario = resolveScenario("doctor_default");
-          const spec = getNextTurnSpec(callState, scenario);
-          if (spec && spec.nextTargetSlotId && !callState.needsClosing) {
-            console.log(nowIso(), "[engine] nextTarget=" + spec.nextTargetSlotId + ", baseQuestion=" + spec.baseQuestion);
-          }
-        }
-
         // Check if we need to deliver closing immediately (e.g., after auto-complete marked final field)
         if (callState.phase === "roleplay" && callState.needsClosing && !callState.closingDelivered) {
           console.log(nowIso(), "[engine] Skipping normal response, forcing closing delivery");
@@ -7437,9 +7366,6 @@ wss.on("connection", (twilioWs, req) => {
       if (msg.type === "response.created") {
         responseActive = true;
         aiAudioBytesThisResponse = 0;
-
-
-        if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.created (post-opener)");
         return;
       }
 
@@ -7448,20 +7374,6 @@ wss.on("connection", (twilioWs, req) => {
         const rawText = extractRawTextFromResponse(msg);
         // Also get cleaned text for display/transcript
         const cleanedText = stripJsonMarkers(rawText);
-        
-        // Log response details for debugging hung-up scenarios
-        const remainingItems = Object.keys(callState.checklist || {}).filter(id => 
-          callState.checklist[id].required && !callState.checklist[id].done
-        );
-        if (remainingItems.length <= 2 && callState.phase === "roleplay") {
-          console.log(nowIso(), "[FINAL_STEPS] response.done with few items remaining", {
-            remainingCount: remainingItems.length,
-            remaining: remainingItems,
-            hasAudio: (msg.response && msg.response.output && msg.response.output.some(o => o.type === "audio")) ? true : false,
-            hasText: !!cleanedText,
-            textPreview: cleanedText ? cleanedText.substring(0, 80) : null
-          });
-        }
         
         responseActive = false;
         callState.openaiResponseActive = false;
@@ -7479,12 +7391,6 @@ wss.on("connection", (twilioWs, req) => {
                 const args = typeof item.arguments === "string" ? JSON.parse(item.arguments) : item.arguments;
                 const field_id = args.field_id;
                 const value = args.value;
-                
-                console.log(nowIso(), "Function call: mark_checklist_item_complete", { 
-                  field_id, 
-                  value,
-                  rawArgs: item.arguments
-                });
                 
                 // Special case: closing message delivered
                 if (field_id === "__closing__") {
@@ -7519,11 +7425,22 @@ wss.on("connection", (twilioWs, req) => {
                   const utterForValidation = String(callState.lastUserUtterance || value || "").trim();
                   const validationMode = scenario && scenario.validation ? scenario.validation.mode : null;
                   const trustAiValidation = validationMode === "trust_ai";
+                  const currentSpec = scenario ? getNextTurnSpec(callState, scenario) : null;
+                  const currentTarget = currentSpec ? currentSpec.nextTargetSlotId : null;
+
+                  if (currentTarget && field_id !== currentTarget) {
+                    console.log(nowIso(), "[CHECKLIST_ORDER] Rejected tool call for non-target slot", {
+                      field_id,
+                      currentTarget,
+                      value
+                    });
+                    continue;
+                  }
 
                   if (!trustAiValidation) {
                     let isValid = true;
                     if (fieldConfig && fieldConfig.loopUntilDone) {
-                      const noMoreRe = /\b(no|nope|nah|none|nothing|no questions|no more|i'm good|im good|all good|that's all|that's it|we're good|we're set)\b/i;
+                      const noMoreRe = /\b(no|nope|nah|none|nothing|nothing else|no questions?|no other questions|no further questions|no more|no thanks|no thank you|thanks but no|i don't|i dont|i'm good|im good|i'm all set|im all set|all good|all set|that's all|thats all|that's it|thats it|that's everything|thats everything|that covers it|i think that's all|i think thats all|we're good|were good|we're set|were set|we're all set|were all set)\b/i;
                       isValid = noMoreRe.test(utterForValidation.toLowerCase());
                     } else {
                       isValid = validateCallerResponse(utterForValidation, fieldConfig, field_id);
@@ -7554,14 +7471,6 @@ wss.on("connection", (twilioWs, req) => {
                   callState.checklist[field_id].value = value;
                   
                   const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
-                  
-                  console.log(nowIso(), "Checklist item updated via function call", { 
-                    field_id, 
-                    value,
-                    done: true, 
-                    progress: `${doneItemsAfter}/${totalRequired}`,
-                    isFinalItem: doneItemsAfter === totalRequired
-                  });
                   
                   // Update summary at key checkpoints
                   if (doneItemsBefore === 0) {
@@ -7612,21 +7521,6 @@ wss.on("connection", (twilioWs, req) => {
             id => !callState.checklist[id].required || callState.checklist[id].done
           );
           const doneItems = Object.keys(callState.checklist).filter(id => callState.checklist[id].done);
-          const remainingItems = Object.keys(callState.checklist).filter(id => callState.checklist[id].required && !callState.checklist[id].done);
-          const checklist_summary = Object.keys(callState.checklist).map(id => ({ 
-            id, 
-            required: callState.checklist[id].required, 
-            done: callState.checklist[id].done 
-          }));
-          console.log(nowIso(), "Checklist status check", { 
-            scenarioTag: callState.scenarioTag, 
-            totalItems: Object.keys(callState.checklist).length,
-            allDone, 
-            doneItems: doneItems.length, 
-            remainingCount: remainingItems.length,
-            remaining: remainingItems,
-            checklist: checklist_summary
-          });
           if (allDone && !callState.needsClosing) {
             // All items done - trigger closing message delivery on next turn
             console.log(nowIso(), "[CLOSING_PENDING] All checklist items complete, triggering closing message", { 
@@ -7738,12 +7632,9 @@ wss.on("connection", (twilioWs, req) => {
         // Roleplay: parse and merge checklist updates from text-only JSON block (legacy doctor_default and custom scenarios)
         // Do this BEFORE flushing pendingResponseCreate so checklist is current
         if (callState.phase === "roleplay" && callState.checklist && (callState.scenarioTag === "doctor_default" || (callState.scenarioTag && callState.scenarioTag.startsWith("custom_")))) {
-          console.log(nowIso(), "Checking for checklist update in response text", { scenarioTag: callState.scenarioTag, rawTextLength: rawText ? rawText.length : 0 });
           // Parse using RAW text (with markers intact)
           const checklistUpdate = parseChecklistUpdateJson(rawText);
           if (checklistUpdate) {
-            console.log(nowIso(), "Checklist update found", { updates: Object.keys(checklistUpdate) });
-
             // Merge updates: only update known keys
             for (const id in checklistUpdate) {
               if (id in callState.checklist && typeof checklistUpdate[id] === "object") {
@@ -7753,11 +7644,8 @@ wss.on("connection", (twilioWs, req) => {
                 if (checklistUpdate[id].value !== undefined) {
                   callState.checklist[id].value = checklistUpdate[id].value;
                 }
-                console.log(nowIso(), "Checklist item updated", { id, done: callState.checklist[id].done, value: callState.checklist[id].value });
               }
             }
-          } else {
-            console.log(nowIso(), "No checklist update JSON found in response text");
           }
 
           // Fallback: if the AI says a closing line at the final step, mark it complete.
@@ -7819,8 +7707,6 @@ wss.on("connection", (twilioWs, req) => {
             return;
           }
         }
-
-        if (turnDetectionEnabled) console.log(nowIso(), "OpenAI response.done (post-opener)");
 
         // Response completed
         if (callState && callState.phase === "connecting") {
