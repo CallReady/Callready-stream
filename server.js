@@ -218,6 +218,8 @@ const TWILIO_HARD_LIMIT_MESSAGE =
   "Pardon the interruption, but we have reached the maximum time for this practice session, so we need to end the call now. " +
   "You can call back anytime to keep practicing.";
 
+const COACHING_REDIRECT_DELAY_MS = 1200;
+
 
 const TWILIO_OPTIN_PROMPT =
   "You can choose to receive text messages from CallReady. " +
@@ -4329,25 +4331,11 @@ app.post("/process-coaching-feedback", async (req, res) => {
         return;
       }
 
-      // Generate feedback via OpenAI
-      const feedback = await generateCoachingFeedback(context.transcript);
-
-      if (feedback) {
-        // Update context with feedback
-        context.feedbackRequested = true;
-        context.feedback = feedback;
-        twilioCoachingContexts.set(callSid, context);
-
-        // Say the feedback and redirect to wrap-up
-        vr.say({ voice: TWILIO_VOICE }, "Here's some feedback. " + feedback);
-        vr.redirect({ method: "POST" }, "/gather-wrap-up");
-      } else {
-        // Feedback generation failed, skip to wrap-up
-        console.log(nowIso(), "Feedback generation failed, going to wrap-up");
-        vr.say({ voice: TWILIO_VOICE }, "Okay. Let's wrap up.");
-        vr.redirect({ method: "POST" }, "/gather-wrap-up");
-      }
-
+      vr.say(
+        { voice: TWILIO_VOICE },
+        "Great! Let me take a few seconds to look back over the call, and I'll be right back."
+      );
+      vr.redirect({ method: "POST" }, "/process-coaching-feedback-generate");
       res.type("text/xml").send(vr.toString());
       return;
     }
@@ -4368,6 +4356,52 @@ app.post("/process-coaching-feedback", async (req, res) => {
     res.type("text/xml").send(vr.toString());
   } catch (err) {
     console.error("/process-coaching-feedback ERROR:", err);
+    const vr = new (twilio.twiml.VoiceResponse)();
+    vr.say("An error occurred. The call will end.");
+    vr.hangup();
+    res.type("text/xml").send(vr.toString());
+  }
+});
+
+// POST /process-coaching-feedback-generate
+// Generates feedback after the "I'll be right back" line has played.
+app.post("/process-coaching-feedback-generate", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || req.query?.callSid || "";
+    const context = callSid ? twilioCoachingContexts.get(callSid) : null;
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    if (!context) {
+      console.log(nowIso(), "No coaching context found in generate, redirecting to wrap-up");
+      vr.redirect({ method: "POST" }, "/gather-wrap-up");
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Generate feedback via OpenAI
+    const feedback = await generateCoachingFeedback(context.transcript);
+
+    if (feedback) {
+      // Update context with feedback
+      context.feedbackRequested = true;
+      context.feedback = feedback;
+      twilioCoachingContexts.set(callSid, context);
+
+      // Say the feedback and redirect to wrap-up
+      vr.say({ voice: TWILIO_VOICE }, "Here's some feedback. " + feedback);
+      vr.redirect({ method: "POST" }, "/gather-wrap-up");
+    } else {
+      // Feedback generation failed, skip to wrap-up
+      console.log(nowIso(), "Feedback generation failed, going to wrap-up");
+      vr.say({ voice: TWILIO_VOICE }, "Okay. Let's wrap up.");
+      vr.redirect({ method: "POST" }, "/gather-wrap-up");
+    }
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("/process-coaching-feedback-generate ERROR:", err);
     const vr = new (twilio.twiml.VoiceResponse)();
     vr.say("An error occurred. The call will end.");
     vr.hangup();
@@ -7251,15 +7285,23 @@ wss.on("connection", (twilioWs, req) => {
                   try {
                     const coachingUrl = `${process.env.PUBLIC_BASE_URL}/gather-coaching-feedback?callSid=${encodeURIComponent(callSid)}`;
 
-                    await client.calls(callSid).update({
-                      url: coachingUrl,
-                      method: "POST"
-                    });
-                    console.log(nowIso(), "Redirect to /gather-coaching-feedback succeeded", { callSid });
-                    // Give Twilio a moment to process the redirect before closing media
-                    setTimeout(() => {
-                      closeAll("roleplay_checklist_complete");
-                    }, 500);
+                    setTimeout(async () => {
+                      try {
+                        await client.calls(callSid).update({
+                          url: coachingUrl,
+                          method: "POST"
+                        });
+                        console.log(nowIso(), "Redirect to /gather-coaching-feedback succeeded", { callSid });
+                        // Give Twilio a moment to process the redirect before closing media
+                        setTimeout(() => {
+                          closeAll("roleplay_checklist_complete");
+                        }, 500);
+                      } catch (e) {
+                        console.log(nowIso(), "Failed to redirect call:", e && e.message ? e.message : e);
+                        // If redirect failed, close media to avoid hanging the call
+                        closeAll("roleplay_checklist_complete");
+                      }
+                    }, COACHING_REDIRECT_DELAY_MS);
                     return;
                   } catch (e) {
                     console.log(nowIso(), "Failed to redirect call:", e && e.message ? e.message : e);
