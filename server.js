@@ -4211,7 +4211,8 @@ function buildPhaseInstructionsForGather(callState, scenario, spec) {
       "3. If caller asks a question, answer briefly in 1-2 sentences.\n" +
       "4. Keep your response under 40 words.\n" +
       "5. Do NOT invent new requirements.\n" +
-      "6. Do NOT decide when call is complete.\n\n";
+      "6. Do NOT decide when call is complete.\n" +
+      "7. NEVER provide examples of acceptable answers on your first ask for this slot.\n\n";
 
     // Handle loopUntilDone slots
     if (slotSpec.loopUntilDone) {
@@ -6892,10 +6893,12 @@ wss.on("connection", (twilioWs, req) => {
               "3. You may answer a brief caller question in 1-2 sentences, then immediately return to the current target.\n" +
               "4. Do NOT invent new required information.\n" +
               "5. Do NOT change slot order or decide when the call is complete.\n" +
-              "6. When you believe you got an acceptable answer for " + spec.nextTargetSlotId + ", call:\n" +
+              "6. NEVER provide examples of acceptable answers on your first ask for this slot.\n" +
+              "   (Examples may be offered only if the caller seems confused after they respond.)\n" +
+              "7. When you believe you got an acceptable answer for " + spec.nextTargetSlotId + ", call:\n" +
               "   mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<extracted>')\n" +
-              "7. After speaking, call report_turn_result with your analysis (required).\n" +
-              "8. STOP and WAIT for the caller's response.\n\n"
+              "8. After speaking, call report_turn_result with your analysis (required).\n" +
+              "9. STOP and WAIT for the caller's response.\n\n"
 
             // Special handling for loopUntilDone slots (like "questions")
             if (slotSpec && slotSpec.loopUntilDone) {
