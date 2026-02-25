@@ -4942,6 +4942,10 @@ const twilioOpenerPlayedFlags = new Map();
 // Allows /gather-scenario-menu or /gather-confirm-doctor to pass scenario to WebSocket
 const twilioScenarioFlags = new Map();
 
+// In-memory store for gather mode call states (callSid => callState object)
+// Persists state between gather-roleplay HTTP requests
+const twilioCallStates = new Map();
+
 // In-memory store for last built instructions (callSid => { at, scenarioTag, personaStyle, instructions })
 const lastInstructionsByCallSid = new Map();
 
