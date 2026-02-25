@@ -134,9 +134,15 @@ module.exports = {
 
         appointment_preference: {
             promptIntent: "collect preferred appointment date and time",
-            requirement: "a preferred day and time for the appointment",
-            repromptHelp: "Ask what day and time works best, or offer 2-3 available time slots.",
-            validatorHint: { type: "min_words", minWords: 2 },
+            requirement: "a specific date (or day name) AND a specific time of day",
+            repromptHelp: "I need both a day AND a time. For example: Tuesday morning, or next Wednesday at 2pm.",
+            validatorHint: {
+                type: "all_of",
+                rules: [
+                    { type: "keywords_any", keywords: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "today", "tomorrow", "next week", "this week", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"], minMatches: 1 },
+                    { type: "keywords_any", keywords: ["morning", "afternoon", "evening", "night", "am", "pm", "12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"], minMatches: 1 }
+                ]
+            },
             examplesGood: ["Tuesday at 2pm", "Next week morning", "Friday afternoon", "Monday at 10"],
             followups: [
                 { when: "vague", ask: "What time of day works best, morning or afternoon?" }
@@ -208,9 +214,9 @@ module.exports = {
             baseQuestion: "What is your date of birth?",
             waitForResponse: true,
             validation: {
-                requirement: "a complete date of birth in any common format (MM/DD/YYYY, MM/DD/YY, or spoken date)"
+                requirement: "a complete date of birth"
             },
-            helpIfStuck: "Accept any format."
+            helpIfStuck: "Accept any common format."
         },
 
         contact_phone: {
@@ -253,9 +259,9 @@ module.exports = {
             baseQuestion: "What day and time works best for you?",
             waitForResponse: true,
             validation: {
-                requirement: "a preferred day and time for their appointment"
+                requirement: "a specific date (or day name) AND a specific time of day"
             },
-            helpIfStuck: "If they are unsure, offer two available appointment options."
+            helpIfStuck: "I need both a day AND a time. For example: Tuesday morning, or next week in the afternoon."
         },
 
         confirmation_preference: {

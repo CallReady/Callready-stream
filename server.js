@@ -232,7 +232,9 @@ const TWILIO_HARD_LIMIT_MESSAGE =
   "Pardon the interruption, but we have reached the maximum time for this practice session, so we need to end the call now. " +
   "You can call back anytime to keep practicing.";
 
-const COACHING_REDIRECT_DELAY_MS = 1200;
+// Delay before redirecting to coaching (gives time for closing message to finish playing)
+// Set to 4500ms to allow closing messages up to ~15-20 words to finish completely
+const COACHING_REDIRECT_DELAY_MS = 4500;
 
 
 const TWILIO_OPTIN_PROMPT =
@@ -6859,8 +6861,23 @@ wss.on("connection", (twilioWs, req) => {
 
             const slotSpec = spec.slotSpec || {};
             const promptIntent = slotSpec.promptIntent || "Collect " + spec.nextTargetSlotId.replace(/_/g, ' ');
-            const requirement = slotSpec.requirement || spec.validation?.requirement || "a valid answer";
+            let requirement = slotSpec.requirement || spec.validation?.requirement || "a valid answer";
             const repromptHelp = slotSpec.repromptHelp || spec.helpIfStuck || "";
+            
+            // On first ask (no reprompt), strip format examples from requirement
+            const isFirstAsk = !compactCtx?.reprompt?.active;
+            if (isFirstAsk) {
+              // Remove format examples like "MM/DD/YYYY", "03/15/1985", "(MM/DD/YYYY, MM/DD/YY, or spoken date)" etc
+              requirement = requirement
+                .replace(/\(MM\/DD\/YYYY[^)]*\)/gi, "")  // (MM/DD/YYYY, ...)
+                .replace(/\b\d{2}\/\d{2}\/\d{4}\b/g, "")  // 03/15/1985
+                .replace(/\b\d{2}\/\d{2}\/\d{2}\b/g, "")   // 03/15/85
+                .replace(/MM\/DD\/YYYY/gi, "")            // MM/DD/YYYY
+                .replace(/MM\/DD\/YY/gi, "")              // MM/DD/YY
+                .replace(/\(.*?(format|example|like).*?\)/gi, "")  // Any (format...) or (example...)
+                .replace(/\s+/g, " ")                     // Clean up double spaces
+                .trim();
+            }
 
             // Build compact context block
             let contextBlock = "SCENARIO CONTEXT:\n";

@@ -36,7 +36,7 @@ const SLOTSPEC_TEMPLATES = {
   },
   appointment_date: {
     promptIntent: "Collect the appointment date",
-    requirement: "a valid date (today's date or later)",
+    requirement: "a valid date",
     repromptHelp: "Please provide the date you'd like to schedule (e.g., next Monday, March 15).",
     validatorHint: { type: "date" },
     type: "date",
@@ -45,7 +45,7 @@ const SLOTSPEC_TEMPLATES = {
   },
   appointment_time: {
     promptIntent: "Collect the preferred appointment time",
-    requirement: "a valid time (morning, afternoon, or specific time: HH:MM AM/PM)",
+    requirement: "a valid time",
     repromptHelp: "Please provide a time (morning, afternoon, or a specific time).",
     validatorHint: { type: "time" },
     type: "time",

@@ -120,20 +120,23 @@ module.exports = {
     },
     appointment_preference: {
       promptIntent: "Ask what day and time works best for them",
-      requirement: "a preferred date and/or time",
+      requirement: "a specific date (or day name) AND a specific time of day",
       validatorHint: {
-        type: "keywords_any",
-        keywords: ["monday", "tuesday", "wednesday", "thursday", "friday", "morning", "afternoon", "evening", "am", "pm", "today", "tomorrow", "week", "month"]
+        type: "all_of",
+        rules: [
+          { type: "keywords_any", keywords: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "today", "tomorrow", "next week", "this week", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"], minMatches: 1 },
+          { type: "keywords_any", keywords: ["morning", "afternoon", "evening", "night", "am", "pm", "12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"], minMatches: 1 }
+        ]
       },
-      repromptHelp: "What day and time would work best for you?",
+      repromptHelp: "I need both a day AND a time. For example: Tuesday morning, or next Wednesday at 2pm.",
       examplesGood: [
         "Tuesday morning",
         "Next week in the afternoon",
         "Any time next Thursday"
       ],
       followups: [
-        { when: "vague", ask: "Can you be more specific? Like a particular day or time of day?" },
-        { when: "missing", ask: "When works best for you - morning, afternoon, or evening?" }
+        { when: "vague", ask: "Can you give me both a day AND a time? Like 'Tuesday morning' or 'next week in the afternoon'?" },
+        { when: "missing", ask: "When works best - what day and what time of day?" }
       ],
       gating: false,
       priority: 40
@@ -202,9 +205,9 @@ module.exports = {
       baseQuestion: "Let's access your account. What is your date of birth?",
       waitForResponse: true,
       validation: {
-        requirement: "a complete date of birth in any common format (MM/DD/YYYY, MM/DD/YY, or spoken date)"
+        requirement: "a complete date of birth"
       },
-      helpIfStuck: "Accept any format: MM/DD/YYYY, MM/DD/YY, spoken date, etc."
+      helpIfStuck: "Accept any common format."
     },
     patient_name: {
       baseQuestion: "Great, let's verify your information. What is your full name?",
@@ -234,9 +237,9 @@ module.exports = {
       baseQuestion: "What day and time would work best for you?",
       waitForResponse: true,
       validation: {
-        requirement: "a preferred day and time for their appointment"
+        requirement: "a specific date (or day name) AND a specific time of day"
       },
-      helpIfStuck: "If they are unsure, offer two available options."
+      helpIfStuck: "I need both a day AND a time. For example: Tuesday morning, or next week in the afternoon."
     },
     confirmation_preference: {
       baseQuestion: "We can send you a reminder for that appointment. Is text or a phone call better?",
