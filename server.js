@@ -93,6 +93,16 @@ app.post(
 // Put this AFTER the Stripe webhook route so Twilio form posts still work
 app.use(express.urlencoded({ extended: false }));
 
+// Flexible mode guardrail constants
+const FLEX_MAX_CHARS = 260;
+const FLEX_MAX_SENTENCES = 3;
+
+// Anti-drift blocklist (very conservative, last resort only)
+const UNSAFE_PHRASES = [
+  /\b(suicid|self.harm|medication|dose|prescri|therapy|psychiatr|counsel|emergency)\b/i,
+  /\b(call.*(911|emergency|ambulance))\b/i,
+  /\b(medical.?(advice|decision|treatment))\b/i
+];
 
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 
@@ -192,6 +202,10 @@ const OPENAI_REALTIME_MODEL =
   process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-mini";
 
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "marin";
+
+const ROLEPLAY_ENGINE = (process.env.ROLEPLAY_ENGINE || "realtime").toLowerCase();
+const isGatherMode = ROLEPLAY_ENGINE === "gather";
+const isRealtimeMode = ROLEPLAY_ENGINE === "realtime" || !isGatherMode;
 
 const CALLREADY_VERSION =
   "realtime-vadfix-opener-3-ready-ringring-turnlock-2-optin-twilio-single-twiml-end-1-ai-end-skip-transition-1-gibberish-guard-1-end-transition-fix-1-mode-reset-1-endphrase-1-cancel-ignore-1-callers-table-sms-state-1-end-transition-for-opted-in-1-openaisend-fix-1-tier-enforcement-1-cycle-bucket-1-fixed-opener-1";
@@ -3266,7 +3280,7 @@ app.post("/stream-roleplay", async (req, res) => {
     const callSid = req.body?.CallSid || "";
     const scenarioTag = req.query?.scenario || "";
     
-    console.log(nowIso(), "/stream-roleplay", { callSid, scenarioTag });
+    console.log(nowIso(), "/stream-roleplay", { callSid, scenarioTag, engine: ROLEPLAY_ENGINE });
 
     // Store scenario in session state for WebSocket to pick up
     if (callSid && scenarioTag) {
@@ -3277,6 +3291,27 @@ app.post("/stream-roleplay", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
+    // Log engine choice for this call
+    console.log(nowIso(), "[ROLEPLAY_ENGINE]", { 
+      callSid, 
+      engine: ROLEPLAY_ENGINE,
+      scenario: scenarioTag
+    });
+
+    // Route to appropriate engine
+    if (isGatherMode) {
+      // GATHER-BASED ENGINE (TwiML only, no websockets)
+      vr.say({ voice: TWILIO_VOICE }, 
+        "Great. You'll hear the other person answer after the ring. You can make up any details you'd rather not share.");
+      
+      // Redirect to gather-based roleplay endpoint
+      vr.redirect({ method: "POST" }, `/gather-roleplay?scenario=${encodeURIComponent(scenarioTag)}`);
+      
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // REALTIME WEBSOCKET ENGINE (default)
     if (!PUBLIC_WSS_URL) {
       console.log(nowIso(), "/stream-roleplay ERROR: PUBLIC_WSS_URL is missing");
       vr.say("Server is missing WSS URL.");
@@ -3361,6 +3396,922 @@ app.post("/stream-choose-scenario", async (req, res) => {
     res.status(500).send("Error");
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GATHER MODE UTILITY FUNCTIONS
+// These are simplified versions of the WebSocket handler functions
+// optimized for stateless HTTP request/response cycles
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Helper: Get next turn spec for gather mode (simplified from WebSocket version)
+function getNextTurnSpecGather(callState, scenario) {
+  if (!scenario || !callState || !callState.checklist) {
+    return null;
+  }
+
+  const normalizedScenario = callState.scenarioNormalized || scenario;
+
+  if (!normalizedScenario.slots || !Array.isArray(normalizedScenario.slots) || normalizedScenario.slots.length === 0) {
+    return null;
+  }
+
+  if (!scenario.questions || typeof scenario.questions !== "object") {
+    return null;
+  }
+
+  const useFlexible = normalizedScenario.slotSpecs && Object.keys(normalizedScenario.slotSpecs).length > 0;
+  
+  let nextTargetSlotId = null;
+  
+  if (useFlexible) {
+    // Find first incomplete gating slot, then first incomplete allowed slot
+    const remainingSlots = normalizedScenario.slots.filter(slotId => {
+      const item = callState.checklist[slotId];
+      return item && item.required && !item.done;
+    });
+
+    if (remainingSlots.length === 0) return null;
+
+    const slotSpecs = normalizedScenario.slotSpecs || {};
+    
+    // First, check for gating slots
+    const gatingSlots = remainingSlots.filter(slotId => {
+      const spec = slotSpecs[slotId];
+      return spec && spec.gating === true;
+    });
+
+    if (gatingSlots.length > 0) {
+      nextTargetSlotId = gatingSlots[0];
+    } else {
+      // No gating slots remaining - choose by priority
+      const sortedRemaining = remainingSlots.slice().sort((a, b) => {
+        const specA = slotSpecs[a] || {};
+        const specB = slotSpecs[b] || {};
+        const priorityA = specA.priority !== undefined ? specA.priority : 100;
+        const priorityB = specB.priority !== undefined ? specB.priority : 100;
+        
+        if (priorityA !== priorityB) {
+          return priorityA - priorityB;
+        }
+        
+        const indexA = normalizedScenario.slots.indexOf(a);
+        const indexB = normalizedScenario.slots.indexOf(b);
+        return indexA - indexB;
+      });
+      
+      nextTargetSlotId = sortedRemaining[0];
+    }
+  } else {
+    // Legacy mode: first incomplete required slot
+    for (const slotId of normalizedScenario.slots) {
+      const item = callState.checklist[slotId];
+      if (item && item.required && !item.done) {
+        nextTargetSlotId = slotId;
+        break;
+      }
+    }
+  }
+
+  if (!nextTargetSlotId) return null;
+
+  const questionConfig = scenario.questions ? scenario.questions[nextTargetSlotId] : null;
+  if (!questionConfig || !questionConfig.baseQuestion) return null;
+
+  const slotSpec = normalizedScenario.slotSpecs ? normalizedScenario.slotSpecs[nextTargetSlotId] : null;
+
+  return {
+    scenarioTag: normalizedScenario.tag,
+    answererRole: normalizedScenario.answererRole || "",
+    displayName: normalizedScenario.displayName || "",
+    practiceLabel: normalizedScenario.practiceLabel || "",
+    goalStatement: normalizedScenario.goalStatement || normalizedScenario.goal || "",
+    nextTargetSlotId: nextTargetSlotId,
+    baseQuestion: questionConfig.baseQuestion || "",
+    transitionPhrase: questionConfig.transitionPhrase || "",
+    helpIfStuck: questionConfig.helpIfStuck || "",
+    allowParaphrase: true,
+    validation: questionConfig.validation || null,
+    waitForResponse: questionConfig.waitForResponse,
+    loopUntilDone: questionConfig.loopUntilDone || false,
+    slotSpec: slotSpec
+  };
+}
+
+// Helper: Check if utterance is a loop done signal
+function isLoopDoneSignalGather(utterance, loopDoneHint) {
+  if (!utterance || typeof utterance !== 'string') return false;
+  
+  const u = utterance.toLowerCase().trim();
+  
+  if (loopDoneHint && loopDoneHint.type === 'keywords_any' && Array.isArray(loopDoneHint.keywords)) {
+    const minMatches = loopDoneHint.minMatches || 1;
+    let matches = 0;
+    for (const keyword of loopDoneHint.keywords) {
+      if (u.includes(keyword.toLowerCase())) {
+        matches++;
+        if (matches >= minMatches) return true;
+      }
+    }
+    return false;
+  }
+  
+  // Default regex for questions slots
+  const defaultDoneRe = /\b(no|nope|nah|none|nothing|nothing else|no questions?|no other questions|no further questions|no more|no thanks|no thank you|thanks but no|i don't|i dont|i'm good|im good|i'm all set|im all set|all good|all set|that's all|thats all|that's it|thats it|that's everything|thats everything|that covers it|i think that's all|i think thats all|we're good|were good|we're set|were set|we're all set|were all set)\b/i;
+  return defaultDoneRe.test(u);
+}
+
+// Helper: Clean slot value
+function cleanSlotValueGather(value, slotId) {
+  if (typeof value !== 'string') return value;
+  
+  let cleaned = value.trim().replace(/\s+/g, ' ');
+  
+  if (slotId && (slotId.includes('phone') || slotId.includes('number'))) {
+    const digitsOnly = cleaned.replace(/\D/g, '');
+    if (digitsOnly && digitsOnly !== cleaned) {
+      return { raw: cleaned, digits: digitsOnly };
+    }
+  }
+  
+  return cleaned;
+}
+
+// Helper: Complete a slot (idempotent)
+function completeSlotGather(callState, slotId, value, source) {
+  if (!callState || !slotId || !source) return;
+  
+  const scenario = callState.scenarioConfig;
+  if (!scenario || !scenario.slots || !scenario.slots.includes(slotId)) {
+    console.warn(nowIso(), "[SLOT_UNKNOWN]", {
+      slot: slotId,
+      tag: callState.scenarioTag || 'unknown',
+      source: source
+    });
+    return;
+  }
+  
+  if (callState.checklist && callState.checklist[slotId] && callState.checklist[slotId].done) {
+    console.log(nowIso(), "[SLOT_COMPLETE_NOOP]", {
+      slot: slotId,
+      source: source,
+      existingValue: String(callState.checklist[slotId].value || '').substring(0, 50)
+    });
+    return;
+  }
+  
+  const normalizedValue = value ? cleanSlotValueGather(String(value), slotId) : '';
+  
+  if (!callState.checklist[slotId]) {
+    callState.checklist[slotId] = { done: false, required: true };
+  }
+  callState.checklist[slotId].done = true;
+  callState.checklist[slotId].value = normalizedValue;
+  
+  if (callState.validationFailedFor === slotId) {
+    callState.validationFailedFor = null;
+    callState.validationFailedUnrelated = false;
+  }
+  
+  if (callState.repromptLevels && callState.repromptLevels[slotId] !== undefined) {
+    callState.repromptLevels[slotId] = 0;
+  }
+  
+  if (callState.loopActiveQuestion) {
+    callState.loopActiveQuestion = null;
+  }
+  
+  console.log(nowIso(), "[SLOT_COMPLETE]", {
+    slot: slotId,
+    source: source,
+    value: String(normalizedValue).substring(0, 50)
+  });
+}
+
+// Helper: Mark slot validation failure
+function failSlotGather(callState, slotId, reason, isUnrelated) {
+  if (!callState || !slotId || !reason) return;
+  
+  const scenario = callState.scenarioConfig;
+  if (!scenario || !scenario.slots || !scenario.slots.includes(slotId)) {
+    console.warn(nowIso(), "[SLOT_UNKNOWN]", {
+      slot: slotId,
+      tag: callState.scenarioTag || 'unknown',
+      reason: reason
+    });
+    return;
+  }
+  
+  callState.validationFailedFor = slotId;
+  callState.validationFailedUnrelated = !!isUnrelated;
+  callState.validationFailedAt = Date.now();
+  
+  if (!callState.validationFailCounts) callState.validationFailCounts = {};
+  callState.validationFailCounts[slotId] = (callState.validationFailCounts[slotId] || 0) + 1;
+  
+  if (!callState.repromptLevels) callState.repromptLevels = {};
+  const currentLevel = callState.repromptLevels[slotId] || 0;
+  callState.repromptLevels[slotId] = Math.min(currentLevel + 1, 4);
+  
+  if (callState.metrics) {
+    callState.metrics.validationFails++;
+    callState.metrics.reprompts++;
+  }
+  
+  console.log(nowIso(), "[SLOT_FAIL]", {
+    slot: slotId,
+    reason: reason,
+    unrelated: isUnrelated ? true : false,
+    repromptLevel: callState.repromptLevels[slotId] || 0
+  });
+}
+
+// Helper: Sanitize flexible response text
+function sanitizeFlexGather(text) {
+  if (!text) return { sanitized: text, reason: null };
+  
+  let result = text;
+  let reason = null;
+  
+  result = result.trim().replace(/\s+/g, ' ');
+  
+  const FLEX_MAX_SENTENCES_LOCAL = 3;
+  const FLEX_MAX_CHARS_LOCAL = 260;
+  
+  const sentences = result.match(/[^.!?]*[.!?]+/g) || [];
+  if (sentences.length > FLEX_MAX_SENTENCES_LOCAL) {
+    const kept = sentences.slice(0, FLEX_MAX_SENTENCES_LOCAL).join('').trim();
+    result = kept;
+    reason = 'sentences';
+  }
+  
+  if (result.length > FLEX_MAX_CHARS_LOCAL) {
+    reason = reason || 'chars';
+    const truncated = result.substring(0, FLEX_MAX_CHARS_LOCAL);
+    const lastPeriod = Math.max(
+      truncated.lastIndexOf('.'),
+      truncated.lastIndexOf('!'),
+      truncated.lastIndexOf('?')
+    );
+    if (lastPeriod > 200) {
+      result = truncated.substring(0, lastPeriod + 1);
+    } else {
+      result = truncated + '.';
+    }
+  }
+  
+  return { sanitized: result, reason };
+}
+
+// Helper: AI-assisted slot extraction (simplified for gather mode)
+async function extractSlotFromUtteranceGather({
+  scenarioNormalized,
+  currentTargetSlotId,
+  utterance,
+  answererRole,
+  goalStatement,
+  collectedSoFar
+}) {
+  // Simplified extraction for gather mode
+  const slotSpec = scenarioNormalized.slotSpecs ? scenarioNormalized.slotSpecs[currentTargetSlotId] : null;
+  const promptIntent = slotSpec ? slotSpec.promptIntent : currentTargetSlotId.replace(/_/g, ' ');
+  const requirement = slotSpec ? slotSpec.requirement : "a valid answer";
+
+  const systemPrompt = `You are analyzing a caller's response to extract information.
+
+CONTEXT:
+- Slot to collect: ${currentTargetSlotId}
+- What we're asking for: ${promptIntent}
+- Requirement: ${requirement}
+- Already collected: ${collectedSoFar}
+
+CALLER SAID: "${utterance}"
+
+Return JSON:
+{
+  "valid": true/false,
+  "value": "extracted value or null",
+  "callerQuestionDetected": true/false,
+  "reason": "brief explanation"
+}
+
+Rules:
+- valid=true only if utterance contains the required information
+- valid=false if caller asked a question instead of answering
+- Extract just the answer portion, not the full utterance`;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: utterance }
+        ],
+        temperature: 0.2,
+        max_tokens: 150
+      })
+    });
+
+    if (!response.ok) {
+      return { valid: false, value: null, callerQuestionDetected: false, reason: "API error" };
+    }
+
+    const data = await response.json();
+    const content = data.choices[0]?.message?.content?.trim() || "{}";
+    const result = JSON.parse(content);
+
+    return {
+      valid: !!result.valid,
+      value: result.value || null,
+      callerQuestionDetected: !!result.callerQuestionDetected,
+      reason: result.reason || "unknown"
+    };
+  } catch (err) {
+    console.error(nowIso(), "[GATHER_EXTRACT_ERROR]", err.message);
+    return { valid: false, value: null, callerQuestionDetected: false, reason: err.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GATHER-BASED ROLEPLAY ENGINE (TwiML only, no websockets)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Gather roleplay main loop - generates AI response and collects user input
+app.post("/gather-roleplay", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const scenarioTag = req.query?.scenario || twilioScenarioFlags.get(callSid) || "";
+    
+    console.log(nowIso(), "[GATHER_ROLEPLAY] Entry", { callSid, scenarioTag });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    // Load or initialize call state
+    let callState = twilioCallStates.get(callSid);
+    
+    if (!callState) {
+      // Initialize call state for gather mode
+      const scenario = resolveScenarioWithDynamic(null, scenarioTag);
+      if (!scenario) {
+        vr.say("Scenario not found.");
+        vr.hangup();
+        res.type("text/xml").send(vr.toString());
+        return;
+      }
+
+      callState = initializeCallState(callSid, scenarioTag, scenario);
+      callState.phase = "roleplay";
+      callState.roleplayGate = "active";
+      callState.engineMode = "gather";
+      twilioCallStates.set(callSid, callState);
+      
+      console.log(nowIso(), "[GATHER_ROLEPLAY] Initialized callState", {
+        callSid,
+        scenarioTag,
+        checklistKeys: Object.keys(callState.checklist || {})
+      });
+    }
+
+    // Ensure scenario is set
+    if (callState && scenarioTag && !callState.scenarioTag) {
+      callState.scenarioTag = scenarioTag;
+      const scenario = resolveScenarioWithDynamic(callState, scenarioTag);
+      if (scenario) {
+        callState.scenarioConfig = scenario;
+        callState.scenarioNormalized = { ...scenario, slotSpecs: scenario.slotSpecs || {} };
+      }
+    }
+
+    // Safety: check turn limit (roleplayTurnsCaller + roleplayTurnsAi < 60)
+    const totalTurns = (callState.metrics?.roleplayTurnsCaller || 0) + (callState.metrics?.roleplayTurnsAi || 0);
+    if (totalTurns >= 60) {
+      console.log(nowIso(), "[GATHER_ROLEPLAY] Turn limit exceeded, forcing closing", {
+        callSid,
+        totalTurns
+      });
+      callState.roleplayGate = "closing_pending";
+      callState.needsClosing = true;
+    }
+
+    // Get scenario config
+    const scenario = resolveScenarioWithDynamic(callState, callState.scenarioTag);
+    if (!scenario) {
+      vr.say("Configuration error.");
+      vr.hangup();
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Check if we should deliver closing message
+    if (callState.roleplayGate === "closing_pending" && scenario.closingMessage) {
+      console.log(nowIso(), "[GATHER_ROLEPLAY] Delivering closing message", {
+        callSid,
+        closingMessage: scenario.closingMessage.substring(0, 50)
+      });
+
+      // Generate closing message text (use AI to make it natural)
+      let closingText = scenario.closingMessage;
+      
+      // Simple paraphrase using AI
+      try {
+        const closingPrompt = `You are a ${scenario.answererRole || "staff member"}. Say this closing naturally: "${scenario.closingMessage}". Keep it brief (1-2 sentences). Do not ask questions.`;
+        
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${OPENAI_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: "You are a helpful assistant that generates natural speech." },
+              { role: "user", content: closingPrompt }
+            ],
+            temperature: 0.7,
+            max_tokens: 100
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          closingText = data.choices[0]?.message?.content?.trim() || closingText;
+        }
+      } catch (err) {
+        console.error(nowIso(), "[GATHER_ROLEPLAY] Error generating closing text", err.message);
+      }
+
+      // Mark closing as delivered
+      callState.roleplayGate = "closing_delivered";
+      if (callState.metrics) {
+        callState.metrics.closingGateDeliveredCount++;
+      }
+
+      // Say closing and transition to coaching
+      vr.say({ voice: TWILIO_VOICE }, closingText);
+      
+      // Log roleplay summary
+      console.log(nowIso(), "[ROLEPLAY_SUMMARY]", {
+        callSid,
+        callerTurns: callState.metrics?.roleplayTurnsCaller || 0,
+        aiTurns: callState.metrics?.roleplayTurnsAi || 0,
+        slotsCompleted: Object.keys(callState.checklist || {}).filter(k => callState.checklist[k].done).length,
+        slotsTotal: Object.keys(callState.checklist || {}).filter(k => callState.checklist[k].required).length
+      });
+
+      // Redirect to coaching gather endpoint (assume it exists or fall back to hangup)
+      vr.say({ voice: TWILIO_VOICE }, "Now let's review how that went.");
+      vr.hangup(); // TODO: redirect to /gather-coaching when implemented
+      
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Determine current target slot
+    const spec = getNextTurnSpecGather(callState, scenario);
+    
+    if (!spec || !spec.nextTargetSlotId) {
+      // No more slots - trigger closing
+      console.log(nowIso(), "[GATHER_ROLEPLAY] No more slots, triggering closing", { callSid });
+      callState.roleplayGate = "closing_pending";
+      callState.needsClosing = true;
+      
+      // Redirect back to ourselves to deliver closing
+      vr.redirect({ method: "POST" }, `/gather-roleplay?scenario=${encodeURIComponent(scenarioTag)}`);
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    console.log(nowIso(), "[GATHER_ROLEPLAY] Current target", {
+      callSid,
+      slot: spec.nextTargetSlotId,
+      gate: callState.roleplayGate,
+      repromptLevel: callState.repromptLevels ? callState.repromptLevels[spec.nextTargetSlotId] || 0 : 0
+    });
+
+    // Build AI instructions using existing buildPhaseInstructions logic
+    // We'll need to temporarily set up a minimal context
+    const tempInstructions = buildPhaseInstructionsForGather(callState, scenario, spec);
+
+    // Call OpenAI to get next AI spoken text (text mode, not audio)
+    let aiText = "";
+    try {
+      const messages = [
+        { role: "system", content: tempInstructions },
+        { role: "user", content: callState.lastUserUtterance || "Hello" }
+      ];
+
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OPENAI_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: messages,
+          temperature: 0.8,
+          max_tokens: 150
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      aiText = data.choices[0]?.message?.content?.trim() || "";
+      
+      console.log(nowIso(), "[GATHER_ROLEPLAY] AI response", {
+        callSid,
+        aiText: aiText.substring(0, 100),
+        slot: spec.nextTargetSlotId
+      });
+    } catch (err) {
+      console.error(nowIso(), "[GATHER_ROLEPLAY] OpenAI error", err.message);
+      aiText = spec.baseQuestion || "Can you repeat that?";
+    }
+
+    // Sanitize text if in flex mode
+    const useFlexible = shouldUseFlexibleAsking(callState);
+    if (useFlexible && aiText) {
+      const sanitized = sanitizeFlexGather(aiText);
+      aiText = sanitized.sanitized || aiText;
+      if (sanitized.reason) {
+        console.log(nowIso(), "[GATHER_SANITIZE]", {
+          slot: spec.nextTargetSlotId,
+          reason: sanitized.reason,
+          original: aiText.substring(0, 50)
+        });
+      }
+    }
+
+    // Increment AI turn count
+    if (callState.metrics) {
+      callState.metrics.roleplayTurnsAi++;
+    }
+
+    // Store AI text in transcript
+    pushCapped(callState.roleplayTranscript, {
+      speaker: "ai",
+      text: aiText,
+      timestamp: Date.now()
+    }, 30);
+
+    // Build TwiML response
+    vr.say({ voice: TWILIO_VOICE }, aiText);
+    
+    const gather = vr.gather({
+      input: "speech dtmf",
+      speechTimeout: "auto",
+      timeout: 5,
+      action: `/gather-roleplay-input?scenario=${encodeURIComponent(scenarioTag)}`,
+      method: "POST"
+    });
+
+    // Optional minimal prompt (keep it very short)
+    // gather.say({ voice: TWILIO_VOICE }, "Go ahead.");
+
+    // If no input, redirect back to reprompt
+    vr.redirect({ method: "POST" }, `/gather-roleplay-input?scenario=${encodeURIComponent(scenarioTag)}`);
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error(nowIso(), "[GATHER_ROLEPLAY] ERROR", err);
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+    vr.say("An error occurred.");
+    vr.hangup();
+    res.type("text/xml").send(vr.toString());
+  }
+});
+
+// Gather roleplay input handler - processes user speech and redirects back to main loop
+app.post("/gather-roleplay-input", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || "";
+    const scenarioTag = req.query?.scenario || twilioScenarioFlags.get(callSid) || "";
+    const speechResult = req.body?.SpeechResult || "";
+    const digits = req.body?.Digits || "";
+    
+    console.log(nowIso(), "[GATHER_ROLEPLAY_INPUT]", {
+      callSid,
+      scenarioTag,
+      speechResult: speechResult.substring(0, 80),
+      digits
+    });
+
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    // Load call state
+    const callState = twilioCallStates.get(callSid);
+    if (!callState) {
+      vr.say("Session expired.");
+      vr.hangup();
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Get utterance (prefer speech, fallback to digits)
+    const utterance = speechResult || digits || "";
+    
+    if (!utterance || utterance.trim().length === 0) {
+      // No input received - redirect back to gather loop
+      console.log(nowIso(), "[GATHER_ROLEPLAY_INPUT] No input, redirecting");
+      vr.redirect({ method: "POST" }, `/gather-roleplay?scenario=${encodeURIComponent(scenarioTag)}`);
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    // Store utterance
+    callState.lastUserUtterance = utterance;
+    
+    // Increment caller turn count
+    if (callState.metrics) {
+      callState.metrics.roleplayTurnsCaller++;
+    }
+
+    // Add to transcript
+    pushCapped(callState.roleplayTranscript, {
+      speaker: "caller",
+      text: utterance,
+      timestamp: Date.now()
+    }, 30);
+
+    // Get scenario and spec
+    const scenario = resolveScenarioWithDynamic(callState, scenarioTag);
+    if (!scenario) {
+      vr.say("Configuration error.");
+      vr.hangup();
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+
+    const spec = getNextTurnSpecGather(callState, scenario);
+    
+    if (spec && spec.nextTargetSlotId) {
+      const fieldId = spec.nextTargetSlotId;
+      const fieldConfig = scenario.questions ? scenario.questions[fieldId] : null;
+      const validationMode = scenario.validation ? scenario.validation.mode : null;
+
+      // Run transcription-completed logic (same as realtime engine)
+      
+      // Check for loopUntilDone slots
+      if (fieldConfig && fieldConfig.loopUntilDone) {
+        const slotSpec = callState.scenarioNormalized && callState.scenarioNormalized.slotSpecs
+          ? callState.scenarioNormalized.slotSpecs[fieldId]
+          : null;
+        const loopDoneHint = slotSpec && slotSpec.loopDoneHint ? slotSpec.loopDoneHint : null;
+        
+        // Check if caller is signaling they're done
+        if (isLoopDoneSignalGather(utterance, loopDoneHint)) {
+          completeSlotGather(callState, fieldId, utterance, "loop_done");
+          callState.loopActiveQuestion = null;
+          
+          console.log(nowIso(), "[LOOP_DONE]", {
+            slot: fieldId,
+            utterance: utterance.substring(0, 50)
+          });
+        } else {
+          // Active question - store it
+          callState.loopActiveQuestion = utterance;
+          console.log(nowIso(), "[LOOP_Q]", {
+            slot: fieldId,
+            question: utterance.substring(0, 80)
+          });
+        }
+      } else if (validationMode !== "trust_ai") {
+        // Auto-complete for non-loop slots if flexible mode with AI extraction
+        const useFlexible = callState.scenarioNormalized && 
+                           callState.scenarioNormalized.slotSpecs && 
+                           Object.keys(callState.scenarioNormalized.slotSpecs).length > 0;
+        
+        if (useFlexible && utterance.length > 0) {
+          // Run AI extraction (synchronous for gather mode to keep flow simple)
+          try {
+            const doneSlotsIds = Object.keys(callState.checklist).filter(id => callState.checklist[id].done);
+            const collectedSummary = doneSlotsIds.length > 0 
+              ? doneSlotsIds.map(id => {
+                  const val = callState.checklist[id].value;
+                  return id + (val && String(val).length < 30 ? ": " + val : "");
+                }).join(", ")
+              : "none";
+            
+            const extracted = await extractSlotFromUtteranceGather({
+              scenarioNormalized: callState.scenarioNormalized,
+              currentTargetSlotId: fieldId,
+              utterance: utterance,
+              answererRole: scenario.answererRole || "staff member",
+              goalStatement: scenario.goalStatement || "Collect information",
+              collectedSoFar: collectedSummary
+            });
+
+            if (extracted && extracted.valid && extracted.value) {
+              // Auto-complete the slot
+              completeSlotGather(callState, fieldId, extracted.value || utterance, "auto_ai");
+              if (callState.metrics) callState.metrics.slotCompletionsAutoAi++;
+              
+              console.log(nowIso(), "[GATHER_AUTO_COMPLETE]", {
+                slot: fieldId,
+                value: String(extracted.value).substring(0, 50),
+                utterance: utterance.substring(0, 50)
+              });
+            } else if (extracted && !extracted.valid) {
+              // Validation failed
+              failSlotGather(callState, fieldId, "auto_extraction_failed", extracted.callerQuestionDetected || false);
+              
+              console.log(nowIso(), "[GATHER_VALIDATION_FAIL]", {
+                slot: fieldId,
+                reason: extracted.reason || "unknown",
+                callerQuestion: extracted.callerQuestionDetected
+              });
+            }
+          } catch (err) {
+            console.error(nowIso(), "[GATHER_EXTRACTION_ERROR]", err.message);
+            // Continue without auto-complete
+          }
+        } else {
+          // Legacy auto-complete (simple)
+          if (!callState.checklist[fieldId].done) {
+            completeSlotGather(callState, fieldId, utterance, "legacy_auto");
+            console.log(nowIso(), "[GATHER_LEGACY_COMPLETE]", {
+              slot: fieldId,
+              utterance: utterance.substring(0, 50)
+            });
+          }
+        }
+      }
+
+      // Check if all slots are now complete
+      const doneCount = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
+      const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
+      
+      if (doneCount === totalRequired && !callState.needsClosing) {
+        callState.needsClosing = true;
+        callState.roleplayGate = "closing_pending";
+        console.log(nowIso(), "[GATHER_ALL_COMPLETE] Triggering closing", { callSid });
+      }
+    }
+
+    // Redirect back to main gather loop to speak next AI turn
+    vr.redirect({ method: "POST" }, `/gather-roleplay?scenario=${encodeURIComponent(scenarioTag)}`);
+    
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error(nowIso(), "[GATHER_ROLEPLAY_INPUT] ERROR", err);
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+    vr.say("An error occurred.");
+    vr.hangup();
+    res.type("text/xml").send(vr.toString());
+  }
+});
+
+// Helper: Build instructions for gather mode (simplified version of buildPhaseInstructions)
+function buildPhaseInstructionsForGather(callState, scenario, spec) {
+  const header = 
+    "You are CallReady. You are a " + (scenario.answererRole || "staff member") + ".\n" +
+    "CURRENT_PHASE: roleplay\n" +
+    "ROLE: " + (scenario.answererRole || "staff member") + "\n\n";
+
+  // Check if flexible mode
+  const useFlexible = shouldUseFlexibleAsking(callState);
+
+  if (useFlexible && spec) {
+    const slotSpec = spec.slotSpec || {};
+    const promptIntent = slotSpec.promptIntent || "Collect " + spec.nextTargetSlotId.replace(/_/g, ' ');
+    const requirement = slotSpec.requirement || spec.validation?.requirement || "a valid answer";
+    
+    // Build compact context
+    let contextBlock = "";
+    const doneSlotsIds = Object.keys(callState.checklist).filter(id => callState.checklist[id].done);
+    if (doneSlotsIds.length > 0) {
+      contextBlock += "Collected: " + doneSlotsIds.join(", ") + "\n";
+    }
+
+    let instructions = header +
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+      "🎯  NATURAL CONVERSATION MODE\n" +
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
+      "GOAL: " + (scenario.goalStatement || "Collect required information") + "\n\n" +
+      contextBlock +
+      "CURRENT TARGET: " + spec.nextTargetSlotId + "\n" +
+      "PROMPT INTENT: " + promptIntent + "\n" +
+      "REQUIREMENT: " + requirement + "\n\n" +
+      "RULES:\n" +
+      "1. Speak naturally as a real " + (scenario.answererRole || "staff person") + ".\n" +
+      "2. Ask exactly ONE question to collect: " + spec.nextTargetSlotId + "\n" +
+      "3. If caller asks a question, answer briefly in 1-2 sentences.\n" +
+      "4. Keep your response under 40 words.\n" +
+      "5. Do NOT invent new requirements.\n" +
+      "6. Do NOT decide when call is complete.\n\n";
+
+    // Handle loopUntilDone slots
+    if (slotSpec.loopUntilDone) {
+      const loopPromptIntent = slotSpec.loopPromptIntent || "Ask if they have any other questions.";
+      
+      if (callState.loopActiveQuestion) {
+        instructions +=
+          "━━━ ACTIVE QUESTION ━━━\n" +
+          "The caller asked: \"" + callState.loopActiveQuestion + "\"\n" +
+          "Answer their question briefly and naturally.\n" +
+          "Then ask: " + loopPromptIntent + "\n\n";
+      } else {
+        instructions +=
+          "━━━ LOOP PROMPT ━━━\n" +
+          "Ask: " + loopPromptIntent + "\n" +
+          "Listen for a done signal or another question.\n\n";
+      }
+    }
+
+    return instructions;
+  } else {
+    // Legacy mode - simple question asking
+    return header +
+      "Ask this question naturally:\n" +
+      (spec.baseQuestion || "Can you tell me more?") + "\n\n" +
+      "Keep your response brief and conversational.";
+  }
+}
+
+// Helper: Resolve scenario (including dynamic scenarios)
+function resolveScenarioWithDynamic(callState, scenarioTag) {
+  if (!scenarioTag) return null;
+  
+  // Check if it's a dynamic scenario
+  if (scenarioTag.startsWith("dynamic_")) {
+    const dynamicScenario = getDynamicScenario(scenarioTag);
+    if (dynamicScenario) return dynamicScenario;
+  }
+  
+  // Check registry
+  return scenariosRegistry[scenarioTag] || null;
+}
+
+// Helper: Check if flexible asking mode should be used
+function shouldUseFlexibleAsking(callState) {
+  return callState && 
+         callState.scenarioNormalized && 
+         callState.scenarioNormalized.slotSpecs && 
+         Object.keys(callState.scenarioNormalized.slotSpecs).length > 0;
+}
+
+// Helper: Capped array push
+function pushCapped(arr, item, maxLength) {
+  arr.push(item);
+  if (arr.length > maxLength) {
+    arr.shift();
+  }
+}
+
+// Helper: Initialize call state for gather mode
+function initializeCallState(callSid, scenarioTag, scenario) {
+  const checklist = {};
+  
+  // Build checklist from scenario slots
+  if (scenario.slots && Array.isArray(scenario.slots)) {
+    for (const slotId of scenario.slots) {
+      checklist[slotId] = {
+        required: true,
+        done: false,
+        value: null
+      };
+    }
+  }
+
+  return {
+    callSid: callSid,
+    scenarioTag: scenarioTag,
+    scenarioConfig: scenario,
+    scenarioNormalized: { ...scenario, slotSpecs: scenario.slotSpecs || {} },
+    phase: "roleplay",
+    roleplayGate: "active",
+    checklist: checklist,
+    repromptLevels: {},
+    validationFailCounts: {},
+    roleplayTranscript: [],
+    lastUserUtterance: "",
+    loopActiveQuestion: null,
+    needsClosing: false,
+    closingInstructions: false,
+    metrics: {
+      roleplayTurnsCaller: 0,
+      roleplayTurnsAi: 0,
+      slotCompletionsTool: 0,
+      slotCompletionsAutoAi: 0,
+      validationFails: 0,
+      reprompts: 0,
+      closingGateDeliveredCount: 0
+    }
+  };
+}
 
 app.post("/debug/sim-start", async (req, res) => {
   try {
@@ -4010,6 +4961,23 @@ const twilioReturningCallerContexts = new Map();
 // Tracks how many times user has been silent in the "do you have a call" question
 const twilioChooseScenarioRetries = new Map();
 
+// In-memory store for roleplay simulator (callSid => callState)
+// Allows lightweight text-based roleplay testing without Twilio or WebSocket
+const simulatorCallStates = new Map();
+const SIMULATOR_MAX_CALLS = 50; // Prune oldest if exceeded
+const ENABLE_ROLEPLAY_SIM = Boolean(process.env.ENABLE_ROLEPLAY_SIM === "true");
+
+// Logging engine choice at startup
+if (isGatherMode) {
+  console.log(nowIso(), "[ROLEPLAY_ENGINE] Using gather-based TwiML engine (no websockets)");
+} else {
+  console.log(nowIso(), "[ROLEPLAY_ENGINE] Using realtime websocket engine (default)");
+}
+
+// Global roleplay mode control
+const ROLEPLAY_MODE_FORCE = process.env.ROLEPLAY_MODE_FORCE; // "flex" | "legacy" | unset
+let runtimeRoleplayModeForce = null; // Runtime toggle set by /dev/roleplay/mode endpoint
+
 // Track active WebSocket connections and calls for graceful shutdown
 global.activeWebSockets = new Map(); // callSid => ws
 global.activeCalls = new Set(); // Set of active callSids
@@ -4591,7 +5559,15 @@ wss.on("connection", (twilioWs, req) => {
     connectingTimeoutFired: false, // flag to fire connecting timeout only once
     checklist: null,             // { id: { required: bool, done: bool, value: string|null }, ... }
     roleplayTranscript: [],      // Array of {speaker: "caller"|"ai", text: string, timestamp: number}
-    questionsAndClosingSawQuestion: false
+    questionsAndClosingSawQuestion: false,
+    validationFailedFor: null,   // slot ID that failed validation (for retry logic)
+    validationFailedUnrelated: false, // true if caller asked unrelated question
+    validationFailedAt: null,     // timestamp of validation failure
+    validationFailCounts: {},     // retry count per slot { slotId: count }
+    lastTurnResult: null,        // most recent report_turn_result
+    turnResults: [],             // history of turn results (capped to 20)
+    lastExtractionUtteranceHash: null, // deduplication: hash of last utterance that triggered extraction
+    roleplayGate: "collecting"   // collecting | closing_pending | closing_delivered (flexible mode gate)
   };
 
   LAST_CALL_STATE = callState;
@@ -4675,6 +5651,23 @@ wss.on("connection", (twilioWs, req) => {
     if (next === "roleplay" && prev !== "roleplay") {
       callState.roleplayTranscript = [];
       callState.questionsAndClosingSawQuestion = false;
+      callState.repromptLevels = {}; // Initialize reprompt level tracking
+      
+      // Initialize metrics for this roleplay session
+      callState.metrics = {
+        roleplayTurnsAi: 0,
+        roleplayTurnsCaller: 0,
+        slotCompletionsTool: 0,
+        slotCompletionsAutoAi: 0,
+        validationFails: 0,
+        reprompts: 0,
+        turnResultMissing: 0,
+        nextSlotRejects: 0,
+        multiQuestionWarns: 0,
+        flexSanitizes: 0,
+        closingGatePendingCount: 0,
+        closingGateDeliveredCount: 0
+      };
     }
 
     // State hygiene: reset coaching flag when leaving coaching phase
@@ -4745,9 +5738,104 @@ wss.on("connection", (twilioWs, req) => {
     }
   }
 
-  function validateCallerResponse(utterance, fieldConfig, fieldId) {
+  async function extractSlotFromUtterance({
+    scenarioNormalized,
+    currentTargetSlotId,
+    utterance,
+    answererRole,
+    goalStatement,
+    collectedSoFar
+  }) {
+    // AI-assisted extraction for flexible mode
+    // Returns: { value: string|null, confidence: "low"|"medium"|"high", callerQuestionDetected: boolean, callerQuestionSummary?: string }
+    
+    if (!OPENAI_API_KEY) {
+      console.log(nowIso(), "[EXTRACTION] Missing OPENAI_API_KEY");
+      return { value: null, confidence: "low", callerQuestionDetected: false };
+    }
+
+    if (!scenarioNormalized || !scenarioNormalized.slotSpecs || !scenarioNormalized.slotSpecs[currentTargetSlotId]) {
+      console.log(nowIso(), "[EXTRACTION] Missing slotSpec for", currentTargetSlotId);
+      return { value: null, confidence: "low", callerQuestionDetected: false };
+    }
+
+    const slotSpec = scenarioNormalized.slotSpecs[currentTargetSlotId];
+    const requirement = slotSpec.requirement || "a valid response";
+    const validatorHint = slotSpec.validatorHint ? JSON.stringify(slotSpec.validatorHint) : "none";
+
+    try {
+      const systemPrompt = 
+        `You are helping extract structured data from phone call transcriptions.\n` +
+        `Role: ${answererRole || "staff member"}\n` +
+        `Goal: ${goalStatement || "Collect information"}\n\n` +
+        `Current slot to extract: ${currentTargetSlotId}\n` +
+        `Requirement: ${requirement}\n` +
+        `Validation rules: ${validatorHint}\n\n` +
+        `Already collected: ${collectedSoFar}\n\n` +
+        `Extract the ${currentTargetSlotId} value from the caller's utterance.\n` +
+        `If the caller asked a question instead of answering, set callerQuestionDetected=true.\n` +
+        `Rate your confidence: low (unclear/missing), medium (partial/implicit), high (clear/complete).\n\n` +
+        `RESPOND WITH VALID JSON ONLY using this exact structure:\n` +
+        `{"value":"extracted value or null","confidence":"low|medium|high","callerQuestionDetected":true|false,"callerQuestionSummary":"brief summary if question detected"}`;
+
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Caller said: "${utterance}"` }
+          ],
+          temperature: 0.3,
+          max_tokens: 150,
+          response_format: { type: "json_object" }
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        console.log(nowIso(), "[EXTRACTION] API error:", errData);
+        return { value: null, confidence: "low", callerQuestionDetected: false };
+      }
+
+      const data = await response.json();
+      const content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+      
+      if (!content) {
+        console.log(nowIso(), "[EXTRACTION] No content in response");
+        return { value: null, confidence: "low", callerQuestionDetected: false };
+      }
+
+      const parsed = JSON.parse(content);
+      const result = {
+        value: parsed.value || null,
+        confidence: parsed.confidence || "low",
+        callerQuestionDetected: parsed.callerQuestionDetected || false,
+        callerQuestionSummary: parsed.callerQuestionSummary || null
+      };
+
+      console.log(nowIso(), "[EXTRACTION]", {
+        slot: currentTargetSlotId,
+        value: result.value ? String(result.value).substring(0, 50) : null,
+        confidence: result.confidence,
+        question: result.callerQuestionDetected
+      });
+
+      return result;
+    } catch (e) {
+      console.log(nowIso(), "[EXTRACTION] Error:", e && e.message ? e.message : e);
+      return { value: null, confidence: "low", callerQuestionDetected: false };
+    }
+  }
+
+  function validateCallerResponse(utterance, fieldConfig, fieldId, slotSpec) {
     // Validate a caller's response against the field's validation requirement
     // Returns true if the response is valid, false otherwise
+    // Priority: slotSpec.validatorHint (if present) > fieldConfig.validation.rule (legacy)
 
     if (!utterance || utterance.trim().length === 0) {
       return false;
@@ -4755,8 +5843,8 @@ wss.on("connection", (twilioWs, req) => {
 
     const u = utterance.toLowerCase().trim();
 
-    // Don't mark complete if caller is deflecting or doesn't know
-    const deflectRe = /\b(i don't know|not sure|unsure|unclear|can't say|not certain|idk|dunno)\b/i;
+    // Improved deflection detection
+    const deflectRe = /\b(i don't know|not sure|unsure|unclear|can't say|not certain|idk|dunno|whatever|doesn't matter|anytime|not sure yet|i guess)\b/i;
     if (deflectRe.test(u)) {
       return false;
     }
@@ -4792,6 +5880,17 @@ wss.on("connection", (twilioWs, req) => {
       return words.length >= min;
     }
 
+    function isLikelyQuestion(text) {
+      const t = String(text || "").trim();
+      if (t.endsWith('?')) return true;
+      const questionRe = /^\s*(do you|can you|could you|would you|will you|what|when|where|why|how|is it|are you|should i|may i)/i;
+      return questionRe.test(t);
+    }
+
+    function countWords(text) {
+      return String(text || "").trim().split(/\s+/).filter(w => w.length > 0).length;
+    }
+
     function evaluateRule(rule) {
       if (!rule || typeof rule !== "object") return null;
 
@@ -4801,6 +5900,32 @@ wss.on("connection", (twilioWs, req) => {
 
       if (Array.isArray(rule.allOf)) {
         return rule.allOf.every(r => evaluateRule(r) === true);
+      }
+
+      if (rule.type === "all_of" && Array.isArray(rule.rules)) {
+        return rule.rules.every(r => evaluateRule(r) === true);
+      }
+
+      if (rule.type === "min_words") {
+        const minWords = typeof rule.minWords === "number" ? rule.minWords : 1;
+        return countWords(u) >= minWords;
+      }
+
+      if (rule.type === "keywords_any") {
+        const keywords = Array.isArray(rule.keywords) ? rule.keywords : [];
+        const minMatches = typeof rule.minMatches === "number" ? rule.minMatches : 1;
+        if (keywords.length === 0) return false;
+        let matches = 0;
+        for (const kw of keywords) {
+          if (u.indexOf(String(kw).toLowerCase()) >= 0) {
+            matches++;
+          }
+        }
+        return matches >= minMatches;
+      }
+
+      if (rule.type === "not_a_question") {
+        return !isLikelyQuestion(utterance);
       }
 
       if (Array.isArray(rule.keywords)) {
@@ -4902,14 +6027,63 @@ wss.on("connection", (twilioWs, req) => {
       return null;
     }
 
-    const validation = fieldConfig && fieldConfig.validation ? fieldConfig.validation : null;
-    const ruleResult = evaluateRule(validation);
+    // Priority 1: Use slotSpec.validatorHint if available
+    let activeRule = null;
+    let ruleSource = null;
+    if (slotSpec && slotSpec.validatorHint) {
+      activeRule = slotSpec.validatorHint;
+      ruleSource = "slotSpec.validatorHint";
+    } else if (fieldConfig && fieldConfig.validation && fieldConfig.validation.rule) {
+      activeRule = fieldConfig.validation.rule;
+      ruleSource = "fieldConfig.validation.rule";
+    } else if (fieldConfig && fieldConfig.validation) {
+      // Legacy: validation object is the rule itself
+      activeRule = fieldConfig.validation;
+      ruleSource = "fieldConfig.validation";
+    }
+
+    const ruleResult = evaluateRule(activeRule);
     if (typeof ruleResult === "boolean") {
+      // Check for extremely short utterances (unless it's a yes_no or enum type)
+      const words = countWords(u);
+      if (!ruleResult && words <= 2 && activeRule) {
+        const ruleType = activeRule.type;
+        if (ruleType !== "yes_no" && ruleType !== "enum") {
+          console.log(nowIso(), "[VALIDATION_FAIL]", {
+            slot: fieldId,
+            ruleType: ruleType || "unknown",
+            ruleSource,
+            tag: callState.scenarioTag || "unknown",
+            reason: "utterance_too_short",
+            words
+          });
+          return false;
+        }
+      }
+
+      if (!ruleResult) {
+        console.log(nowIso(), "[VALIDATION_FAIL]", {
+          slot: fieldId,
+          ruleType: activeRule.type || "unknown",
+          ruleSource,
+          tag: callState.scenarioTag || "unknown"
+        });
+      }
       return ruleResult;
     }
 
     // Generic fallback: caller said something substantive (at least 2 characters)
-    return u.length >= 2;
+    const fallbackValid = u.length >= 2;
+    if (!fallbackValid) {
+      console.log(nowIso(), "[VALIDATION_FAIL]", {
+        slot: fieldId,
+        ruleType: "fallback",
+        ruleSource: "none",
+        tag: callState.scenarioTag || "unknown",
+        reason: "too_short"
+      });
+    }
+    return fallbackValid;
   }
 
   function getNextRequiredChecklistId() {
@@ -5125,6 +6299,453 @@ wss.on("connection", (twilioWs, req) => {
     return styles[sum % styles.length];
   }
 
+  /**
+   * Feature flag: Determine if flexible asking should be used
+   * Uses computeRoleplayMode with precedence:
+   * runtime override > env var > scenario config > slotSpecs presence
+   */
+  function shouldUseFlexibleAsking(callState) {
+    if (!callState || !callState.scenarioNormalized) {
+      return false;
+    }
+
+    const { mode } = computeRoleplayMode(callState.scenarioNormalized);
+    return mode === 'flex';
+  }
+
+  /**
+   * Helper: Push item to array and cap at max size
+   */
+  function pushCapped(arr, item, cap) {
+    if (!arr) return;
+    arr.push(item);
+    while (arr.length > cap) {
+      arr.shift();
+    }
+  }
+
+  /**
+   * Sanitize AI-generated text in flexible mode
+   * - Trim whitespace and collapse repeated spaces
+   * - Truncate if > FLEX_MAX_CHARS at sentence boundary
+   * - Keep only first FLEX_MAX_SENTENCES sentences
+   * Returns {sanitized, reason} where reason is null or "chars"|"sentences"
+   */
+  function sanitizeFlex(text) {
+    if (!text) return { sanitized: text, reason: null };
+    
+    let result = text;
+    let reason = null;
+    
+    // Trim and collapse spaces
+    result = result.trim().replace(/\s+/g, ' ');
+    
+    // Enforce sentence count
+    const sentences = result.match(/[^.!?]*[.!?]+/g) || [];
+    if (sentences.length > FLEX_MAX_SENTENCES) {
+      const kept = sentences.slice(0, FLEX_MAX_SENTENCES).join('').trim();
+      result = kept;
+      reason = 'sentences';
+    }
+    
+    // Enforce character limit (at sentence boundary if possible)
+    if (result.length > FLEX_MAX_CHARS) {
+      reason = reason || 'chars';
+      const truncated = result.substring(0, FLEX_MAX_CHARS);
+      // Find last sentence boundary before limit
+      const lastPeriod = Math.max(
+        truncated.lastIndexOf('.'),
+        truncated.lastIndexOf('!'),
+        truncated.lastIndexOf('?')
+      );
+      if (lastPeriod > 200) { // Only use boundary if we have reasonable content before it
+        result = truncated.substring(0, lastPeriod + 1);
+      } else {
+        result = truncated + '.'; // Hard cut with period
+      }
+    }
+    
+    return { sanitized: result, reason };
+  }
+
+  /**
+   * Check for unsafe content in flexible mode (last resort)
+   * Returns true if unsafe phrase detected
+   */
+  function containsUnsafeContent(text) {
+    if (!text) return false;
+    for (const pattern of UNSAFE_PHRASES) {
+      if (pattern.test(text)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Helper: Check if caller utterance is a "done" signal for loopUntilDone slots
+   * Uses loopDoneHint from slotSpec if available, otherwise falls back to default regex
+   */
+  function isLoopDoneSignal(utterance, loopDoneHint) {
+    if (!utterance || typeof utterance !== 'string') return false;
+    
+    const u = utterance.toLowerCase().trim();
+    
+    // If explicit loopDoneHint provided, use it
+    if (loopDoneHint && loopDoneHint.type === 'keywords_any' && Array.isArray(loopDoneHint.keywords)) {
+      const minMatches = loopDoneHint.minMatches || 1;
+      let matches = 0;
+      for (const keyword of loopDoneHint.keywords) {
+        if (u.includes(keyword.toLowerCase())) {
+          matches++;
+          if (matches >= minMatches) return true;
+        }
+      }
+      return false;
+    }
+    
+    // Fallback: hardcoded default for questions-style slots
+    const defaultDoneRe = /\b(no|nope|nah|none|nothing|nothing else|no questions?|no other questions|no further questions|no more|no thanks|no thank you|thanks but no|i don't|i dont|i'm good|im good|i'm all set|im all set|all good|all set|that's all|thats all|that's it|thats it|that's everything|thats everything|that covers it|i think that's all|i think thats all|we're good|were good|we're set|were set|we're all set|were all set)\b/i;
+    return defaultDoneRe.test(u);
+  }
+
+  /**
+   * Helper: Clean slot value for storage
+   * - Trim whitespace
+   * - Collapse multiple internal spaces to single space
+   * - Optionally store phone as { raw, digits }
+   */
+  function cleanSlotValue(value, slotId) {
+    if (typeof value !== 'string') return value;
+    
+    // Trim and collapse spaces
+    let cleaned = value.trim().replace(/\s+/g, ' ');
+    
+    // For phone numbers, also store digits-only
+    if (slotId && (slotId.includes('phone') || slotId.includes('number'))) {
+      const digitsOnly = cleaned.replace(/\D/g, '');
+      if (digitsOnly && digitsOnly !== cleaned) {
+        return { raw: cleaned, digits: digitsOnly };
+      }
+    }
+    
+    return cleaned;
+  }
+
+  /**
+   * Centralized slot completion helper - idempotent
+   * Called from all completion paths to ensure consistency
+   */
+  function completeSlot(callState, slotId, value, source) {
+    if (!callState || !slotId || !source) return;
+    
+    // Safety check: slotId exists in scenario
+    const scenario = callState.scenarioConfig;
+    if (!scenario || !scenario.slots || !scenario.slots.includes(slotId)) {
+      console.warn(nowIso(), "[SLOT_UNKNOWN]", {
+        slot: slotId,
+        tag: callState.scenarioTag || 'unknown',
+        source: source
+      });
+      return;
+    }
+    
+    // Idempotent check - if already done, no-op with log
+    if (callState.checklist && callState.checklist[slotId] && callState.checklist[slotId].done) {
+      console.log(nowIso(), "[SLOT_COMPLETE_NOOP]", {
+        slot: slotId,
+        source: source,
+        existingValue: String(callState.checklist[slotId].value || '').substring(0, 50)
+      });
+      return;
+    }
+    
+    // Normalize and clean value
+    const normalizedValue = value ? cleanSlotValue(String(value), slotId) : '';
+    
+    // Mark complete
+    if (!callState.checklist[slotId]) {
+      callState.checklist[slotId] = { done: false, required: true };
+    }
+    callState.checklist[slotId].done = true;
+    callState.checklist[slotId].value = normalizedValue;
+    
+    // Clear validation failure flags if set for this slot
+    if (callState.validationFailedFor === slotId) {
+      callState.validationFailedFor = null;
+      callState.validationFailedUnrelated = false;
+    }
+    
+    // Reset reprompt level for this slot
+    if (callState.repromptLevels && callState.repromptLevels[slotId] !== undefined) {
+      callState.repromptLevels[slotId] = 0;
+    }
+    
+    // Clear loop question if this is the target slot
+    if (callState.loopActiveQuestion) {
+      const spec = getNextTurnSpec(callState, scenario);
+      if (spec && spec.nextTargetSlotId === slotId) {
+        callState.loopActiveQuestion = null;
+      }
+    }
+    
+    console.log(nowIso(), "[SLOT_COMPLETE]", {
+      slot: slotId,
+      source: source,
+      value: String(normalizedValue).substring(0, 50)
+    });
+  }
+
+  /**
+   * Centralized slot validation failure helper
+   * Called from all validation failure paths
+   */
+  function failSlot(callState, slotId, reason, isUnrelated) {
+    if (!callState || !slotId || !reason) return;
+    
+    // Safety check: slotId exists in scenario
+    const scenario = callState.scenarioConfig;
+    if (!scenario || !scenario.slots || !scenario.slots.includes(slotId)) {
+      console.warn(nowIso(), "[SLOT_UNKNOWN]", {
+        slot: slotId,
+        tag: callState.scenarioTag || 'unknown',
+        reason: reason
+      });
+      return;
+    }
+    
+    // Set validation failure flags
+    callState.validationFailedFor = slotId;
+    callState.validationFailedUnrelated = !!isUnrelated;
+    callState.validationFailedAt = Date.now();
+    
+    // Track failure count
+    if (!callState.validationFailCounts) callState.validationFailCounts = {};
+    callState.validationFailCounts[slotId] = (callState.validationFailCounts[slotId] || 0) + 1;
+    
+    // Increment reprompt level (capped at 4)
+    if (!callState.repromptLevels) callState.repromptLevels = {};
+    const currentLevel = callState.repromptLevels[slotId] || 0;
+    callState.repromptLevels[slotId] = Math.min(currentLevel + 1, 4);
+    
+    // Increment metrics if available
+    if (callState.metrics) {
+      callState.metrics.validationFails++;
+      callState.metrics.reprompts++;
+    }
+    
+    console.log(nowIso(), "[SLOT_FAIL]", {
+      slot: slotId,
+      reason: reason,
+      unrelated: isUnrelated ? true : false,
+      failureCount: callState.validationFailCounts[slotId],
+      repromptLevel: callState.repromptLevels[slotId]
+    });
+  }
+
+  /**
+   * Build compact roleplay context for ai instructions in flexible mode
+   * Returns minimal context object to guide AI without noise
+   */
+  function buildCompactRoleplayContext(callState, scenarioNormalized) {
+    if (!callState || !scenarioNormalized) return null;
+    
+    const context = {
+      role: scenarioNormalized.answererRole || 'staff member',
+      goal: scenarioNormalized.goalStatement || 'Gather required information'
+    };
+    
+    // Current target slot
+    if (callState.checklist) {
+      const remaining = Object.keys(callState.checklist).filter(
+        id => callState.checklist[id].required && !callState.checklist[id].done
+      );
+      if (remaining.length > 0) {
+        context.currentTarget = remaining[0];
+      }
+    }
+    
+    // Collected slots: max 6, prioritize gating slots and recent completions
+    const collected = [];
+    if (callState.checklist) {
+      const slotSpecs = scenarioNormalized.slotSpecs || {};
+      const doneSlots = Object.keys(callState.checklist)
+        .filter(id => callState.checklist[id].done && callState.checklist[id].value)
+        .map(id => ({
+          id,
+          value: callState.checklist[id].value,
+          isGating: slotSpecs[id]?.gating === true,
+          priority: slotSpecs[id]?.priority ?? 100,
+          // Estimate insertion order from callState.turnResults if available
+          completedIndex: Array.isArray(callState.turnResults) ? callState.turnResults.findIndex(t => t.targetSlotId === id) : -1
+        }));
+      
+      // Sort: gating first, then by completion recency, then by priority
+      doneSlots.sort((a, b) => {
+        if (a.isGating !== b.isGating) return a.isGating ? -1 : 1;
+        if (a.completedIndex !== b.completedIndex) {
+          const aIdx = a.completedIndex >= 0 ? a.completedIndex : Infinity;
+          const bIdx = b.completedIndex >= 0 ? b.completedIndex : Infinity;
+          return bIdx - aIdx; // Reverse: most recent first
+        }
+        return a.priority - b.priority;
+      });
+      
+      // Cap to 6 items
+      for (const slot of doneSlots.slice(0, 6)) {
+        const val = slot.value;
+        const display = typeof val === 'string' ? val.substring(0, 40) : String(val).substring(0, 40);
+        collected.push(`${slot.id}=${display}`);
+      }
+    }
+    context.collected = collected;
+    
+    // Remaining slots: cap to 8, in allowed order
+    const remaining = [];
+    if (callState.checklist) {
+      const remainingSlots = Object.keys(callState.checklist).filter(
+        id => callState.checklist[id].required && !callState.checklist[id].done
+      );
+      // Use getNextSlotSpecs order if available
+      const scenario = scenarioNormalized.slotSpecs ? scenarioNormalized : null;
+      if (scenario && scenarioNormalized.slotSpecs) {
+        const slotSpecs = scenarioNormalized.slotSpecs;
+        remainingSlots.sort((a, b) => {
+          const aPriority = slotSpecs[a]?.priority ?? 100;
+          const bPriority = slotSpecs[b]?.priority ?? 100;
+          return aPriority - bPriority;
+        });
+      }
+      context.remaining = remainingSlots.slice(0, 8);
+    }
+    
+    // Last 4 transcript entries (max 2 AI, 2 caller)
+    if (callState.roleplayTranscript && Array.isArray(callState.roleplayTranscript)) {
+      const recent = callState.roleplayTranscript.slice(-4);
+      context.lastTurns = recent.map(entry => {
+        const speaker = entry.speaker === 'caller' ? 'Caller' : 'AI';
+        return `${speaker}: ${entry.text}`;
+      });
+    } else {
+      context.lastTurns = [];
+    }
+    
+    // Reprompt active?
+    if (callState.lastTurnResult?.shouldReprompt || callState.validationFailedFor === context.currentTarget) {
+      context.reprompt = {
+        active: true,
+        reason: callState.lastTurnResult?.repromptReason || 'Response did not meet requirement'
+      };
+    }
+    
+    // Caller question detected?
+    if (callState.lastTurnResult?.callerQuestionDetected) {
+      context.callerQuestion = {
+        active: true,
+        summary: callState.lastTurnResult?.callerQuestionSummary || 'caller asked a question'
+      };
+    }
+    
+    return context;
+  }
+
+  /**
+   * Get reprompt guidance based on the reprompt level
+   * Returns {style, guidanceText, suggestedQuestionForm}
+   */
+  function getRepromptGuidance(slotId, slotSpec, repromptLevel) {
+    if (!slotSpec) {
+      return {
+        style: 'simple',
+        guidanceText: 'I need a response for ' + slotId,
+        suggestedQuestionForm: 'Could you please provide ' + slotId.replace(/_/g, ' ') + '?'
+      };
+    }
+
+    // Cap level at 4
+    const level = Math.min(repromptLevel || 0, 4);
+
+    switch (level) {
+      case 0:
+        // Simple: use repromptHelp or requirement
+        return {
+          style: 'simple',
+          guidanceText: slotSpec.repromptHelp || slotSpec.requirement || 'a response',
+          suggestedQuestionForm: slotSpec.promptIntent || 'Collect ' + slotId.replace(/_/g, ' ')
+        };
+
+      case 1:
+        // Example: include 1-2 examples from slotSpec.examplesGood
+        let exampleText = '';
+        if (slotSpec.examplesGood && Array.isArray(slotSpec.examplesGood) && slotSpec.examplesGood.length > 0) {
+          const examplesShown = slotSpec.examplesGood.slice(0, 2);
+          exampleText = 'For example: ' + examplesShown.join(', or ');
+        } else if (slotSpec.validatorHint) {
+          // Generic example based on validatorHint type
+          const hint = slotSpec.validatorHint;
+          if (hint.type === 'one_of' && hint.options) {
+            exampleText = 'For example: ' + hint.options.slice(0, 2).join(' or ');
+          } else if (hint.type === 'phone_format') {
+            exampleText = 'For example: 555-123-4567';
+          } else if (hint.type === 'email_format') {
+            exampleText = 'For example: john@example.com';
+          } else {
+            exampleText = 'I need: ' + slotSpec.requirement;
+          }
+        } else {
+          exampleText = slotSpec.requirement;
+        }
+        return {
+          style: 'example',
+          guidanceText: exampleText,
+          suggestedQuestionForm: slotSpec.promptIntent || 'Can you tell me ' + slotId.replace(/_/g, ' ') + '?'
+        };
+
+      case 2:
+        // Forced choice or narrower prompt
+        if (slotSpec.validatorHint && slotSpec.validatorHint.type === 'one_of') {
+          // Yes/no or enum: offer choices
+          const options = slotSpec.validatorHint.options || ['yes', 'no'];
+          return {
+            style: 'forced_choice',
+            guidanceText: 'Which of these: ' + options.slice(0, 3).join(', '),
+            suggestedQuestionForm: 'Is it ' + options.slice(0, 2).join(' or ') + '?'
+          };
+        } else if (slotSpec.followups && Array.isArray(slotSpec.followups) && slotSpec.followups.length > 0) {
+          // Use first followup for narrower prompt
+          const followup = slotSpec.followups[0];
+          return {
+            style: 'forced_choice',
+            guidanceText: followup.ask || slotSpec.requirement,
+            suggestedQuestionForm: followup.ask || slotSpec.promptIntent
+          };
+        } else {
+          // Fallback: rephrase narrower
+          return {
+            style: 'forced_choice',
+            guidanceText: 'Just ' + slotSpec.requirement,
+            suggestedQuestionForm: slotSpec.promptIntent || 'Let me ask again: ' + slotId.replace(/_/g, ' ') + '?'
+          };
+        }
+
+      case 3:
+      case 4:
+        // Confirm style: reduce pressure
+        return {
+          style: 'confirm',
+          guidanceText: 'Reduce pressure, ask confirmation style',
+          suggestedQuestionForm: 'Just to confirm, do I have it right?'
+        };
+
+      default:
+        return {
+          style: 'simple',
+          guidanceText: slotSpec.requirement || 'a response',
+          suggestedQuestionForm: slotSpec.promptIntent || 'Please provide ' + slotId.replace(/_/g, ' ')
+        };
+    }
+  }
+
   function buildPhaseInstructions(why) {
     var phase = String(callState.phase || "").trim(); // Log: current phase used to build AI instructions
 
@@ -5152,6 +6773,14 @@ wss.on("connection", (twilioWs, req) => {
     }
 
     if (phase === "roleplay") {
+      // Compute final roleplay mode with precedence: runtime > env > scenario > slotSpecs
+      const modeInfo = computeRoleplayMode(callState.scenarioNormalized);
+      console.log(nowIso(), '[ROLEPLAY_MODE]', { 
+        tag: callState.scenarioTag || 'unknown',
+        mode: modeInfo.mode,
+        source: modeInfo.source
+      });
+      
       // Check for config-driven mode FIRST
       const scenario = callState.scenarioTag ? resolveScenarioWithDynamic(callState, callState.scenarioTag) : null;
       const hasConfigMode = scenario && scenario.questions && scenario.slots;
@@ -5177,56 +6806,193 @@ wss.on("connection", (twilioWs, req) => {
         });
 
         // Handle closing message if all items are done
-        if (callState.needsClosing && scenario.closingMessage) {
+        if (callState.roleplayGate === "closing_pending" && scenario.closingMessage) {
           console.log(nowIso(), "[CLOSING_PHASE] Generating closing instructions", {
-            closingMessage: scenario.closingMessage
+            closingMessage: scenario.closingMessage,
+            roleplayGate: callState.roleplayGate
           });
           
+          // Build closing key phrases guidance if provided
+          let keyPhrasesGuidance = "";
+          if (scenario.closingKeyPhrases && Array.isArray(scenario.closingKeyPhrases) && scenario.closingKeyPhrases.length > 0) {
+            keyPhrasesGuidance = "\nINCLUDE at least one of these key phrases: " + scenario.closingKeyPhrases.join(", ") + "\n";
+          }
+          
           instructions +=
-            "ALL REQUIRED INFORMATION COLLECTED!\n\n" +
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+            "🎉  ALL REQUIRED INFORMATION COLLECTED!\n" +
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
             "CLOSING PHASE:\n" +
-            "Deliver this closing message:\n" +
-            "\"" + scenario.closingMessage + "\"\n\n" +
-            "Do NOT wait for a response.\n" +
-            "Immediately call: mark_checklist_item_complete(field_id='__closing__', value='delivered')\n\n";
+            "Deliver a natural closing message based on:\n" +
+            "\"" + scenario.closingMessage + "\"\n" +
+            keyPhrasesGuidance +
+            "\nYou may paraphrase naturally, but keep the key idea.\n" +
+            "Do NOT ask any new questions.\n" +
+            "Do NOT wait for a response.\n\n" +
+            "Immediately call these two functions:\n" +
+            "1. mark_checklist_item_complete(field_id='__closing__', value='delivered')\n" +
+            "2. report_turn_result(target_slot_id='__closing__', caller_question_detected=false, should_reprompt=false, thinks_goal_met=true, wants_to_close_now=true)\n\n";
           
           callState.closingInstructions = true;
 
         } else if (spec && spec.nextTargetSlotId) {
-          // CONFIG-DRIVEN mode with specific question
-          console.log(nowIso(), "[CONFIG_DRIVEN_MODE] ACTIVATED for", { 
-            scenarioTag: callState.scenarioTag,
-            nextTarget: spec.nextTargetSlotId,
-            baseQuestion: spec.baseQuestion
-          });
+          // Check if flexible asking is enabled
+          const useFlexible = shouldUseFlexibleAsking(callState);
 
-          const remaining = Object.keys(callState.checklist).filter(
-            id => callState.checklist[id].required && !callState.checklist[id].done
-          );
-          
-          instructions +=
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-            "⚠️  YOU MUST SPEAK THE EXACT WORDS BELOW - NO PARAPHRASING\n" +
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
-            "SPEAK EXACTLY:\n\n" +
-            "    \"" + spec.baseQuestion + "\"\n\n" +
-            (spec.transitionPhrase
-              ? ("OPTIONAL TRANSITION (BEFORE THE QUESTION):\n" +
-                 "    \"" + spec.transitionPhrase + "\"\n\n" +
-                 "If you use the transition, say it verbatim, then immediately say the quoted question verbatim.\n" +
-                 "Do NOT add any other words.\n\n")
-              : "Do NOT add any words before or after the quoted question.\n\n") +
-            "Then STOP and WAIT for their response.\n\n" +
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-            "CONTEXT (for your understanding only):\n" +
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
-            "Role: " + (spec.answererRole || "staff member") + "\n" +
-            "Current field: " + spec.nextTargetSlotId + "\n\n";
-          
-          instructions +=
-            "AFTER THEY RESPOND:\n" +
-            "1. Call: mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<their response>')\n" +
-            "2. IMMEDIATELY STOP SPEAKING\n\n";
+          if (useFlexible) {
+            // FLEXIBLE ASKING MODE
+            // Mark that we're expecting a report_turn_result tool call from this response
+            callState.expectTurnResult = true;
+            
+            const compactCtx = buildCompactRoleplayContext(callState, callState.scenarioNormalized);
+            console.log(nowIso(), '[FLEX_CONTEXT]', {
+              slot: spec.nextTargetSlotId,
+              collectedCount: compactCtx?.collected?.length || 0,
+              remainingCount: compactCtx?.remaining?.length || 0,
+              lastTurns: compactCtx?.lastTurns?.length || 0
+            });
+
+            const slotSpec = spec.slotSpec || {};
+            const promptIntent = slotSpec.promptIntent || "Collect " + spec.nextTargetSlotId.replace(/_/g, ' ');
+            const requirement = slotSpec.requirement || spec.validation?.requirement || "a valid answer";
+            const repromptHelp = slotSpec.repromptHelp || spec.helpIfStuck || "";
+
+            // Build compact context block
+            let contextBlock = "SCENARIO CONTEXT:\n";
+            if (compactCtx) {
+              if (compactCtx.collected && compactCtx.collected.length > 0) {
+                contextBlock += "Collected: " + compactCtx.collected.join(", ") + "\n";
+              }
+              if (compactCtx.remaining && compactCtx.remaining.length > 0) {
+                contextBlock += "Still need: " + compactCtx.remaining.join(", ") + "\n";
+              }
+            }
+            contextBlock += "\n";
+
+            instructions +=
+              "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+              "🎯  FLEXIBLE ROLEPLAY MODE - NATURAL CONVERSATION\n" +
+              "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
+              "ROLE: " + (spec.answererRole || "staff member") + "\n" +
+              "GOAL: " + (spec.goalStatement || "Collect required information") + "\n\n" +
+              contextBlock +
+              "CURRENT TARGET: " + spec.nextTargetSlotId + "\n" +
+              "PROMPT INTENT: " + promptIntent + "\n" +
+              "REQUIREMENT: " + requirement + "\n\n" +
+              "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+              "HARD RULES:\n" +
+              "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
+              "1. Speak naturally as a real " + (spec.answererRole || "staff person") + ".\n" +
+              "2. Ask exactly ONE question that collects the current target slot.\n" +
+              "   If you answer a caller question, that does NOT count as your question.\n" +
+              "3. You may answer a brief caller question in 1-2 sentences, then immediately return to the current target.\n" +
+              "4. Do NOT invent new required information.\n" +
+              "5. Do NOT change slot order or decide when the call is complete.\n" +
+              "6. When you believe you got an acceptable answer for " + spec.nextTargetSlotId + ", call:\n" +
+              "   mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<extracted>')\n" +
+              "7. After speaking, call report_turn_result with your analysis (required).\n" +
+              "8. STOP and WAIT for the caller's response.\n\n"
+
+            // Special handling for loopUntilDone slots (like "questions")
+            if (slotSpec && slotSpec.loopUntilDone) {
+              const loopPromptIntent = slotSpec.loopPromptIntent || "Ask if they have any other questions.";
+              
+              if (callState.loopActiveQuestion) {
+                // AI is answering an active question from caller
+                const question = callState.loopActiveQuestion;
+                instructions +=
+                  "🔄 ACTIVE QUESTION FROM CALLER:\n" +
+                  "Question: \"" + question.substring(0, 100) + "...\"\n\n" +
+                  "1. Answer their question briefly in 1-2 sentences, staying in character.\n" +
+                  "2. Then ask the loop question:\n" +
+                  "   \"Do you have any other questions for me?\"\n" +
+                  "3. Call report_turn_result with:\n" +
+                  "   - target_slot_id='" + spec.nextTargetSlotId + "'\n" +
+                  "   - caller_question_detected=true\n" +
+                  "   - should_reprompt=false\n" +
+                  "4. STOP and WAIT for their response.\n\n";
+              } else {
+                // No active question - just ask the loop question
+                instructions +=
+                  "🔄 LOOP QUESTION:\n" +
+                  "Ask naturally: \"Do you have any other questions for me?\"\n" +
+                  "Be warm and inviting. Then STOP and WAIT for their response.\n\n" +
+                  "If they say 'no' (or similar), they'll naturally proceed.\n" +
+                  "If they ask a question, answer it and loop again.\n\n" +
+                  "Call report_turn_result with:\n" +
+                  "   - target_slot_id='" + spec.nextTargetSlotId + "'\n" +
+                  "   - caller_question_detected=false\n" +
+                  "   - should_reprompt=false\n\n";
+              }
+              
+              console.log(nowIso(), "[LOOP_SLOT]", {
+                slot: spec.nextTargetSlotId,
+                action: callState.loopActiveQuestion ? "answer" : "ask",
+                activeQuestion: callState.loopActiveQuestion ? callState.loopActiveQuestion.substring(0, 50) : null
+              });
+            } else if (compactCtx?.reprompt?.active) {
+              // Use reprompt ladder
+              const currentRepromptLevel = (callState.repromptLevels && callState.repromptLevels[spec.nextTargetSlotId]) || 0;
+              const ladderGuidance = getRepromptGuidance(spec.nextTargetSlotId, slotSpec, currentRepromptLevel);
+              
+              console.log(nowIso(), '[REPROMPT_LEVEL]', {
+                slot: spec.nextTargetSlotId,
+                level: currentRepromptLevel,
+                tag: callState.scenarioTag || 'unknown'
+              });
+              console.log(nowIso(), '[REPROMPT_STYLE]', {
+                slot: spec.nextTargetSlotId,
+                style: ladderGuidance.style
+              });
+
+              instructions +=
+                "⚠️  REPROMPT NEEDED (Level " + currentRepromptLevel + "):\n" +
+                "STYLE: " + ladderGuidance.style + "\n" +
+                "GUIDANCE: " + ladderGuidance.guidanceText + "\n" +
+                "Ask: " + ladderGuidance.suggestedQuestionForm + "\n\n";
+            } else if (compactCtx?.callerQuestion?.active) {
+              instructions +=
+                "⚠️  CALLER ASKED A QUESTION:\n" +
+                "Briefly answer " + compactCtx.callerQuestion.summary + " (1-2 sentences).\n" +
+                "Then immediately ask for " + spec.nextTargetSlotId + ".\n\n";
+            }
+
+          } else {
+            // EXACT BASEQUESTION MODE (legacy behavior)
+            console.log(nowIso(), "[CONFIG_DRIVEN_MODE] ACTIVATED for", { 
+              scenarioTag: callState.scenarioTag,
+              nextTarget: spec.nextTargetSlotId,
+              baseQuestion: spec.baseQuestion
+            });
+
+            const remaining = Object.keys(callState.checklist).filter(
+              id => callState.checklist[id].required && !callState.checklist[id].done
+            );
+            
+            instructions +=
+              "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+              "⚠️  YOU MUST SPEAK THE EXACT WORDS BELOW - NO PARAPHRASING\n" +
+              "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
+              "SPEAK EXACTLY:\n\n" +
+              "    \"" + spec.baseQuestion + "\"\n\n" +
+              (spec.transitionPhrase
+                ? ("OPTIONAL TRANSITION (BEFORE THE QUESTION):\n" +
+                   "    \"" + spec.transitionPhrase + "\"\n\n" +
+                   "If you use the transition, say it verbatim, then immediately say the quoted question verbatim.\n" +
+                   "Do NOT add any other words.\n\n")
+                : "Do NOT add any words before or after the quoted question.\n\n") +
+              "Then STOP and WAIT for their response.\n\n" +
+              "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+              "CONTEXT (for your understanding only):\n" +
+              "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
+              "Role: " + (spec.answererRole || "staff member") + "\n" +
+              "Current field: " + spec.nextTargetSlotId + "\n\n";
+            
+            instructions +=
+              "AFTER THEY RESPOND:\n" +
+              "1. Call: mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<their response>')\n" +
+              "2. IMMEDIATELY STOP SPEAKING\n\n";
+          }
 
           // Special handling for looping questions
           if (spec.loopUntilDone) {
@@ -5848,6 +7614,399 @@ wss.on("connection", (twilioWs, req) => {
   }
 
   /**
+   * Library of default slotSpec templates for common slot types
+   * Maps slot ID to standard slotSpec structure
+   */
+  const SLOTSPEC_TEMPLATES = {
+    patient_name: {
+      promptIntent: "Collect the patient's full name",
+      requirement: "patient's full name (at least 2 words)",
+      repromptHelp: "Please tell me your first and last name.",
+      validatorHint: { type: "min_words", minWords: 2 },
+      type: "name",
+      examplesGood: ["John Smith", "Maria Garcia", "David Johnson"],
+      followups: []
+    },
+    member_name: {
+      promptIntent: "Collect the member's full name",
+      requirement: "member's full name (at least 2 words)",
+      repromptHelp: "Please tell me your first and last name.",
+      validatorHint: { type: "min_words", minWords: 2 },
+      type: "name",
+      examplesGood: ["John Smith", "Maria Garcia", "David Johnson"],
+      followups: []
+    },
+    phone_number: {
+      promptIntent: "Collect a valid phone number",
+      requirement: "a valid phone number (10+ digits or international format)",
+      repromptHelp: "Please provide your phone number.",
+      validatorHint: { type: "phone" },
+      type: "phone",
+      examplesGood: ["503-555-0123", "5035550123", "+1 503 555 0123"],
+      followups: []
+    },
+    appointment_date: {
+      promptIntent: "Collect the appointment date",
+      requirement: "a valid date (today's date or later)",
+      repromptHelp: "Please provide the date you'd like to schedule (e.g., next Monday, March 15).",
+      validatorHint: { type: "date" },
+      type: "date",
+      examplesGood: ["Next Monday", "March 15, 2026", "Tomorrow at 2pm"],
+      followups: []
+    },
+    appointment_time: {
+      promptIntent: "Collect the preferred appointment time",
+      requirement: "a valid time (morning, afternoon, or specific time: HH:MM AM/PM)",
+      repromptHelp: "Please provide a time (morning, afternoon, or a specific time).",
+      validatorHint: { type: "time" },
+      type: "time",
+      examplesGood: ["9:00 AM", "Morning", "3:30 PM", "Afternoon"],
+      followups: []
+    },
+    time_preference: {
+      promptIntent: "Collect the caller's time preference",
+      requirement: "a time preference (morning, afternoon, evening, or specific time)",
+      repromptHelp: "What time works best for you?",
+      validatorHint: { type: "time" },
+      type: "time",
+      examplesGood: ["9:00 AM", "Morning", "Afternoon", "2:30 PM"],
+      followups: []
+    },
+    reason_for_visit: {
+      promptIntent: "Collect the reason for the appointment or visit",
+      requirement: "a clear reason (at least 4 words)",
+      repromptHelp: "Could you tell me more about why you're scheduling this visit?",
+      validatorHint: { type: "min_words", minWords: 4 },
+      type: "text",
+      examplesGood: ["Annual checkup", "My back has been hurting", "Regular physical exam"],
+      followups: []
+    },
+    insurance_provider: {
+      promptIntent: "Collect or confirm the insurance provider",
+      requirement: "insurance provider name or confirmation",
+      repromptHelp: "What insurance do you have?",
+      validatorHint: { type: "min_words", minWords: 1 },
+      type: "text",
+      examplesGood: ["Blue Cross", "Aetna", "United Healthcare", "I don't have insurance"],
+      followups: []
+    },
+    new_or_returning: {
+      promptIntent: "Determine if the caller is a new or returning patient/customer",
+      requirement: "response indicating new or returning status",
+      repromptHelp: "Are you a new customer or have you been here before?",
+      validatorHint: { type: "choice", options: ["new", "returning"] },
+      type: "choice",
+      examplesGood: ["I'm new", "Returning customer", "First time"],
+      followups: []
+    },
+    membership_number: {
+      promptIntent: "Collect the membership or account number",
+      requirement: "membership/account number or identifying information",
+      repromptHelp: "Can you provide your membership number or the phone number on your account?",
+      validatorHint: { type: "min_words", minWords: 1 },
+      type: "text",
+      examplesGood: ["Member #123456", "5035550123", "The phone number is 503-555-0123"],
+      followups: []
+    },
+    reason_for_cancellation: {
+      promptIntent: "Collect the reason for cancellation",
+      requirement: "reason or confirmation of cancellation",
+      repromptHelp: "Can you tell me why you'd like to cancel?",
+      validatorHint: { type: "min_words", minWords: 2 },
+      type: "text",
+      examplesGood: ["Too expensive", "Moving out of state", "Not using it anymore"],
+      followups: []
+    },
+    confirmation: {
+      promptIntent: "Get confirmation from the caller",
+      requirement: "explicit yes or confirmation response",
+      repromptHelp: "Is that correct?",
+      validatorHint: { type: "choice", options: ["yes", "no"] },
+      type: "choice",
+      examplesGood: ["Yes", "That's correct", "Confirm"],
+      followups: []
+    }
+  };
+
+  /**
+   * Get a slotSpec template or create a safe generic one
+   * @param {string} slotId - The slot identifier
+   * @returns {Object} SlotSpec with promptIntent, requirement, repromptHelp, validatorHint
+   */
+  function getSlotSpecTemplateOrGeneric(slotId) {
+    if (SLOTSPEC_TEMPLATES[slotId]) {
+      return { ...SLOTSPEC_TEMPLATES[slotId] };
+    }
+
+    // Safe default for unknown slots
+    return {
+      promptIntent: "Collect " + slotId.replace(/_/g, ' '),
+      requirement: "a helpful answer",
+      repromptHelp: "A short answer is fine.",
+      validatorHint: { type: "min_words", minWords: 2 },
+      type: "text",
+      examplesGood: [],
+      followups: []
+    };
+  }
+
+  /**
+   * Compute final roleplay mode with precedence:
+   * 1. Runtime override (runtimeRoleplayModeForce) - highest priority
+   * 2. Environment variable (ROLEPLAY_MODE_FORCE)
+   * 3. Scenario's explicit roleplayMode
+   * 4. Default based on slotSpecs presence - lowest priority
+   * 
+   * @param {Object} scenario - Raw scenario config
+   * @returns {{mode: string, source: string}} Final mode and source
+   */
+  function computeRoleplayMode(scenario) {
+    // Check runtime override (highest priority)
+    if (runtimeRoleplayModeForce) {
+      return {
+        mode: runtimeRoleplayModeForce,
+        source: 'runtime'
+      };
+    }
+
+    // Check environment variable
+    if (ROLEPLAY_MODE_FORCE && (ROLEPLAY_MODE_FORCE === 'flex' || ROLEPLAY_MODE_FORCE === 'legacy')) {
+      return {
+        mode: ROLEPLAY_MODE_FORCE,
+        source: 'env'
+      };
+    }
+
+    // Check scenario's explicit roleplayMode
+    if (scenario && scenario.roleplayMode) {
+      return {
+        mode: scenario.roleplayMode,
+        source: 'scenario'
+      };
+    }
+
+    // Default based on slotSpecs presence
+    const hasSlotSpecs = scenario && scenario.slotSpecs && typeof scenario.slotSpecs === 'object' && Object.keys(scenario.slotSpecs).length > 0;
+    if (hasSlotSpecs) {
+      return {
+        mode: 'flex',
+        source: 'slotSpecs_default'
+      };
+    }
+
+    // Final fallback: legacy
+    return {
+      mode: 'legacy',
+      source: 'legacy_fallback'
+    };
+  }
+
+  /**
+   * Normalize scenario config to new slotSpecs format while maintaining backward compatibility
+   * @param {Object} scenario - Raw scenario config from scenarios/*.js
+   * @returns {Object} Normalized scenario with slotSpecs
+   */
+  function normalizeScenarioConfig(scenario) {
+    if (!scenario) return null;
+
+    const hasSlotSpecs = scenario.slotSpecs && typeof scenario.slotSpecs === 'object';
+    console.log(nowIso(), '[SCENARIO_NORMALIZED]', { 
+      tag: scenario.tag || 'unknown', 
+      hasSlotSpecs,
+      explicitRoleplayMode: scenario.roleplayMode || 'not set'
+    });
+
+    // If already has slotSpecs, ensure gating and priority defaults
+    if (hasSlotSpecs) {
+      const normalizedSlotSpecs = {};
+      for (const slotId in scenario.slotSpecs) {
+        const spec = scenario.slotSpecs[slotId];
+        normalizedSlotSpecs[slotId] = {
+          ...spec,
+          gating: spec.gating !== undefined ? spec.gating : false,
+          priority: spec.priority !== undefined ? spec.priority : 100
+        };
+      }
+      
+      // Use computeRoleplayMode to determine final mode with precedence rules
+      const { mode: roleplayMode } = computeRoleplayMode(scenario);
+      
+      const normalized = {
+        ...scenario,
+        slotSpecs: normalizedSlotSpecs,
+        roleplayMode
+      };
+      
+      // Validate the normalized config and warn about issues
+      validateScenarioConfig(normalized);
+      return normalized;
+    }
+
+    // Build slotSpecs from old questions format
+    const slotSpecs = {};
+    let builtFromLegacy = false;
+    
+    if (scenario.slots && Array.isArray(scenario.slots) && scenario.questions) {
+      for (const slotId of scenario.slots) {
+        const questionConfig = scenario.questions[slotId];
+        if (!questionConfig) continue;
+
+        // Derive promptIntent from slotId
+        const promptIntent = 'Collect ' + slotId.replace(/_/g, ' ');
+
+        // Extract requirement
+        const requirement = (questionConfig.validation && questionConfig.validation.requirement)
+          ? questionConfig.validation.requirement
+          : 'a valid answer for ' + slotId;
+
+        // Build slot spec with defaults for gating and priority
+        slotSpecs[slotId] = {
+          promptIntent,
+          requirement,
+          gating: false,
+          priority: 100
+        };
+
+        // Add optional fields if present
+        if (questionConfig.helpIfStuck) {
+          slotSpecs[slotId].repromptHelp = questionConfig.helpIfStuck;
+        }
+
+        if (questionConfig.validation && questionConfig.validation.rule) {
+          slotSpecs[slotId].validatorHint = questionConfig.validation.rule;
+        }
+      }
+      
+      // Infer slotSpecs present for mode determination
+      scenario.slotSpecs = slotSpecs;
+      builtFromLegacy = Object.keys(slotSpecs).length > 0;
+    }
+
+    // Use computeRoleplayMode with full precedence rules
+    const { mode: roleplayMode } = computeRoleplayMode(scenario);
+
+    const normalized = {
+      ...scenario,
+      slotSpecs: builtFromLegacy ? slotSpecs : undefined,
+      roleplayMode
+    };
+    
+    // Validate the normalized config and warn about issues
+    validateScenarioConfig(normalized);
+    return normalized;
+  }
+
+  /**
+   * Validate scenario config and warn about migration issues
+   * Does NOT throw errors - all issues are logged as warnings
+   * Called automatically on scenario normalization for debugging
+   */
+  function validateScenarioConfig(scenario) {
+    if (!scenario || !scenario.tag) {
+      return;
+    }
+
+    const tag = scenario.tag;
+    const roleplayMode = scenario.roleplayMode || 'unknown';
+    const hasSlotSpecs = scenario.slotSpecs && typeof scenario.slotSpecs === 'object';
+    const hasQuestions = scenario.questions && typeof scenario.questions === 'object';
+    const hasSlots = scenario.slots && Array.isArray(scenario.slots);
+
+    // Warn if flex mode but no slotSpecs
+    if (roleplayMode === 'flex' && !hasSlotSpecs) {
+      console.warn(
+        nowIso(), 
+        '[MIGRATION_WARNING] Scenario "' + tag + '" is marked roleplayMode=flex but has no slotSpecs. ' +
+        'The scenario may not work correctly in flex mode. Consider adding explicit slotSpecs or changing roleplayMode to "legacy".'
+      );
+    }
+
+    // Warn if flex mode and has slotSpecs - validate slot structure
+    if (roleplayMode === 'flex' && hasSlotSpecs) {
+      const slotSpecs = scenario.slotSpecs;
+      for (const slotId in slotSpecs) {
+        const spec = slotSpecs[slotId];
+        
+        // Check for required fields
+        if (!spec.promptIntent) {
+          console.warn(
+            nowIso(),
+            '[MIGRATION_WARNING] Scenario "' + tag + '", slot "' + slotId + '": ' +
+            'Missing promptIntent. Flex mode requires promptIntent to guide AI.'
+          );
+        }
+        
+        if (!spec.requirement) {
+          console.warn(
+            nowIso(),
+            '[MIGRATION_WARNING] Scenario "' + tag + '", slot "' + slotId + '": ' +
+            'Missing requirement. This explains what valid input looks like.'
+          );
+        }
+
+        // Enhanced flex authoring checks
+        // Warn if validatorHint is missing for sensitive slot types
+        const sensitiveTypes = ['date', 'time', 'phone', 'birth'];
+        const slotType = spec.type || '';
+        const isSensitiveType = sensitiveTypes.some(t => slotType.includes(t));
+        
+        if (isSensitiveType && !spec.validatorHint) {
+          console.warn(
+            nowIso(),
+            '[FLEX_AUTHORING_WARNING] Scenario "' + tag + '", slot "' + slotId + '": ' +
+            'Type "' + slotType + '" is sensitive but missing validatorHint. ' +
+            'Recommend adding validatorHint to clarify expected format for AI extraction.'
+          );
+        }
+
+        // Check type validity for gating and priority
+        if (spec.gating !== undefined && typeof spec.gating !== 'boolean') {
+          console.warn(
+            nowIso(),
+            '[MIGRATION_WARNING] Scenario "' + tag + '", slot "' + slotId + '": ' +
+            'gating must be boolean (true/false), got ' + (typeof spec.gating) + '.'
+          );
+        }
+
+        if (spec.priority !== undefined && typeof spec.priority !== 'number') {
+          console.warn(
+            nowIso(),
+            '[MIGRATION_WARNING] Scenario "' + tag + '", slot "' + slotId + '": ' +
+            'priority must be number, got ' + (typeof spec.priority) + '.'
+          );
+        }
+      }
+    }
+
+    // Warn if legacy mode but has explicit slotSpecs (unusual but allowed)
+    if (roleplayMode === 'legacy' && hasSlotSpecs) {
+      console.warn(
+        nowIso(),
+        '[MIGRATION_WARNING] Scenario "' + tag + '" is marked roleplayMode=legacy but has slotSpecs. ' +
+        'This is unusual - flex mode is recommended when slotSpecs are defined.'
+      );
+    }
+
+    // Warn if legacy mode and missing questions (won't work at all)
+    if (roleplayMode === 'legacy' && !hasQuestions) {
+      console.warn(
+        nowIso(),
+        '[MIGRATION_WARNING] Scenario "' + tag + '" is marked roleplayMode=legacy but has no questions object. ' +
+        'Legacy mode requires a questions object with baseQuestion for each slot.'
+      );
+    }
+
+    // Suggest migration for scenarios with questions but no explicit roleplayMode
+    if (!scenario.roleplayMode && hasQuestions && hasSlots && !hasSlotSpecs) {
+      console.log(
+        nowIso(),
+        '[MIGRATION_SUGGESTION] Scenario "' + tag + '" has questions but no slotSpecs. ' +
+        'To migrate to flex mode, add roleplayMode: "flex" and define slotSpecs with promptIntent, requirement, and optional gating/priority fields.'
+      );
+    }
+  }
+
+  /**
    * Resolve scenario with dynamic scenario support
    * If tag starts with "dynamic_", fetch from dynamic store
    * Otherwise use normal registry lookup
@@ -5870,6 +8029,58 @@ wss.on("connection", (twilioWs, req) => {
     return resolveScenario(scenarioTag);
   }
 
+  /**
+   * Get remaining required slot IDs in scenario.slots order
+   * @param {Object} callState - Current call state
+   * @param {Object} scenarioNormalized - Normalized scenario config
+   * @returns {Array<string>} Array of slot IDs not yet done
+   */
+  function getRemainingSlotIds(callState, scenarioNormalized) {
+    if (!callState || !callState.checklist || !scenarioNormalized || !scenarioNormalized.slots) {
+      return [];
+    }
+
+    const remaining = [];
+    for (const slotId of scenarioNormalized.slots) {
+      const checklistItem = callState.checklist[slotId];
+      if (checklistItem && checklistItem.required && !checklistItem.done) {
+        remaining.push(slotId);
+      }
+    }
+    return remaining;
+  }
+
+  /**
+   * Get allowed next slot IDs based on gating rules
+   * If gating slots remain, only gating slots are allowed (in scenario order)
+   * Otherwise, all remaining slots are allowed
+   * @param {Object} callState - Current call state
+   * @param {Object} scenarioNormalized - Normalized scenario config
+   * @returns {Array<string>} Array of allowed slot IDs
+   */
+  function getAllowedNextSlotIds(callState, scenarioNormalized) {
+    const remaining = getRemainingSlotIds(callState, scenarioNormalized);
+    if (remaining.length === 0) {
+      return [];
+    }
+
+    const slotSpecs = scenarioNormalized.slotSpecs || {};
+    
+    // Find remaining gating slots
+    const remainingGatingSlots = remaining.filter(slotId => {
+      const spec = slotSpecs[slotId];
+      return spec && spec.gating === true;
+    });
+
+    // If any gating slots remain, only those are allowed (preserve scenario order)
+    if (remainingGatingSlots.length > 0) {
+      return remainingGatingSlots;
+    }
+
+    // Otherwise all remaining slots are allowed
+    return remaining;
+  }
+
   function getNextTurnSpec(callStateIn, scenario) {
     // Returns deterministic spec for the next roleplay turn.
     // Must not mutate callState.
@@ -5883,8 +8094,11 @@ wss.on("connection", (twilioWs, req) => {
       return null;
     }
 
+    // Use normalized config if available (for slotSpecs access)
+    const normalizedScenario = callStateIn.scenarioNormalized || scenario;
+
     // Config-driven mode enabled for all scenarios with slots and questions
-    if (!scenario.slots || !Array.isArray(scenario.slots) || scenario.slots.length === 0) {
+    if (!normalizedScenario.slots || !Array.isArray(normalizedScenario.slots) || normalizedScenario.slots.length === 0) {
       return null;
     }
 
@@ -5892,10 +8106,77 @@ wss.on("connection", (twilioWs, req) => {
       return null;
     }
 
+    // Check if flexible mode is enabled
+    const useFlexible = normalizedScenario.slotSpecs && Object.keys(normalizedScenario.slotSpecs).length > 0;
+    
     // Find next uncompleted slot
     let nextTargetSlotId = null;
-    if (scenario.slots && Array.isArray(scenario.slots)) {
-      for (const slotId of scenario.slots) {
+    
+    // In flexible mode, use allowed slots and AI suggestions with priority
+    if (useFlexible) {
+      const allowedSlots = getAllowedNextSlotIds(callStateIn, normalizedScenario);
+      
+      if (allowedSlots.length === 0) {
+        // No remaining slots
+        return null;
+      }
+
+      // Check if AI suggested a next slot
+      if (callStateIn.lastTurnResult && callStateIn.lastTurnResult.suggestedNextSlotId) {
+        const suggested = callStateIn.lastTurnResult.suggestedNextSlotId;
+        
+        // Accept suggestion only if it's in the allowed list
+        if (allowedSlots.includes(suggested)) {
+          nextTargetSlotId = suggested;
+          console.log(nowIso(), "[AI_SUGGESTED_SLOT] Accepted AI suggestion", { 
+            suggested,
+            allowedSlots: allowedSlots.slice(0, 5)
+          });
+        } else {
+          // Log rejection with reason
+          const slotSpecs = normalizedScenario.slotSpecs || {};
+          const remainingGatingSlots = getRemainingSlotIds(callStateIn, normalizedScenario)
+            .filter(slotId => {
+              const spec = slotSpecs[slotId];
+              return spec && spec.gating === true;
+            });
+          
+          const reason = remainingGatingSlots.length > 0 ? 'gating_required' : 'not_allowed';
+          console.log(nowIso(), "[NEXT_SLOT_REJECT]", {
+            suggested,
+            reason,
+            allowedSlots: allowedSlots.slice(0, 5)
+          });
+        }
+      }
+
+      // If no valid suggestion, choose next slot by priority
+      if (!nextTargetSlotId && allowedSlots.length > 0) {
+        const slotSpecs = normalizedScenario.slotSpecs || {};
+        
+        // Sort allowed slots by priority (ascending) and scenario order for ties
+        const sortedAllowed = allowedSlots.slice().sort((a, b) => {
+          const specA = slotSpecs[a] || {};
+          const specB = slotSpecs[b] || {};
+          const priorityA = specA.priority !== undefined ? specA.priority : 100;
+          const priorityB = specB.priority !== undefined ? specB.priority : 100;
+          
+          // Sort by priority first
+          if (priorityA !== priorityB) {
+            return priorityA - priorityB;
+          }
+          
+          // Tie-break by scenario.slots order
+          const indexA = normalizedScenario.slots.indexOf(a);
+          const indexB = normalizedScenario.slots.indexOf(b);
+          return indexA - indexB;
+        });
+        
+        nextTargetSlotId = sortedAllowed[0];
+      }
+    } else {
+      // Non-flexible mode: find first uncompleted slot in order
+      for (const slotId of normalizedScenario.slots) {
         const item = callStateIn.checklist[slotId];
         if (item && item.required && !item.done) {
           nextTargetSlotId = slotId;
@@ -5915,12 +8196,15 @@ wss.on("connection", (twilioWs, req) => {
       return null;
     }
 
+    // Get slotSpec from normalized scenario if available  
+    const slotSpec = normalizedScenario.slotSpecs ? normalizedScenario.slotSpecs[nextTargetSlotId] : null;
+
     return {
-      scenarioTag: scenario.tag,
-      answererRole: scenario.answererRole || "",
-      displayName: scenario.displayName || "",
-      practiceLabel: scenario.practiceLabel || "",
-      goalStatement: scenario.goalStatement || scenario.goal || "",
+      scenarioTag: normalizedScenario.tag,
+      answererRole: normalizedScenario.answererRole || "",
+      displayName: normalizedScenario.displayName || "",
+      practiceLabel: normalizedScenario.practiceLabel || "",
+      goalStatement: normalizedScenario.goalStatement || normalizedScenario.goal || "",
       nextTargetSlotId: nextTargetSlotId,
       baseQuestion: questionConfig.baseQuestion || "",
       transitionPhrase: questionConfig.transitionPhrase || "",
@@ -5928,7 +8212,8 @@ wss.on("connection", (twilioWs, req) => {
       allowParaphrase: true,  // Allow paraphrase for now
       validation: questionConfig.validation || null,
       waitForResponse: questionConfig.waitForResponse,
-      loopUntilDone: questionConfig.loopUntilDone || false
+      loopUntilDone: questionConfig.loopUntilDone || false,
+      slotSpec: slotSpec  // Include slotSpec for flexible asking mode
     };
   }
 
@@ -6405,6 +8690,57 @@ wss.on("connection", (twilioWs, req) => {
                 },
                 required: ["field_id", "value"]
               }
+            },
+            {
+              type: "function",
+              name: "report_turn_result",
+              description: "Report structured metadata about each roleplay turn to help the server make better decisions. Call this every turn in flexible mode.",
+              parameters: {
+                type: "object",
+                properties: {
+                  target_slot_id: {
+                    type: "string",
+                    description: "The slot ID you are currently trying to collect, or null if closing"
+                  },
+                  caller_question_detected: {
+                    type: "boolean",
+                    description: "True if the caller asked a question or went off-topic instead of answering"
+                  },
+                  caller_question_summary: {
+                    type: "string",
+                    description: "Brief 3-8 word summary of the caller's question if detected"
+                  },
+                  extracted: {
+                    type: "object",
+                    description: "Object mapping slot IDs to extracted values from this turn"
+                  },
+                  confidence: {
+                    type: "object",
+                    description: "Object mapping slot IDs to confidence levels: low, medium, or high"
+                  },
+                  should_reprompt: {
+                    type: "boolean",
+                    description: "True if you did not get a usable answer and need to ask again"
+                  },
+                  reprompt_reason: {
+                    type: "string",
+                    description: "Brief reason why reprompt is needed"
+                  },
+                  suggested_next_slot_id: {
+                    type: "string",
+                    description: "Your suggestion for the next slot to collect"
+                  },
+                  thinks_goal_met: {
+                    type: "boolean",
+                    description: "True if you believe all required information has been collected"
+                  },
+                  wants_to_close_now: {
+                    type: "boolean",
+                    description: "True if you have already delivered the closing message"
+                  }
+                },
+                required: ["target_slot_id", "caller_question_detected", "should_reprompt", "thinks_goal_met", "wants_to_close_now"]
+              }
             }
           ],
           tool_choice: "auto"
@@ -6647,14 +8983,19 @@ wss.on("connection", (twilioWs, req) => {
           }
 
           callState.lastUserUtterance = utter;
+          
+          // Increment caller turn count in roleplay
+          if (callState.phase === "roleplay" && msg.type === "conversation.item.input_audio_transcription.completed") {
+            if (callState.metrics) callState.metrics.roleplayTurnsCaller++;
+          }
 
           // Capture roleplay transcript for coaching feedback
           if (callState.phase === "roleplay" && msg.type === "conversation.item.input_audio_transcription.completed") {
-            callState.roleplayTranscript.push({
+            pushCapped(callState.roleplayTranscript, {
               speaker: "caller",
               text: utter,
               timestamp: Date.now()
-            });
+            }, 30);
           }
 
           var u = utter.toLowerCase();
@@ -6678,12 +9019,24 @@ wss.on("connection", (twilioWs, req) => {
                 const fieldConfig = callState.scenarioConfig.questions ? callState.scenarioConfig.questions[fieldId] : null;
                 
                 // Special handling for loopUntilDone fields (like "questions")
-                // These only complete when caller explicitly says they have no more
+                // These complete when caller gives a done signal per loopDoneHint
                 if (fieldConfig && fieldConfig.loopUntilDone) {
-                  const noMoreRe = /\b(no|nope|nah|none|nothing|nothing else|no questions?|no other questions|no further questions|no more|no thanks|no thank you|thanks but no|i don't|i dont|i'm good|im good|i'm all set|im all set|all good|all set|that's all|thats all|that's it|thats it|that's everything|thats everything|that covers it|i think that's all|i think thats all|we're good|were good|we're set|were set|we're all set|were all set)\b/i;
-                  if (noMoreRe.test(u)) {
-                    callState.checklist[fieldId].done = true;
-                    callState.checklist[fieldId].value = "completed_loop";
+                  const slotSpec = callState.scenarioNormalized && callState.scenarioNormalized.slotSpecs
+                    ? callState.scenarioNormalized.slotSpecs[fieldId]
+                    : null;
+                  const loopDoneHint = slotSpec && slotSpec.loopDoneHint ? slotSpec.loopDoneHint : null;
+                  
+                  // Check if caller is signaling they're done with questions
+                  if (isLoopDoneSignal(utter, loopDoneHint)) {
+                    // Done with loop
+                    completeSlot(callState, fieldId, utter, "loop_done");
+                    callState.loopActiveQuestion = null;
+                    
+                    console.log(nowIso(), "[LOOP_DONE]", {
+                      slot: fieldId,
+                      utterance: utter.substring(0, 50),
+                      timestamp: Date.now()
+                    });
                     
                     const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
                     const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
@@ -6694,23 +9047,134 @@ wss.on("connection", (twilioWs, req) => {
                       callState.needsClosing = true;
                       console.log(nowIso(), "[AUTO_COMPLETE] All items complete, setting needsClosing=true");
                     }
+                  } else {
+                    // Not done - this is an active question, store it for AI to answer
+                    callState.loopActiveQuestion = utter;
+                    console.log(nowIso(), "[LOOP_Q]", {
+                      slot: fieldId,
+                      question: utter.substring(0, 80),
+                      timestamp: Date.now()
+                    });
+                    // Don't set validationFailedFor - this is normal loop progress
                   }
                 } else if (!trustAiValidation) {
                   // Non-loop fields: auto-complete if response is valid
-                  const isValid = validateCallerResponse(utter, fieldConfig, fieldId);
                   
-                  if (isValid) {
-                    callState.checklist[fieldId].done = true;
-                    callState.checklist[fieldId].value = utter;
+                  // Check if flexible mode is enabled for AI-assisted extraction
+                  const useFlexible = callState.scenarioNormalized && 
+                                     callState.scenarioNormalized.slotSpecs && 
+                                     Object.keys(callState.scenarioNormalized.slotSpecs).length > 0;
+                  
+                  const slotSpec = callState.scenarioNormalized && callState.scenarioNormalized.slotSpecs
+                    ? callState.scenarioNormalized.slotSpecs[fieldId]
+                    : null;
+                  
+                  // Deduplication: hash the utterance to avoid double-extraction
+                  const utteranceHash = utter.toLowerCase().replace(/\s+/g, '');
+                  const alreadyExtracted = utteranceHash === callState.lastExtractionUtteranceHash;
+                  
+                  if (useFlexible && !alreadyExtracted && utter.length > 0) {
+                    // AI-ASSISTED EXTRACTION (flexible mode only)
+                    callState.lastExtractionUtteranceHash = utteranceHash;
                     
-                    const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
-                    const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
-                    const allNowDone = doneItemsAfter === totalRequired;
+                    // Build collectedSoFar summary
+                    const doneSlotsIds = Object.keys(callState.checklist).filter(id => callState.checklist[id].done);
+                    const collectedSummary = doneSlotsIds.length > 0 
+                      ? doneSlotsIds.map(id => {
+                          const val = callState.checklist[id].value;
+                          return id + (val && String(val).length < 30 ? ": " + val : "");
+                        }).join(", ")
+                      : "none";
                     
-                    // If all items are complete, trigger closing delivery immediately
-                    if (allNowDone && !callState.needsClosing) {
-                      callState.needsClosing = true;
-                      console.log(nowIso(), "[AUTO_COMPLETE] All items complete, setting needsClosing=true");
+                    // Run extraction asynchronously (non-blocking)
+                    (async () => {
+                      try {
+                        const extracted = await extractSlotFromUtterance({
+                          scenarioNormalized: callState.scenarioNormalized,
+                          currentTargetSlotId: fieldId,
+                          utterance: utter,
+                          answererRole: callState.scenarioConfig.answererRole || "staff member",
+                          goalStatement: callState.scenarioConfig.goalStatement || "Collect information",
+                          collectedSoFar: collectedSummary
+                        });
+                        
+                        // Check if slot was already completed by mark_checklist_item_complete
+                        if (callState.checklist[fieldId].done) {
+                          console.log(nowIso(), "[EXTRACTION] Slot already completed, skipping", { fieldId });
+                          return;
+                        }
+                        
+                        // Validate extracted value or original utterance
+                        const valueToValidate = extracted.value || utter;
+                        const confidenceAcceptable = extracted.confidence === "medium" || extracted.confidence === "high";
+                        const isValid = confidenceAcceptable && validateCallerResponse(valueToValidate, fieldConfig, fieldId, slotSpec);
+                        
+                        if (isValid) {
+                          // SUCCESS: Mark complete
+                          completeSlot(callState, fieldId, extracted.value || utter, "auto_ai");
+                          
+                          // Increment auto-completion metric
+                          if (callState.metrics) callState.metrics.slotCompletionsAutoAi++;
+                          
+                          console.log(nowIso(), "[AUTO_SLOT_COMPLETE_AI]", {
+                            slot: fieldId,
+                            confidence: extracted.confidence,
+                            value: String(callState.checklist[fieldId].value).substring(0, 50)
+                          });
+                          
+                          const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
+                          const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
+                          const allNowDone = doneItemsAfter === totalRequired;
+                          
+                          if (allNowDone && !callState.needsClosing) {
+                            callState.needsClosing = true;
+                            console.log(nowIso(), "[AUTO_COMPLETE] All items complete, setting needsClosing=true");
+                          }
+                        } else {
+                          // FAILURE: Set retry flags
+                          failSlot(callState, fieldId, "auto_extraction_failed", extracted.callerQuestionDetected);
+                          
+                          console.log(nowIso(), "[AUTO_SLOT_FAIL_AI]", {
+                            slot: fieldId,
+                            confidence: extracted.confidence,
+                            question: extracted.callerQuestionDetected,
+                            retries: callState.validationFailCounts[fieldId],
+                            repromptLevel: callState.repromptLevels[fieldId]
+                          });
+                        }
+                      } catch (e) {
+                        console.log(nowIso(), "[EXTRACTION] Error, falling back to basic validation:", e && e.message ? e.message : e);
+                        
+                        // Fallback: use basic validation
+                        const isValid = validateCallerResponse(utter, fieldConfig, fieldId, slotSpec);
+                        if (isValid) {
+                          completeSlot(callState, fieldId, utter, "auto_ai");
+                          
+                          console.log(nowIso(), "[AUTO_COMPLETE_FALLBACK] Slot completed via fallback", { fieldId });
+                        }
+                      }
+                    })();
+                  } else if (!useFlexible) {
+                    // EXACT MODE: Use basic validation only
+                    const isValid = validateCallerResponse(utter, fieldConfig, fieldId, slotSpec);
+                    
+                    if (isValid) {
+                      completeSlot(callState, fieldId, utter, "legacy_auto");
+                      
+                      // Reset reprompt level when slot is done (redundant with completeSlot but keeping for clarity)
+                      if (callState.repromptLevels) {
+                        callState.repromptLevels[fieldId] = 0;
+                      }
+                      
+                      const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
+                      const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
+                      const allNowDone = doneItemsAfter === totalRequired;
+                      
+                      // If all items are complete, trigger closing delivery immediately
+                      if (allNowDone && !callState.needsClosing) {
+                        callState.needsClosing = true;
+                        console.log(nowIso(), "[AUTO_COMPLETE] All items complete, setting needsClosing=true");
+                      }
                     }
                   }
                 }
@@ -7044,14 +9508,54 @@ wss.on("connection", (twilioWs, req) => {
       if (msg.type === "response.created") {
         responseActive = true;
         aiAudioBytesThisResponse = 0;
+        
+        // Clear loopActiveQuestion after response has been created
+        // The AI has now been instructed to handle it in the response
+        if (callState.loopActiveQuestion) {
+          console.log(nowIso(), "[LOOP_SLOT] cleared loopActiveQuestion after response created");
+          callState.loopActiveQuestion = null;
+        }
+        
         return;
       }
 
       if (msg.type === "response.done") {
+        // Increment AI turn count in roleplay
+        if (callState.phase === "roleplay" && callState.metrics) {
+          callState.metrics.roleplayTurnsAi++;
+        }
+        
         // Extract raw text with JSON markers intact for parsing
         const rawText = extractRawTextFromResponse(msg);
         // Also get cleaned text for display/transcript
-        const cleanedText = stripJsonMarkers(rawText);
+        let cleanedText = stripJsonMarkers(rawText);
+
+        // Apply flexible mode guardrails if enabled
+        const useFlexible = shouldUseFlexibleAsking(callState);
+        if (useFlexible && callState.phase === "roleplay" && cleanedText) {
+          // Check for unsafe content (last resort blocklist)
+          if (containsUnsafeContent(cleanedText)) {
+            const spec = callState.scenarioConfig ? getNextTurnSpec(callState, callState.scenarioConfig) : null;
+            const currentTarget = spec ? spec.nextTargetSlotId : null;
+            console.log(nowIso(), "[FLEX_BLOCKED_TEXT]", {
+              slot: currentTarget
+            });
+            cleanedText = "I cannot help with that here. Let's get back to scheduling.";
+          } else {
+            // Sanitize length and sentence count
+            const { sanitized, reason } = sanitizeFlex(cleanedText);
+            if (reason) {
+              const spec = callState.scenarioConfig ? getNextTurnSpec(callState, callState.scenarioConfig) : null;
+              const currentTarget = spec ? spec.nextTargetSlotId : null;
+              if (callState.metrics) callState.metrics.flexSanitizes++;
+              console.log(nowIso(), "[FLEX_SANITIZE]", {
+                slot: currentTarget,
+                reason: reason
+              });
+            }
+            cleanedText = sanitized;
+          }
+        }
 
         responseActive = false;
         callState.openaiResponseActive = false;
@@ -7061,8 +9565,133 @@ wss.on("connection", (twilioWs, req) => {
 
         // Handle function calls (silent checklist updates)
         let sawChecklistToolCall = false;
+        let sawTurnResultToolCall = false;
         if (msg.response && msg.response.output) {
           for (const item of msg.response.output) {
+            // Handle report_turn_result
+            if (item.type === "function_call" && item.name === "report_turn_result") {
+              try {
+                sawTurnResultToolCall = true;
+                // Successfully received the expected turn result tool call
+                callState.expectTurnResult = false;
+                
+                const args = typeof item.arguments === "string" ? JSON.parse(item.arguments) : item.arguments;
+                const targetSlotId = args.target_slot_id || null;
+                const callerQuestionDetected = args.caller_question_detected || false;
+                const shouldReprompt = args.should_reprompt || false;
+                const wantsToCloseNow = args.wants_to_close_now || false;
+
+                console.log(nowIso(), "[TURN_RESULT]", {
+                  slot: targetSlotId,
+                  q: callerQuestionDetected,
+                  reprompt: shouldReprompt,
+                  close: wantsToCloseNow
+                });
+
+                // Validate target_slot_id if present
+                if (targetSlotId) {
+                  const scenario = callState.scenarioConfig || null;
+                  const validSlotIds = scenario && scenario.slots ? scenario.slots : [];
+                  const isValidSlotId = validSlotIds.includes(targetSlotId);
+
+                  if (!isValidSlotId) {
+                    console.error(nowIso(), "[TURN_RESULT_INVALID_SLOT]", {
+                      targetSlotId,
+                      validSlotIds,
+                      scenarioTag: callState.scenarioTag
+                    });
+                  }
+                }
+
+                // Store the result
+                const turnResult = {
+                  timestamp: Date.now(),
+                  targetSlotId,
+                  callerQuestionDetected,
+                  callerQuestionSummary: args.caller_question_summary || null,
+                  extracted: args.extracted || null,
+                  confidence: args.confidence || null,
+                  shouldReprompt,
+                  repromptReason: args.reprompt_reason || null,
+                  suggestedNextSlotId: args.suggested_next_slot_id || null,
+                  thinksGoalMet: args.thinks_goal_met || false,
+                  wantsToCloseNow
+                };
+
+                callState.lastTurnResult = turnResult;
+                pushCapped(callState.turnResults, turnResult, 20);
+
+                // Increment reprompt level if AI flagged shouldReprompt=true
+                if (shouldReprompt && targetSlotId) {
+                  if (!callState.repromptLevels) callState.repromptLevels = {};
+                  callState.repromptLevels[targetSlotId] = (callState.repromptLevels[targetSlotId] || 0) + 1;
+                  if (callState.metrics) callState.metrics.reprompts++;
+                  console.log(nowIso(), "[REPROMPT_FLAGGED_BY_AI]", {
+                    targetSlotId,
+                    reason: args.reprompt_reason || null,
+                    newLevel: callState.repromptLevels[targetSlotId]
+                  });
+                }
+
+                // Handle wants_to_close_now signal
+                if (wantsToCloseNow) {
+                  // Check if all checklist items are done
+                  const allDone = callState.checklist ? Object.keys(callState.checklist).every(
+                    id => !callState.checklist[id].required || callState.checklist[id].done
+                  ) : false;
+
+                  if (callState.roleplayGate === "closing_pending" && allDone) {
+                    // Valid closing signal - mark as delivered
+                    callState.roleplayGate = "closing_delivered";
+                    callState.closingDelivered = true;
+                    if (callState.metrics) callState.metrics.closingGateDeliveredCount++;
+                    console.log(nowIso(), "[CLOSING_GATE] state=closing_delivered", {
+                      targetSlotId,
+                      viaReportTurnResult: true
+                    });
+                  } else if (!allDone) {
+                    // Premature close request - reject
+                    console.log(nowIso(), "[CLOSING_REJECT] reason=not_all_done", {
+                      targetSlotId,
+                      wantsToCloseNow,
+                      roleplayGate: callState.roleplayGate,
+                      allDone
+                    });
+                  }
+                }
+
+                // Handle caller_question_detected
+                if (callerQuestionDetected && targetSlotId) {
+                  const currentSpec = callState.scenarioConfig ? getNextTurnSpec(callState, callState.scenarioConfig) : null;
+                  const currentTarget = currentSpec ? currentSpec.nextTargetSlotId : null;
+
+                  if (currentTarget === targetSlotId && callState.checklist && callState.checklist[targetSlotId] && !callState.checklist[targetSlotId].done) {
+                    // Only mark as unrelated if the slot is still incomplete
+                    const utterance = callState.lastUserUtterance || "";
+                    const fieldConfig = callState.scenarioConfig && callState.scenarioConfig.questions ? callState.scenarioConfig.questions[targetSlotId] : null;
+                    const slotSpec = callState.scenarioNormalized && callState.scenarioNormalized.slotSpecs ? callState.scenarioNormalized.slotSpecs[targetSlotId] : null;
+
+                    // Check if utterance is short or doesn't validate
+                    const words = utterance.trim().split(/\s+/).filter(w => w.length > 0).length;
+                    const isValidResponse = fieldConfig ? validateCallerResponse(utterance, fieldConfig, targetSlotId, slotSpec) : false;
+
+                    if (words <= 3 || !isValidResponse) {
+                      failSlot(callState, targetSlotId, "turn_result_unrelated_question", true);
+                      
+                      console.log(nowIso(), "[TURN_RESULT_DETECTED_UNRELATED]", {
+                        targetSlotId,
+                        questionSummary: args.caller_question_summary,
+                        repromptLevel: callState.repromptLevels[targetSlotId]
+                      });
+                    }
+                  }
+                }
+              } catch (e) {
+                console.error(nowIso(), "[TURN_RESULT_ERROR]", e.message);
+              }
+              continue;
+            }
+
             if (item.type === "function_call" && item.name === "mark_checklist_item_complete") {
               try {
                 sawChecklistToolCall = true;
@@ -7079,8 +9708,17 @@ wss.on("connection", (twilioWs, req) => {
                 // Special case: closing message delivered
                 if (field_id === "__closing__") {
                   console.log(nowIso(), "[CLOSING_DELIVERED] Closing message has been delivered", {
-                    value
+                    value,
+                    roleplayGate: callState.roleplayGate
                   });
+                  completeSlot(callState, field_id, value, "closing");
+                  if (callState.roleplayGate === "closing_pending") {
+                    callState.roleplayGate = "closing_delivered";
+                    if (callState.metrics) callState.metrics.closingGateDeliveredCount++;
+                    console.log(nowIso(), "[CLOSING_GATE] state=closing_delivered", {
+                      viaChecklistTool: true
+                    });
+                  }
                   callState.closingDelivered = true;
                   // Don't return - let completion check run below
                   continue; // Skip to next item in loop
@@ -7113,6 +9751,8 @@ wss.on("connection", (twilioWs, req) => {
                   const currentTarget = currentSpec ? currentSpec.nextTargetSlotId : null;
 
                   if (currentTarget && field_id !== currentTarget) {
+                    if (callState.metrics) callState.metrics.nextSlotRejects++;
+                    failSlot(callState, field_id, "checklist_order_rejected", false);
                     console.log(nowIso(), "[CHECKLIST_ORDER] Rejected tool call for non-target slot", {
                       field_id,
                       currentTarget,
@@ -7127,10 +9767,14 @@ wss.on("connection", (twilioWs, req) => {
                       const noMoreRe = /\b(no|nope|nah|none|nothing|nothing else|no questions?|no other questions|no further questions|no more|no thanks|no thank you|thanks but no|i don't|i dont|i'm good|im good|i'm all set|im all set|all good|all set|that's all|thats all|that's it|thats it|that's everything|thats everything|that covers it|i think that's all|i think thats all|we're good|were good|we're set|were set|we're all set|were all set)\b/i;
                       isValid = noMoreRe.test(utterForValidation.toLowerCase());
                     } else {
-                      isValid = validateCallerResponse(utterForValidation, fieldConfig, field_id);
+                      const slotSpec = callState.scenarioNormalized && callState.scenarioNormalized.slotSpecs
+                        ? callState.scenarioNormalized.slotSpecs[field_id]
+                        : null;
+                      isValid = validateCallerResponse(utterForValidation, fieldConfig, field_id, slotSpec);
                     }
 
                     if (!isValid) {
+                      failSlot(callState, field_id, "validation_failed", false);
                       console.log(nowIso(), "[CHECKLIST_VALIDATION] Rejected tool call", {
                         field_id,
                         value,
@@ -7140,6 +9784,7 @@ wss.on("connection", (twilioWs, req) => {
                       continue;
                     }
                   } else if (!utterForValidation) {
+                    failSlot(callState, field_id, "empty_utterance", false);
                     console.log(nowIso(), "[CHECKLIST_VALIDATION] Rejected empty tool call", {
                       field_id,
                       value
@@ -7151,14 +9796,10 @@ wss.on("connection", (twilioWs, req) => {
                   const doneItemsBefore = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
                   const totalRequired = Object.keys(callState.checklist).filter(id => callState.checklist[id].required).length;
                   
-                  callState.checklist[field_id].done = true;
-                  callState.checklist[field_id].value = value;
+                  completeSlot(callState, field_id, value, "tool");
                   
-                  console.log(nowIso(), "[CHECKLIST_COMPLETE]", {
-                    field_id,
-                    value,
-                    currentTarget
-                  });
+                  // Increment slot completion via tool call
+                  if (callState.metrics) callState.metrics.slotCompletionsTool++;
                   
                   const doneItemsAfter = Object.keys(callState.checklist).filter(id => callState.checklist[id].done).length;
                   
@@ -7185,6 +9826,68 @@ wss.on("connection", (twilioWs, req) => {
           }
         }
         
+        // Check for missing turn result in flexible mode and auto-recover
+        if (callState.phase === "roleplay" && !sawTurnResultToolCall) {
+          const useFlexible = shouldUseFlexibleAsking(callState);
+          if (useFlexible && !callState.needsClosing && callState.expectTurnResult) {
+            const spec = callState.scenarioConfig ? getNextTurnSpec(callState, callState.scenarioConfig) : null;
+            const currentTarget = spec ? spec.nextTargetSlotId : null;
+            
+            if (callState.metrics) callState.metrics.turnResultMissing++;
+            console.log(nowIso(), "[TURN_RESULT_MISSING] AI did not call report_turn_result in flexible mode, auto-recovering", {
+              currentTarget,
+              autoGenerated: true
+            });
+            
+            // Auto-generate a turn result with should_reprompt=true to flag the issue
+            const autoGeneratedResult = {
+              timestamp: Date.now(),
+              targetSlotId: currentTarget,
+              callerQuestionDetected: false,
+              callerQuestionSummary: null,
+              extracted: null,
+              confidence: null,
+              shouldReprompt: true,
+              repromptReason: "auto_generated_missing_tool_call",
+              suggestedNextSlotId: null,
+              thinksGoalMet: false,
+              wantsToCloseNow: false
+            };
+            
+            callState.lastTurnResult = autoGeneratedResult;
+            pushCapped(callState.turnResults, autoGeneratedResult, 20);
+            
+            // Increment reprompt level for this auto-recovery
+            if (!callState.repromptLevels) callState.repromptLevels = {};
+            callState.repromptLevels[currentTarget] = (callState.repromptLevels[currentTarget] || 0) + 1;
+            
+            console.log(nowIso(), "[TURN_RESULT_AUTO_RECOVERED]", {
+              targetSlotId: currentTarget,
+              newRepromptLevel: callState.repromptLevels[currentTarget]
+            });
+            
+            // Clear the expectTurnResult flag
+            callState.expectTurnResult = false;
+          }
+        }
+        
+        // Multi-question detection heuristic (in flexible mode)
+        if (callState.phase === "roleplay" && cleanedText) {
+          const useFlexible = shouldUseFlexibleAsking(callState);
+          if (useFlexible && !callState.needsClosing) {
+            const questionMarks = (cleanedText.match(/\?/g) || []).length;
+            if (questionMarks > 1) {
+              const spec = callState.scenarioConfig ? getNextTurnSpec(callState, callState.scenarioConfig) : null;
+              const currentTarget = spec ? spec.nextTargetSlotId : null;
+              if (callState.metrics) callState.metrics.multiQuestionWarns++;
+              console.log(nowIso(), "[MULTI_QUESTION_WARN]", {
+                slot: currentTarget,
+                count: questionMarks
+              });
+            }
+          }
+        }
+        
         // Capture roleplay transcript for coaching feedback (AI responses)
         if (callState.phase === "roleplay" && cleanedText && cleanedText.trim()) {
           // Remove JSON blocks and special tokens from the transcript
@@ -7192,25 +9895,27 @@ wss.on("connection", (twilioWs, req) => {
           cleanText = cleanText.replace(/CALLREADY_END:.*$/gm, '').trim();
           
           if (cleanText) {
-            callState.roleplayTranscript.push({
+            pushCapped(callState.roleplayTranscript, {
               speaker: "ai",
               text: cleanText,
               timestamp: Date.now()
-            });
+            }, 30);
           }
         }
 
         // If we just delivered the closing message, mark it as delivered even if the tool call was skipped.
         if (
           callState.phase === "roleplay" &&
-          callState.needsClosing &&
-          callState.closingInstructions &&
+          callState.roleplayGate === "closing_pending" &&
           !callState.closingDelivered &&
           cleanedText &&
           cleanedText.trim()
         ) {
           callState.closingDelivered = true;
-          console.log(nowIso(), "[CLOSING_DELIVERED_AUTO] Closing message spoken without tool call");
+          callState.roleplayGate = "closing_delivered";
+          console.log(nowIso(), "[CLOSING_GATE_AUTO] state=closing_delivered (fail-safe)", {
+            reason: "AI spoke closing but did not call tool"
+          });
         }
         
         if ((callState.phase === "connecting" || callState.phase === "roleplay") && aiAudioBytesThisResponse === 0) {
@@ -7224,23 +9929,43 @@ wss.on("connection", (twilioWs, req) => {
             id => !callState.checklist[id].required || callState.checklist[id].done
           );
           const doneItems = Object.keys(callState.checklist).filter(id => callState.checklist[id].done);
-          if (allDone && !callState.needsClosing) {
-            // All items done - trigger closing message delivery on next turn
-            console.log(nowIso(), "[CLOSING_PENDING] All checklist items complete, triggering closing message", { 
-              scenarioTag: callState.scenarioTag,
-              totalItems: Object.keys(callState.checklist).length
-            });
-            callState.needsClosing = true;
-            // Don't transition yet - let the next turn deliver the closing message
-            
-          } else if (allDone && callState.needsClosing && callState.closingDelivered) {
-            // Closing message has been delivered - now transition to coaching
-            console.log(nowIso(), "[COACHING_TRANSITION] Closing message delivered, transitioning to coaching", { 
+          if (allDone && callState.roleplayGate === "collecting") {
+            // All items done - transition to closing_pending
+            if (callState.metrics) callState.metrics.closingGatePendingCount++;
+            console.log(nowIso(), "[CLOSING_GATE] state=closing_pending", { 
               scenarioTag: callState.scenarioTag,
               totalItems: Object.keys(callState.checklist).length,
               doneItems: doneItems.length
             });
+            callState.roleplayGate = "closing_pending";
+            callState.needsClosing = true;
+            // Don't transition yet - let the next turn deliver the closing message
+            
+          } else if (allDone && callState.roleplayGate === "closing_delivered") {
+            // Closing message has been delivered - now transition to coaching
+            console.log(nowIso(), "[COACHING_TRANSITION] Closing message delivered, transitioning to coaching", { 
+              scenarioTag: callState.scenarioTag,
+              totalItems: Object.keys(callState.checklist).length,
+              doneItems: doneItems.length,
+              roleplayGate: callState.roleplayGate
+            });
             callState.phase = "coaching";
+            
+            // Log roleplay summary metrics
+            if (callState.metrics) {
+              console.log(nowIso(), "[ROLEPLAY_SUMMARY]", {
+                mode: callState.roleplayMode || "flexible",
+                aiTurns: callState.metrics.roleplayTurnsAi,
+                callerTurns: callState.metrics.roleplayTurnsCaller,
+                toolCompletions: callState.metrics.slotCompletionsTool,
+                autoCompletions: callState.metrics.slotCompletionsAutoAi,
+                validationFails: callState.metrics.validationFails,
+                reprompts: callState.metrics.reprompts,
+                turnResultMissing: callState.metrics.turnResultMissing,
+                multiQuestions: callState.metrics.multiQuestionWarns,
+                flexSanitizes: callState.metrics.flexSanitizes
+              });
+            }
             
             if (callState.redirectingToCoaching) {
               console.log(nowIso(), "[COACHING_TRANSITION] Already redirecting, returning");
@@ -7718,6 +10443,7 @@ wss.on("connection", (twilioWs, req) => {
           console.log('[scenarios] slots=', __scenarioResolved.slots);
         }
         callState.scenarioConfig = __scenarioResolved ? __scenarioResolved : null;
+        callState.scenarioNormalized = __scenarioResolved ? normalizeScenarioConfig(__scenarioResolved) : null;
         if (callState.scenarioConfig) {
           console.log('[scenarios] config attached displayName=', callState.scenarioConfig.displayName);
         }
@@ -7847,6 +10573,564 @@ app.post("/debug/test-turnlock", (req, res) => {
         : "callState not visible here"
     });
   } catch (e) {
+    return res.status(500).json({
+      ok: false,
+      error: e && e.message ? e.message : String(e)
+    });
+  }
+});
+
+// ============================================================================
+// ROLEPLAY SIMULATOR ENDPOINTS (Text-only, no Twilio/WebSocket)
+// ============================================================================
+
+/**
+ * POST /dev/roleplay/start
+ * Initialize a simulator callState for text-based roleplay testing
+ * Requires: ENABLE_ROLEPLAY_SIM=true
+ * Body: { callSid, scenarioTag }
+ */
+app.post("/dev/roleplay/start", (req, res) => {
+  if (!ENABLE_ROLEPLAY_SIM) {
+    return res.status(404).json({ error: "Not found" });
+  }
+
+  try {
+    const { callSid, scenarioTag } = req.body || {};
+
+    if (!callSid || !scenarioTag) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing callSid or scenarioTag"
+      });
+    }
+
+    console.log(nowIso(), "[SIM] /dev/roleplay/start", { callSid, scenarioTag });
+
+    // Prune oldest simulator calls if exceeded max
+    if (simulatorCallStates.size >= SIMULATOR_MAX_CALLS) {
+      const oldestCallSid = simulatorCallStates.keys().next().value;
+      simulatorCallStates.delete(oldestCallSid);
+      console.log(nowIso(), "[SIM] Pruned oldest simulator call", { oldestCallSid });
+    }
+
+    // Initialize simulator callState (reuse structure from production)
+    const newCallState = {
+      callSid,
+      scenarioTag,
+      phase: "roleplay",
+      role: "caller",
+      callType: "roleplay",
+
+      // Scenario and checklist
+      scenarioConfig: null,
+      scenarioNormalized: null,
+      checklist: {},
+
+      // Roleplay state
+      roleplayGate: "collecting",
+      roleplayTranscript: [],
+      repromptLevels: {},
+      turnResults: [],
+      lastTurnResult: null,
+      lastUserUtterance: null,
+      validationFailedUnrelated: false,
+
+      // Counters
+      turnCount: 0,
+      allItemsCompletedAt: null,
+
+      // Flexible mode specific
+      expectTurnResult: false
+    };
+
+    // Load scenario
+    const scenario = resolveScenarioWithDynamic(newCallState, scenarioTag);
+    if (!scenario) {
+      return res.status(400).json({
+        ok: false,
+        error: "Scenario not found: " + scenarioTag
+      });
+    }
+
+    // Normalize scenario config
+    newCallState.scenarioNormalized = normalizeScenarioConfig(scenario);
+    newCallState.scenarioConfig = newCallState.scenarioNormalized;
+
+    // Build checklist
+    newCallState.checklist = {};
+    if (newCallState.scenarioConfig && newCallState.scenarioConfig.slots) {
+      newCallState.scenarioConfig.slots.forEach(slotId => {
+        newCallState.checklist[slotId] = {
+          required: true,
+          done: false
+        };
+      });
+    }
+
+    // Save to simulator store
+    simulatorCallStates.set(callSid, newCallState);
+
+    // Determine mode
+    const mode = shouldUseFlexibleAsking(newCallState) ? "flex" : "legacy";
+    console.log(nowIso(), "[SIM] callState initialized", {
+      callSid,
+      scenarioTag,
+      mode,
+      slotCount: newCallState.scenarioConfig?.slots?.length || 0
+    });
+
+    // Get next target slot
+    const spec = newCallState.scenarioConfig ? getNextTurnSpec(newCallState, newCallState.scenarioConfig) : null;
+    const nextSlotId = spec ? spec.nextTargetSlotId : null;
+
+    // Get prompt preview (base question or prompt intent)
+    let promptPreview = "";
+    if (spec) {
+      if (mode === "flex" && spec.slotSpec?.promptIntent) {
+        promptPreview = spec.slotSpec.promptIntent;
+      } else if (spec.baseQuestion) {
+        promptPreview = spec.baseQuestion;
+      } else {
+        promptPreview = "Waiting for input...";
+      }
+    }
+
+    return res.json({
+      ok: true,
+      callSid,
+      scenarioTag,
+      mode,
+      next: {
+        slotId: nextSlotId,
+        promptPreview: promptPreview.substring(0, 150)
+      }
+    });
+  } catch (e) {
+    console.error(nowIso(), "[SIM] /dev/roleplay/start error", { error: e && e.message ? e.message : String(e) });
+    return res.status(500).json({
+      ok: false,
+      error: e && e.message ? e.message : String(e)
+    });
+  }
+});
+
+/**
+ * POST /dev/roleplay/utterance
+ * Process caller utterance and generate AI response
+ * Requires: ENABLE_ROLEPLAY_SIM=true
+ * Body: { callSid, utterance }
+ */
+app.post("/dev/roleplay/utterance", async (req, res) => {
+  if (!ENABLE_ROLEPLAY_SIM) {
+    return res.status(404).json({ error: "Not found" });
+  }
+
+  try {
+    const { callSid, utterance } = req.body || {};
+
+    if (!callSid || !utterance) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing callSid or utterance"
+      });
+    }
+
+    // Find simulator callState
+    const simCallState = simulatorCallStates.get(callSid);
+    if (!simCallState) {
+      return res.status(404).json({
+        ok: false,
+        error: "Simulator callState not found. Call /dev/roleplay/start first."
+      });
+    }
+
+    console.log(nowIso(), "[SIM] /dev/roleplay/utterance", { callSid, utteranceLen: utterance.length });
+
+    // Store utterance
+    simCallState.lastUserUtterance = utterance;
+    simCallState.turnCount++;
+
+    // Add to transcript
+    pushCapped(simCallState.roleplayTranscript, {
+      speaker: "caller",
+      text: utterance
+    }, 30);
+
+    // Get current target slot spec
+    const spec = simCallState.scenarioConfig ? getNextTurnSpec(simCallState, simCallState.scenarioConfig) : null;
+    const currentTarget = spec ? spec.nextTargetSlotId : null;
+    const useFlexible = shouldUseFlexibleAsking(simCallState);
+
+    console.log(nowIso(), "[SIM] Processing utterance", {
+      callSid,
+      currentTarget,
+      mode: useFlexible ? "flex" : "legacy"
+    });
+
+    // ===== VALIDATION AND SLOT COMPLETION LOGIC =====
+    let slotCompleted = false;
+
+    if (currentTarget && simCallState.checklist && simCallState.checklist[currentTarget]) {
+      const fieldConfig = simCallState.scenarioConfig && simCallState.scenarioConfig.questions
+        ? simCallState.scenarioConfig.questions[currentTarget]
+        : null;
+      const slotSpec = simCallState.scenarioNormalized && simCallState.scenarioNormalized.slotSpecs
+        ? simCallState.scenarioNormalized.slotSpecs[currentTarget]
+        : null;
+
+      // In flex mode with server validation, extract and validate
+      if (useFlexible) {
+        // For now, assume extraction is successful (real system does this via AI turn result)
+        // In production, the AI's report_turn_result would contain the extracted value
+        // For simulator, we validate the utterance directly
+        const validationMode = simCallState.scenarioConfig?.validation?.mode || null;
+
+        if (validationMode === "server") {
+          const isValid = validateCallerResponse(utterance, fieldConfig, currentTarget, slotSpec);
+          if (isValid) {
+            simCallState.checklist[currentTarget].done = true;
+            slotCompleted = true;
+            console.log(nowIso(), "[SIM] Slot auto-completed in flex mode (server validation)", {
+              slot: currentTarget
+            });
+          } else {
+            // Increment reprompt level for failed validation
+            if (!simCallState.repromptLevels) simCallState.repromptLevels = {};
+            simCallState.repromptLevels[currentTarget] = (simCallState.repromptLevels[currentTarget] || 0) + 1;
+            console.log(nowIso(), "[SIM] Validation failed, incrementing reprompt", {
+              slot: currentTarget,
+              newLevel: simCallState.repromptLevels[currentTarget]
+            });
+          }
+        }
+      } else {
+        // Legacy mode: AI decides via tool call
+        // For simulator, we don't validate here - AI response will handle it
+      }
+    }
+
+    // ===== CHECK FOR CLOSING GATE =====
+    const allDone = Object.keys(simCallState.checklist).every(
+      id => !simCallState.checklist[id].required || simCallState.checklist[id].done
+    );
+
+    if (allDone && simCallState.roleplayGate === "collecting") {
+      simCallState.allItemsCompletedAt = Date.now();
+      simCallState.roleplayGate = "closing_pending";
+      console.log(nowIso(), "[SIM] All items completed, closing_pending", { callSid });
+    }
+
+    // ===== GENERATE AI RESPONSE =====
+    const instructions = buildPhaseInstructions("simulator_turn");
+    const mode = useFlexible ? "flex" : "legacy";
+
+    console.log(nowIso(), "[SIM] Calling OpenAI for text response", {
+      callSid,
+      mode,
+      instructionsLen: instructions.length
+    });
+
+    // Build messages for OpenAI API (text-only, no audio)
+    const messages = [
+      {
+        role: "user",
+        content: `You are in roleplay mode. Here are your instructions:\n\n${instructions}\n\n\nCaller just said: "${utterance}"\n\nRespond naturally and call the required tools.`
+      }
+    ];
+
+    // Make text-only OpenAI API call
+    let aiResponse = null;
+    try {
+      const completion = await openaiClient.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages,
+        temperature: 0.7,
+        max_tokens: 500
+      });
+
+      aiResponse = completion.choices?.[0]?.message?.content || "";
+      console.log(nowIso(), "[SIM] OpenAI response received", {
+        callSid,
+        responseLen: aiResponse.length
+      });
+    } catch (aiErr) {
+      console.error(nowIso(), "[SIM] OpenAI error", { error: aiErr && aiErr.message ? aiErr.message : String(aiErr) });
+      return res.status(500).json({
+        ok: false,
+        error: "OpenAI API error: " + (aiErr && aiErr.message ? aiErr.message : String(aiErr))
+      });
+    }
+
+    // Apply flexible mode guardrails if enabled
+    let cleanedText = aiResponse;
+    if (useFlexible && simCallState.phase === "roleplay") {
+      // Check for unsafe content
+      if (containsUnsafeContent(cleanedText)) {
+        cleanedText = "I cannot help with that here. Let's get back to scheduling.";
+        console.log(nowIso(), "[SIM] [FLEX_BLOCKED_TEXT]", { callSid, currentTarget });
+      } else {
+        // Sanitize length
+        const { sanitized, reason } = sanitizeFlex(cleanedText);
+        if (reason) {
+          console.log(nowIso(), "[SIM] [FLEX_SANITIZE]", { callSid, reason });
+        }
+        cleanedText = sanitized;
+      }
+    }
+
+    // Add to transcript
+    pushCapped(simCallState.roleplayTranscript, {
+      speaker: "ai",
+      text: cleanedText
+    }, 30);
+
+    // Parse simple tool calls from response (basic parsing - look for JSON or function names)
+    // For simulator, we'll do a simple regex-based extraction
+    let sawMarkComplete = false;
+    let sawTurnResult = false;
+
+    // Try to find mark_checklist_item_complete calls
+    const completeMatch = cleanedText.match(/mark_checklist_item_complete\s*\(\s*(?:field_id\s*=\s*)?['"](.*?)['"]/i);
+    if (completeMatch) {
+      const fieldId = completeMatch[1];
+      if (simCallState.checklist && fieldId in simCallState.checklist) {
+        simCallState.checklist[fieldId].done = true;
+        sawMarkComplete = true;
+        console.log(nowIso(), "[SIM] AI marked slot complete", { callSid, fieldId });
+      }
+    }
+
+    // Try to find report_turn_result calls
+    if (cleanedText.match(/report_turn_result/i)) {
+      sawTurnResult = true;
+      simCallState.expectTurnResult = false;
+      console.log(nowIso(), "[SIM] AI called report_turn_result", { callSid });
+    }
+
+    // Auto-recovery: if in flex mode and didn't call report_turn_result
+    if (useFlexible && !sawTurnResult && simCallState.expectTurnResult) {
+      console.log(nowIso(), "[SIM] [TURN_RESULT_MISSING] Auto-recovering", { callSid });
+      simCallState.expectTurnResult = false;
+      if (!simCallState.repromptLevels) simCallState.repromptLevels = {};
+      if (currentTarget) {
+        simCallState.repromptLevels[currentTarget] = (simCallState.repromptLevels[currentTarget] || 0) + 1;
+      }
+    }
+
+    // Build response
+    const checklistSummary = {
+      done: Object.keys(simCallState.checklist).filter(id => simCallState.checklist[id].done),
+      remaining: Object.keys(simCallState.checklist).filter(id => simCallState.checklist[id].required && !simCallState.checklist[id].done)
+    };
+
+    const nextSpec = simCallState.scenarioConfig ? getNextTurnSpec(simCallState, simCallState.scenarioConfig) : null;
+
+    const responseBody = {
+      ok: true,
+      state: {
+        currentTarget,
+        roleplayGate: simCallState.roleplayGate,
+        checklistSummary,
+        repromptLevel: simCallState.repromptLevels && currentTarget ? (simCallState.repromptLevels[currentTarget] || 0) : 0,
+        turnCount: simCallState.turnCount
+      },
+      ai: {
+        text: cleanedText,
+        turnResult: simCallState.lastTurnResult || null
+      }
+    };
+
+    // If closing_delivered, include transition flag
+    if (simCallState.roleplayGate === "closing_delivered") {
+      responseBody.wouldTransitionToCoaching = true;
+    }
+
+    console.log(nowIso(), "[SIM] Utterance processed successfully", { callSid, nextTarget: nextSpec?.nextTargetSlotId });
+
+    return res.json(responseBody);
+  } catch (e) {
+    console.error(nowIso(), "[SIM] /dev/roleplay/utterance error", { error: e && e.message ? e.message : String(e) });
+    return res.status(500).json({
+      ok: false,
+      error: e && e.message ? e.message : String(e)
+    });
+  }
+});
+
+/**
+ * POST /dev/roleplay/reset
+ * Clear all simulator callStates
+ * Requires: ENABLE_ROLEPLAY_SIM=true
+ */
+app.post("/dev/roleplay/reset", (req, res) => {
+  if (!ENABLE_ROLEPLAY_SIM) {
+    return res.status(404).json({ error: "Not found" });
+  }
+
+  try {
+    const count = simulatorCallStates.size;
+    simulatorCallStates.clear();
+    console.log(nowIso(), "[SIM] /dev/roleplay/reset", { clearedCount: count });
+
+    return res.json({
+      ok: true,
+      message: "Simulator states cleared",
+      clearedCount: count
+    });
+  } catch (e) {
+    console.error(nowIso(), "[SIM] /dev/roleplay/reset error", { error: e && e.message ? e.message : String(e) });
+    return res.status(500).json({
+      ok: false,
+      error: e && e.message ? e.message : String(e)
+    });
+  }
+});
+
+/**
+ * POST /dev/roleplay/mode
+ * Set or unset runtime roleplay mode override
+ * Requires: ENABLE_ROLEPLAY_SIM=true
+ * Body: { mode: "flex" | "legacy" | null }
+ * 
+ * Precedence:
+ * 1. Runtime override (set by this endpoint)
+ * 2. Environment variable (ROLEPLAY_MODE_FORCE)
+ * 3. Scenario's explicit roleplayMode
+ * 4. Default based on slotSpecs presence
+ */
+app.post("/dev/roleplay/mode", (req, res) => {
+  if (!ENABLE_ROLEPLAY_SIM) {
+    return res.status(404).json({ error: "Not found" });
+  }
+
+  try {
+    const { mode } = req.body || {};
+
+    // Validate mode
+    let newMode = null;
+    if (mode !== null && mode !== undefined) {
+      const modeStr = String(mode).toLowerCase().trim();
+      if (modeStr === 'flex' || modeStr === 'legacy') {
+        newMode = modeStr;
+      } else {
+        return res.status(400).json({
+          ok: false,
+          error: "Invalid mode. Must be 'flex', 'legacy', or null to clear."
+        });
+      }
+    }
+
+    // Set runtime override
+    const oldMode = runtimeRoleplayModeForce;
+    runtimeRoleplayModeForce = newMode;
+
+    console.log(nowIso(), "[SIM] /dev/roleplay/mode override", {
+      oldMode: oldMode || 'none',
+      newMode: newMode || 'cleared',
+      source: newMode ? 'runtime' : 'cleared'
+    });
+
+    return res.json({
+      ok: true,
+      message: newMode ? `Runtime override set to: ${newMode}` : "Runtime override cleared",
+      previousMode: oldMode || null,
+      currentMode: newMode || null,
+      precedence: [
+        { level: 1, source: 'runtime', value: runtimeRoleplayModeForce || 'not set' },
+        { level: 2, source: 'env', value: ROLEPLAY_MODE_FORCE || 'not set' },
+        { level: 3, source: 'scenario', value: 'per-scenario config' },
+        { level: 4, source: 'default', value: 'flex if slotSpecs, else legacy' }
+      ]
+    });
+  } catch (e) {
+    console.error(nowIso(), "[SIM] /dev/roleplay/mode error", { error: e && e.message ? e.message : String(e) });
+    return res.status(500).json({
+      ok: false,
+      error: e && e.message ? e.message : String(e)
+    });
+  }
+});
+
+// Debug endpoint to inspect callState metrics and session state
+app.get("/dev/callstate", (req, res) => {
+  if (!ENABLE_ROLEPLAY_SIM) {
+    return res.status(404).json({ error: "Not found" });
+  }
+
+  try {
+    const { callSid } = req.query || {};
+    
+    if (!callSid) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing callSid query parameter"
+      });
+    }
+
+    let callState = callStoreObj[callSid];
+    if (!callState) {
+      return res.status(404).json({
+        ok: false,
+        error: `CallSid not found: ${callSid}`
+      });
+    }
+
+    // Build compact view with safe fields only
+    const spec = callState.scenarioConfig ? getNextTurnSpec(callState, callState.scenarioConfig) : null;
+    const currentTarget = spec ? spec.nextTargetSlotId : null;
+    
+    const checklistSummary = {};
+    if (callState.checklist) {
+      for (const [id, item] of Object.entries(callState.checklist)) {
+        checklistSummary[id] = {
+          done: item.done,
+          required: item.required,
+          value: item.value ? String(item.value).substring(0, 50) : null
+        };
+      }
+    }
+
+    const transcriptTail = [];
+    if (callState.roleplayTranscript && callState.roleplayTranscript.length > 0) {
+      const start = Math.max(0, callState.roleplayTranscript.length - 6);
+      for (let i = start; i < callState.roleplayTranscript.length; i++) {
+        const entry = callState.roleplayTranscript[i];
+        transcriptTail.push({
+          speaker: entry.speaker,
+          text: String(entry.text).substring(0, 80),
+          timestamp: entry.timestamp
+        });
+      }
+    }
+
+    const debugState = {
+      callSid,
+      timestamp: Date.now(),
+      phase: callState.phase,
+      scenarioTag: callState.scenarioTag,
+      roleplayMode: callState.roleplayMode || "legacy",
+      roleplayGate: callState.roleplayGate || null,
+      currentTarget,
+      checklist: checklistSummary,
+      repromptLevels: callState.repromptLevels || {},
+      lastTurnResult: callState.lastTurnResult ? {
+        targetSlotId: callState.lastTurnResult.targetSlotId,
+        shouldReprompt: callState.lastTurnResult.shouldReprompt,
+        callerQuestionDetected: callState.lastTurnResult.callerQuestionDetected
+      } : null,
+      metrics: callState.metrics || null,
+      transcriptTail,
+      closingDelivered: callState.closingDelivered || false,
+      validationFailedFor: callState.validationFailedFor || null
+    };
+
+    return res.json({
+      ok: true,
+      data: debugState
+    });
+  } catch (e) {
+    console.error(nowIso(), "[SIM] /dev/callstate error", { error: e && e.message ? e.message : String(e) });
     return res.status(500).json({
       ok: false,
       error: e && e.message ? e.message : String(e)
