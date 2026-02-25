@@ -1987,8 +1987,8 @@ function formatMinutesApprox(seconds) {
 function scenarioTagToHumanFriendlyHelper(tag) {
   const scenarios = {
     doctor_default: "calling a doctor's office to schedule an appointment",
-    pharmacy_refill: "refilling a prescription at a pharmacy",
-    school_office: "calling a school office"
+    dentist_appointment: "calling a dentist's office to schedule an appointment",
+    pizza_order: "ordering a pizza"
   };
   return scenarios[tag] || "a practice call";
 }
@@ -2978,10 +2978,10 @@ app.post("/gather-confirm-suggested-scenario", async (req, res) => {
       // Fallback to hardcoded labels
       if (scenarioTag === "doctor_default") {
         scenarioLabel = "calling a doctor's office to schedule an appointment";
-      } else if (scenarioTag === "pharmacy_refill") {
-        scenarioLabel = "calling a pharmacy to refill a prescription";
-      } else if (scenarioTag === "school_office") {
-        scenarioLabel = "calling a school office";
+      } else if (scenarioTag === "dentist_appointment") {
+        scenarioLabel = "calling a dentist's office to schedule an appointment";
+      } else if (scenarioTag === "pizza_order") {
+        scenarioLabel = "ordering a pizza";
       }
     }
 
@@ -4587,7 +4587,7 @@ app.post("/debug/scenario-gate-dryrun", (req, res) => {
       next = { action: "show_menu_and_require_tag" };
     }
 
-    if (vTag && (vTag === "doctor_default" || vTag === "pharmacy_refill" || vTag === "school_office")) {
+    if (vTag && (vTag === "doctor_default" || vTag === "dentist_appointment" || vTag === "pizza_order")) {
       next = { action: "accept_tag_and_advance", scenarioTag: vTag };
     } else if (vTag) {
       next = { action: "tag_unknown_reprompt_menu", scenarioTag: vTag };
@@ -4663,18 +4663,18 @@ app.post("/debug/prompt-contract", (req, res) => {
         "Ask exactly one question and nothing else.\n" +
         "Offer exactly these three options, in this order:\n" +
         "1) Scheduling a doctor appointment\n" +
-        "2) Refilling a prescription at a pharmacy\n" +
-        "3) Calling a school office\n" +
+        "2) Scheduling a dentist appointment\n" +
+        "3) Ordering pizza\n" +
         "Then stop.\n" +
         "Do not output SCENARIO_TAG in this message.\n";
 
       capture =
         "Output exactly one final line and nothing else:\n" +
-        "SCENARIO_TAG: <doctor_default|pharmacy_refill|school_office|unknown>\n" +
+        "SCENARIO_TAG: <doctor_default|dentist_appointment|pizza_order|unknown>\n" +
         "Rules:\n" +
         "- option 1 => doctor_default\n" +
-        "- option 2 => pharmacy_refill\n" +
-        "- option 3 => school_office\n" +
+        "- option 2 => dentist_appointment\n" +
+        "- option 3 => pizza_order\n" +
         "- if unclear, unknown\n";
     }
 
@@ -5007,8 +5007,8 @@ async function matchScenarioByDescription(userDescription) {
 
   const existingScenarios = [
     { scenario_tag: "doctor_default", scenario_label: "calling a doctor's office to schedule an appointment" },
-    { scenario_tag: "pharmacy_refill", scenario_label: "calling a pharmacy to refill a prescription" },
-    { scenario_tag: "school_office", scenario_label: "calling a school office" }
+    { scenario_tag: "dentist_appointment", scenario_label: "calling a dentist's office to schedule an appointment" },
+    { scenario_tag: "pizza_order", scenario_label: "ordering pizza" }
   ];
 
   const scenarioList = existingScenarios.map(s => s.scenario_label).join(", ");
@@ -7509,8 +7509,8 @@ wss.on("connection", (twilioWs, req) => {
   function scenarioTagToHumanFriendly(tag) {
     const scenarios = {
       doctor_default: "calling a doctor's office to schedule an appointment",
-      pharmacy_refill: "refilling a prescription at a pharmacy",
-      school_office: "calling a school office"
+      dentist_appointment: "calling a dentist's office to schedule an appointment",
+      pizza_order: "ordering pizza"
     };
     return scenarios[tag] || "a practice call";
   }
