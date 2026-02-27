@@ -133,17 +133,17 @@ module.exports = {
         },
 
         appointment_preference: {
-            promptIntent: "collect preferred appointment date and time",
+            promptIntent: "tell them what the next available appointment is and confirm if that works",
             requirement: "a specific date (or day name) AND a specific time of day",
-            repromptHelp: "I need both a day AND a time. For example: Tuesday morning, or next Wednesday at 2pm.",
+            repromptHelp: "I need both a day AND a time. For example: Tuesday at noon, or next Wednesday at 2pm.",
             validatorHint: {
                 type: "all_of",
                 rules: [
                     { type: "keywords_any", keywords: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "today", "tomorrow", "next week", "this week", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"], minMatches: 1 },
-                    { type: "keywords_any", keywords: ["morning", "afternoon", "evening", "night", "am", "pm", "12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"], minMatches: 1 }
+                    { type: "keywords_any", keywords: ["12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "noon"], minMatches: 1 }
                 ]
             },
-            examplesGood: ["Tuesday at 2pm", "Next week morning", "Friday afternoon", "Monday at 10"],
+            examplesGood: ["Tuesday at 2pm", "Next Thursday at noon", "Friday at 3pm", "Monday at 10"],
             followups: [
                 { when: "vague", ask: "What time of day works best, morning or afternoon?" }
             ],
