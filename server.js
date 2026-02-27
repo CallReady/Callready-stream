@@ -6767,7 +6767,7 @@ wss.on("connection", (twilioWs, req) => {
       "Ask one clear question per turn.\n" +
       "Do not introduce new required information.\n" +
       "You can speak in fragments and include natural hesitations.\n" +
-      "Do not repeat sentence structures from the previous turn.
+      "Do not repeat sentence structures from the previous turn.\n" +
       "Avoid ending every question with the same cadence.\n" +
       "Rotate between direct questions, soft prompts, and confirmation-style questions.\n" +
       "Occasionally use shorter sentences and fragments.\n" +
