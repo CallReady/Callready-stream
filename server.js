@@ -9440,7 +9440,7 @@ wss.on("connection", (twilioWs, req) => {
         const audioMs = Math.floor((aiAudioBytesThisResponse / 8000) * 1000);
 
         // Block listening until estimated playback end plus a small safety buffer
-        listenBlockUntilMs = (aiAudioStartAtMs || Date.now()) + audioMs + 10;
+        listenBlockUntilMs = (aiAudioStartAtMs || Date.now()) + audioMs + 1000;
 
         if (turnDetectionEnabled && waitingForFirstCallerSpeech && !sawSpeechStarted) {
           cancelOpenAIResponseIfAnyOnce("AI spoke before first caller speech");
