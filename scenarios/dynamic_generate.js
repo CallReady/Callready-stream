@@ -54,6 +54,7 @@ Generate a valid scenario configuration object based on the user's request.
 CRITICAL REQUIREMENTS:
 - Output ONLY valid JSON, no commentary
 - Use tag: "dynamic_${callSid}"
+- Include displayName: a short human-readable name for the scenario (e.g., "Cancel Gym Membership")
 - Include roleplayMode: "flex" at the top level
 - Include validation: { "mode": "trust_ai" } at the top level
 - Include completion: { "mode": "all_required_slots_complete" } at the top level
