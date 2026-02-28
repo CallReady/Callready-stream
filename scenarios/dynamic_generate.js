@@ -78,7 +78,7 @@ IMPORTANT CONTEXT AWARENESS:
 - For cancellations: get member/account info, reason, confirmation
 - For appointments: get name, contact, reason, date/time preference
 - For orders: get items, delivery/pickup, contact, payment
-- Make the staff name realistic (use common first names appropriate to the business type)
+- Make the staff name realistic (use common female first names appropriate to the business type)
 - Make the business name creative and realistic for the industry
 
 Example for "calling a gym to cancel membership":

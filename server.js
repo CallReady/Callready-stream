@@ -5462,7 +5462,7 @@ app.post("/process-wrap-up", async (req, res) => {
       console.log(nowIso(), "User ended session");
       vr.say(
         { voice: TWILIO_VOICE },
-        "Thanks for practicing with CallReady. You can call back anytime."
+        "Thanks for practicing with CallReady. We'd love to hear your feedback about your experience so we can use it to improve what we do. Please shoot us an email at callready dot live at gmail dot com and let us know how things went for you. Thanks for practicing, and call again soon!"
       );
       vr.hangup();
       res.type("text/xml").send(vr.toString());
@@ -9592,7 +9592,6 @@ wss.on("connection", (twilioWs, req) => {
         responseActive = false;
         callState.openaiResponseActive = false;
         aiAudioStartAtMs = 0;
-        listenBlockUntilMs = 0;
 
 
         // Handle function calls (silent checklist updates)
