@@ -179,50 +179,54 @@ function validateAndNormalizeScenario(rawScenario) {
     seenSlotIds.add(slotId);
   }
 
-  // Validate questions object
-  if (!rawScenario.questions || typeof rawScenario.questions !== "object") {
-    throw new Error("questions must be an object");
+  // Validate questions and/or slotSpecs
+  const hasQuestions = rawScenario.questions && typeof rawScenario.questions === "object";
+  const hasSlotSpecs = rawScenario.slotSpecs && typeof rawScenario.slotSpecs === "object";
+  if (!hasQuestions && !hasSlotSpecs) {
+    throw new Error("scenario must have either a questions object or a slotSpecs object");
   }
 
-  // Ensure every slot has a corresponding question
-  for (const slotId of rawScenario.slots) {
-    const question = rawScenario.questions[slotId];
-    if (!question || typeof question !== "object") {
-      throw new Error(`Missing question definition for slot: ${slotId}`);
-    }
-
-    // Validate baseQuestion
-    if (!question.baseQuestion || typeof question.baseQuestion !== "string") {
-      throw new Error(`Missing or invalid baseQuestion for slot: ${slotId}`);
-    }
-
-    const baseQ = question.baseQuestion.trim();
-    if (baseQ.length < 5 || baseQ.length > 160) {
-      throw new Error(`baseQuestion for ${slotId} must be 5-160 characters`);
-    }
-
-    // Remove dangerous placeholders
-    if (/\{\{|\[generate|<generate/i.test(baseQ)) {
-      question.baseQuestion = "Okay, got it.";
-    } else {
-      question.baseQuestion = baseQ;
-    }
-
-    // Validate helpIfStuck if present
-    if (question.helpIfStuck !== undefined) {
-      if (typeof question.helpIfStuck !== "string") {
-        throw new Error(`helpIfStuck for ${slotId} must be a string`);
+  // Ensure every slot has a corresponding question (legacy mode only)
+  if (hasQuestions) {
+    for (const slotId of rawScenario.slots) {
+      const question = rawScenario.questions[slotId];
+      if (!question || typeof question !== "object") {
+        throw new Error(`Missing question definition for slot: ${slotId}`);
       }
-      const help = question.helpIfStuck.trim();
-      if (help.length > 220) {
-        throw new Error(`helpIfStuck for ${slotId} must be 0-220 characters`);
-      }
-      question.helpIfStuck = help;
-    }
 
-    // Add default waitForResponse if not present
-    if (question.waitForResponse === undefined) {
-      question.waitForResponse = true;
+      // Validate baseQuestion
+      if (!question.baseQuestion || typeof question.baseQuestion !== "string") {
+        throw new Error(`Missing or invalid baseQuestion for slot: ${slotId}`);
+      }
+
+      const baseQ = question.baseQuestion.trim();
+      if (baseQ.length < 5 || baseQ.length > 160) {
+        throw new Error(`baseQuestion for ${slotId} must be 5-160 characters`);
+      }
+
+      // Remove dangerous placeholders
+      if (/\{\{|\[generate|<generate/i.test(baseQ)) {
+        question.baseQuestion = "Okay, got it.";
+      } else {
+        question.baseQuestion = baseQ;
+      }
+
+      // Validate helpIfStuck if present
+      if (question.helpIfStuck !== undefined) {
+        if (typeof question.helpIfStuck !== "string") {
+          throw new Error(`helpIfStuck for ${slotId} must be a string`);
+        }
+        const help = question.helpIfStuck.trim();
+        if (help.length > 220) {
+          throw new Error(`helpIfStuck for ${slotId} must be 0-220 characters`);
+        }
+        question.helpIfStuck = help;
+      }
+
+      // Add default waitForResponse if not present
+      if (question.waitForResponse === undefined) {
+        question.waitForResponse = true;
+      }
     }
   }
 
@@ -232,15 +236,17 @@ function validateAndNormalizeScenario(rawScenario) {
     throw new Error("First slot must be 'call_purpose' for the opening greeting");
   }
   
-  const callPurposeField = rawScenario.questions["call_purpose"];
-  if (!callPurposeField) {
-    throw new Error("Missing 'call_purpose' field definition");
-  }
-  
-  // Validate that call_purpose has a greeting-style baseQuestion
-  const greeting = callPurposeField.baseQuestion;
-  if (!greeting || greeting.length < 20) {
-    throw new Error("call_purpose baseQuestion must be a proper greeting (at least 20 characters)");
+  if (hasQuestions) {
+    const callPurposeField = rawScenario.questions["call_purpose"];
+    if (!callPurposeField) {
+      throw new Error("Missing 'call_purpose' field definition");
+    }
+
+    // Validate that call_purpose has a greeting-style baseQuestion
+    const greeting = callPurposeField.baseQuestion;
+    if (!greeting || greeting.length < 20) {
+      throw new Error("call_purpose baseQuestion must be a proper greeting (at least 20 characters)");
+    }
   }
 
   // Ensure the last slot is "questions" with loopUntilDone
@@ -249,14 +255,16 @@ function validateAndNormalizeScenario(rawScenario) {
     throw new Error("Last slot must be 'questions' for asking if caller has any questions");
   }
   
-  const questionsField = rawScenario.questions["questions"];
-  if (!questionsField) {
-    throw new Error("Missing 'questions' field definition");
-  }
-  
-  // Ensure loopUntilDone is set for questions field
-  if (!questionsField.loopUntilDone) {
-    questionsField.loopUntilDone = true;
+  if (hasQuestions) {
+    const questionsField = rawScenario.questions["questions"];
+    if (!questionsField) {
+      throw new Error("Missing 'questions' field definition");
+    }
+
+    // Ensure loopUntilDone is set for questions field
+    if (!questionsField.loopUntilDone) {
+      questionsField.loopUntilDone = true;
+    }
   }
 
   // Validate pricing if present
@@ -290,68 +298,72 @@ function validateAndNormalizeScenario(rawScenario) {
     goalStatement: rawScenario.goalStatement.trim(),
     validation: { mode: "trust_ai" },
     slots: rawScenario.slots,
-    questions: rawScenario.questions,
+    questions: hasQuestions ? rawScenario.questions : undefined,
     completion: { mode: "all_required_slots_complete" },
     roleplayMode: "flex"  // Dynamic scenarios always use flex mode
   };
 
-  // Generate slotSpecs for flexible roleplay mode
-  const slotSpecs = {};
-  for (let idx = 0; idx < rawScenario.slots.length; idx++) {
-    const slotId = rawScenario.slots[idx];
-    
-    // Get template or generate generic spec
-    const baseSpec = getSlotSpecTemplateOrGeneric(slotId);
-    
-    // Set gating rules
-    let gating = false;
-    if (slotId === "call_purpose") {
-      // call_purpose is always a gating slot (first slot)
-      gating = true;
-    } else if (slotId === "new_or_returning" || slotId === "new_or_returning_patient") {
-      // new/returning status is gating if present
-      gating = true;
-    } else if (idx === 1 && rawScenario.slots[0] === "call_purpose") {
-      // Fallback: second slot (right after call_purpose) is gating
-      // only if it's not "questions"
-      gating = slotId !== "questions";
+  // Use AI-generated slotSpecs if present, otherwise build from templates
+  if (hasSlotSpecs) {
+    normalized.slotSpecs = rawScenario.slotSpecs;
+  } else {
+    // Generate slotSpecs for flexible roleplay mode from templates
+    const slotSpecs = {};
+    for (let idx = 0; idx < rawScenario.slots.length; idx++) {
+      const slotId = rawScenario.slots[idx];
+
+      // Get template or generate generic spec
+      const baseSpec = getSlotSpecTemplateOrGeneric(slotId);
+
+      // Set gating rules
+      let gating = false;
+      if (slotId === "call_purpose") {
+        // call_purpose is always a gating slot (first slot)
+        gating = true;
+      } else if (slotId === "new_or_returning" || slotId === "new_or_returning_patient") {
+        // new/returning status is gating if present
+        gating = true;
+      } else if (idx === 1 && rawScenario.slots[0] === "call_purpose") {
+        // Fallback: second slot (right after call_purpose) is gating
+        // only if it's not "questions"
+        gating = slotId !== "questions";
+      }
+
+      // Set priority for non-gating slots
+      let priority = undefined;
+      if (!gating && slotId !== "questions") {
+        priority = (idx - 1) * 10; // 10, 20, 30... for slots after gating
+      }
+
+      // Build final slotSpec
+      const slotSpec = {
+        promptIntent: baseSpec.promptIntent,
+        requirement: baseSpec.requirement,
+        repromptHelp: baseSpec.repromptHelp,
+        validatorHint: baseSpec.validatorHint,
+        type: baseSpec.type || "text"
+      };
+
+      if (baseSpec.examplesGood && baseSpec.examplesGood.length > 0) {
+        slotSpec.examplesGood = baseSpec.examplesGood;
+      }
+
+      if (baseSpec.followups && baseSpec.followups.length > 0) {
+        slotSpec.followups = baseSpec.followups;
+      }
+
+      if (gating) {
+        slotSpec.gating = true;
+      }
+
+      if (priority !== undefined) {
+        slotSpec.priority = priority;
+      }
+
+      slotSpecs[slotId] = slotSpec;
     }
-
-    // Set priority for non-gating slots
-    let priority = undefined;
-    if (!gating && slotId !== "questions") {
-      priority = (idx - 1) * 10; // 10, 20, 30... for slots after gating
-    }
-
-    // Build final slotSpec
-    const slotSpec = {
-      promptIntent: baseSpec.promptIntent,
-      requirement: baseSpec.requirement,
-      repromptHelp: baseSpec.repromptHelp,
-      validatorHint: baseSpec.validatorHint,
-      type: baseSpec.type || "text"
-    };
-
-    if (baseSpec.examplesGood && baseSpec.examplesGood.length > 0) {
-      slotSpec.examplesGood = baseSpec.examplesGood;
-    }
-
-    if (baseSpec.followups && baseSpec.followups.length > 0) {
-      slotSpec.followups = baseSpec.followups;
-    }
-
-    if (gating) {
-      slotSpec.gating = true;
-    }
-
-    if (priority !== undefined) {
-      slotSpec.priority = priority;
-    }
-
-    slotSpecs[slotId] = slotSpec;
+    normalized.slotSpecs = slotSpecs;
   }
-
-  normalized.slotSpecs = slotSpecs;
 
   // closingMessage is REQUIRED for dynamic scenarios
   if (!rawScenario.closingMessage || typeof rawScenario.closingMessage !== "string" || rawScenario.closingMessage.trim().length === 0) {
