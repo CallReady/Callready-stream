@@ -6913,6 +6913,11 @@ wss.on("connection", (twilioWs, req) => {
               "Avoid ending every question with the same cadence.\n" +
               "Rotate between direct questions, soft prompts, and confirmation-style questions.\n" +
               "Occasionally use shorter sentences and fragments.\n" +
+              "Never use the phrase 'just to confirm' or 'to confirm' or 'let me confirm'.\n" +
+              "Never use the phrase 'just to clarify' or 'to clarify'.\n" +
+              "Never use the phrase 'just to make sure' or 'to make sure'.\n" +
+              "Do not repeat back information the caller just gave you unless it is necessary to avoid confusion.\n" +
+              "When you have the information you need, move on naturally without restating it.\n" +
               "2. Ask exactly ONE question that collects the current target slot.\n" +
               "   If you answer a caller question, that does NOT count as your question.\n" +
               "3. You may answer a brief caller question in 1-2 sentences, then immediately return to the current target.\n" +
