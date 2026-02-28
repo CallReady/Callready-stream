@@ -2195,7 +2195,9 @@ app.post("/gather-choose-scenario", async (req, res) => {
 
     const questionText = "Tell me about the call you want to practice, or if you want me to pick something, just say: you can choose.";
 
-    const gather = vr.gather({
+    vr.say({ voice: TWILIO_VOICE }, questionText);
+
+    vr.gather({
       input: "speech",
       timeout: 3,
       speechTimeout: 0.8,
@@ -2203,8 +2205,6 @@ app.post("/gather-choose-scenario", async (req, res) => {
       method: "POST",
       language: "en-US"
     });
-
-    gather.say({ voice: TWILIO_VOICE }, questionText);
 
     // Store current retry count so /process-choose-scenario can track it
     if (callSid) {
@@ -2248,7 +2248,9 @@ app.all("/gather-previous-scenario", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    const gather = vr.gather({
+    vr.say({ voice: TWILIO_VOICE }, questionText);
+
+    vr.gather({
       input: "speech",
       timeout: 5,
       speechTimeout: 0.8,
@@ -2256,8 +2258,6 @@ app.all("/gather-previous-scenario", async (req, res) => {
       method: "POST",
       language: "en-US"
     });
-
-    gather.say({ voice: TWILIO_VOICE }, questionText);
 
     // Fallback if no input
     vr.redirect({ method: "POST" }, "/gather-previous-scenario?retry=1");
@@ -2391,7 +2391,8 @@ app.post("/process-choose-scenario", async (req, res) => {
         console.log(nowIso(), "[DYNAMIC_SCENARIO_FAILED]", { callSid, error: genResult.error, details: genResult.details });
         // Failed to generate, ask them to try again
         const failText = "I wasn't able to create that scenario. Let's try something else. Tell me about the call you want to practice, or say 'you choose' if you want me to pick.";
-        const gather = vr.gather({
+        vr.say({ voice: TWILIO_VOICE }, failText);
+        vr.gather({
           input: "speech",
           timeout: 3,
           speechTimeout: 0.8,
@@ -2399,7 +2400,6 @@ app.post("/process-choose-scenario", async (req, res) => {
           method: "POST",
           language: "en-US"
         });
-        gather.say({ voice: TWILIO_VOICE }, failText);
         res.type("text/xml").send(vr.toString());
         return;
       }
@@ -2544,7 +2544,8 @@ app.post("/process-choose-scenario", async (req, res) => {
     }
 
     const clarifyText = "I didn't quite get that. Tell me about the call you want to practice. For example, you can say 'doctor appointment' or describe a call, or, if you want me to pick something for us to practice, just say, 'you choose.'";
-    const gather = vr.gather({
+    vr.say({ voice: TWILIO_VOICE }, clarifyText);
+    vr.gather({
       input: "speech",
       timeout: 3,
       speechTimeout: 0.8,
@@ -2552,7 +2553,6 @@ app.post("/process-choose-scenario", async (req, res) => {
       method: "POST",
       language: "en-US"
     });
-    gather.say({ voice: TWILIO_VOICE }, clarifyText);
     res.type("text/xml").send(vr.toString());
     return;
 
@@ -2599,7 +2599,8 @@ app.post("/generate-dynamic-scenario", async (req, res) => {
       console.log(nowIso(), "[DYNAMIC_SCENARIO_FAILED]", { callSid, error: genResult.error, details: genResult.details });
       // Failed to generate, ask them to try again
       const failText = "I wasn't able to create that scenario. Let's try something else. Tell me about the call you want to practice, or say 'you choose' if you want me to pick.";
-      const gather = vr.gather({
+      vr.say({ voice: TWILIO_VOICE }, failText);
+      vr.gather({
         input: "speech",
         timeout: 3,
         speechTimeout: 0.8,
@@ -2607,7 +2608,6 @@ app.post("/generate-dynamic-scenario", async (req, res) => {
         method: "POST",
         language: "en-US"
       });
-      gather.say({ voice: TWILIO_VOICE }, failText);
       res.type("text/xml").send(vr.toString());
       return;
     }
@@ -2647,7 +2647,9 @@ app.post("/gather-scenario-choice-confirm", async (req, res) => {
 
     const confirmText = "Okay, I'll pick something for us to work on. Does that sound good?";
 
-    const gather = vr.gather({
+    vr.say({ voice: TWILIO_VOICE }, confirmText);
+
+    vr.gather({
       input: "speech",
       timeout: 3,
       speechTimeout: 0.8,
@@ -2656,8 +2658,6 @@ app.post("/gather-scenario-choice-confirm", async (req, res) => {
       language: "en-US",
       hints: "yes, no"
     });
-
-    gather.say({ voice: TWILIO_VOICE }, confirmText);
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
@@ -2692,7 +2692,8 @@ app.post("/process-scenario-choice-confirm", async (req, res) => {
     }
 
     const repromptText = "Sorry, I just need a yes or no. Does that sound good?";
-    const gather = vr.gather({
+    vr.say({ voice: TWILIO_VOICE }, repromptText);
+    vr.gather({
       input: "speech",
       timeout: 3,
       speechTimeout: 0.8,
@@ -2701,7 +2702,6 @@ app.post("/process-scenario-choice-confirm", async (req, res) => {
       language: "en-US",
       hints: "yes, no"
     });
-    gather.say({ voice: TWILIO_VOICE }, repromptText);
     res.type("text/xml").send(vr.toString());
   } catch (err) {
     console.error("/process-scenario-choice-confirm ERROR:", err);
@@ -2723,7 +2723,9 @@ app.post("/gather-scenario-menu", async (req, res) => {
       ? "Would you like to practice calling a doctor's office, a dentist's office, or ordering a pizza?"
       : "Which would you like to practice? Scheduling a doctor's appointment, scheduling a dentist appointment, or ordering a pizza for delivery.";
 
-    const gather = vr.gather({
+    vr.say({ voice: TWILIO_VOICE }, menuText);
+
+    vr.gather({
       input: "speech dtmf",
       timeout: 5,
       numDigits: 1,
@@ -2732,8 +2734,6 @@ app.post("/gather-scenario-menu", async (req, res) => {
       method: "POST",
       language: "en-US"
     });
-
-    gather.say({ voice: TWILIO_VOICE }, menuText);
 
     // Fallback if no input
     vr.redirect({ method: "POST" }, "/gather-scenario-menu?retry=1");
@@ -2822,7 +2822,9 @@ app.post("/gather-describe-call", async (req, res) => {
       ? "Tell me again, who you'd like to practice calling and what the call is about."
       : "Great! Tell me who you'd like to practice calling and what the call is about.";
 
-    const gather = vr.gather({
+    vr.say({ voice: TWILIO_VOICE }, questionText);
+
+    vr.gather({
       input: "speech",
       timeout: 4,
       speechTimeout: "auto",
@@ -2831,8 +2833,6 @@ app.post("/gather-describe-call", async (req, res) => {
       language: "en-US",
       maxSpeechTime: 10
     });
-
-    gather.say({ voice: TWILIO_VOICE }, questionText);
 
     // Fallback if no input
     vr.redirect({ method: "POST" }, "/gather-describe-call?retry=1");
@@ -2908,7 +2908,8 @@ app.post("/process-describe-call", async (req, res) => {
       console.log(nowIso(), "[DYNAMIC_SCENARIO_FAILED]", { callSid, error: genResult.error, details: genResult.details });
       // Failed to generate, ask them to try again or choose something else
       const failText = "I wasn't able to create that scenario. Let's try something you'd like to practice, or say 'you choose' if you want me to pick.";
-      const gather = vr.gather({
+      vr.say({ voice: TWILIO_VOICE }, failText);
+      vr.gather({
         input: "speech",
         timeout: 3,
         speechTimeout: 0.8,
@@ -2916,7 +2917,6 @@ app.post("/process-describe-call", async (req, res) => {
         method: "POST",
         language: "en-US"
       });
-      gather.say({ voice: TWILIO_VOICE }, failText);
       res.type("text/xml").send(vr.toString());
       return;
     }
@@ -2991,7 +2991,9 @@ app.post("/gather-confirm-suggested-scenario", async (req, res) => {
       ? `Does that sound good?`
       : `Okay, I found a scenario for you. We'll practice ${scenarioLabel}. Does that sound good?`;
 
-    const gather = vr.gather({
+    vr.say({ voice: TWILIO_VOICE }, questionText);
+
+    vr.gather({
       input: "speech",
       timeout: 3,
       speechTimeout: "auto",
@@ -2999,8 +3001,6 @@ app.post("/gather-confirm-suggested-scenario", async (req, res) => {
       method: "POST",
       language: "en-US"
     });
-
-    gather.say({ voice: TWILIO_VOICE }, questionText);
 
     // Fallback if no input
     vr.redirect({ method: "POST" }, `/gather-confirm-suggested-scenario?tag=${encodeURIComponent(scenarioTag)}&retry=1`);
@@ -3096,7 +3096,9 @@ app.post("/gather-custom-call-confirmation", async (req, res) => {
       ? "Do you want to try a custom call?"
       : "Okay, let's try a custom call. It may not be perfect since we're creating it on the fly, but we're up to try it if you are. Ready?";
 
-    const gather = vr.gather({
+    vr.say({ voice: TWILIO_VOICE }, questionText);
+
+    vr.gather({
       input: "speech",
       timeout: 3,
       speechTimeout: "auto",
@@ -3104,8 +3106,6 @@ app.post("/gather-custom-call-confirmation", async (req, res) => {
       method: "POST",
       language: "en-US"
     });
-
-    gather.say({ voice: TWILIO_VOICE }, questionText);
 
     // Fallback if no input
     vr.redirect({ method: "POST" }, "/gather-custom-call-confirmation?retry=1");
@@ -3186,7 +3186,9 @@ app.post("/gather-confirm-doctor", async (req, res) => {
       ? "Does that sound good?"
       : "Okay. We'll practice calling a doctor's office to schedule an appointment. Does that sound good?";
 
-    const gather = vr.gather({
+    vr.say({ voice: TWILIO_VOICE }, questionText);
+
+    vr.gather({
       input: "speech",
       timeout: 3,
       speechTimeout: "auto",
@@ -3194,8 +3196,6 @@ app.post("/gather-confirm-doctor", async (req, res) => {
       method: "POST",
       language: "en-US"
     });
-
-    gather.say({ voice: TWILIO_VOICE }, questionText);
 
     // Fallback if no input
     vr.redirect({ method: "POST" }, "/gather-confirm-doctor?retry=1");
@@ -4842,15 +4842,15 @@ app.post("/end", async (req, res) => {
       vr.say(TWILIO_END_TRANSITION);
     }
 
-    const gather = vr.gather({
+    if (isRetry) vr.say({ voice: TWILIO_VOICE }, GATHER_RETRY_PROMPT);
+    else vr.say({ voice: TWILIO_VOICE }, TWILIO_OPTIN_PROMPT);
+
+    vr.gather({
       numDigits: 1,
       timeout: 7,
       action: "/gather-result",
       method: "POST",
     });
-
-    if (isRetry) gather.say(GATHER_RETRY_PROMPT);
-    else gather.say(TWILIO_OPTIN_PROMPT);
 
     if (!isRetry) {
       const retryUrl = skipTransition ? "/end?retry=1&skip_transition=1" : "/end?retry=1";
@@ -5227,7 +5227,12 @@ app.post("/gather-coaching-feedback", async (req, res) => {
     const vr = new VoiceResponse();
 
     // Ask if they want feedback with Gather for yes/no
-    const gather = vr.gather({
+    vr.say(
+      { voice: TWILIO_VOICE },
+      "That wraps up the roleplay. Would you like some feedback on how it went?"
+    );
+
+    vr.gather({
       input: "speech dtmf",
       hints: "yes, no",
       numDigits: 1,
@@ -5236,11 +5241,6 @@ app.post("/gather-coaching-feedback", async (req, res) => {
       action: "/process-coaching-feedback",
       method: "POST",
     });
-
-    gather.say(
-      { voice: TWILIO_VOICE },
-      "That wraps up the roleplay. Would you like some feedback on how it went?"
-    );
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
@@ -5414,7 +5414,12 @@ app.post("/gather-wrap-up", async (req, res) => {
     }
 
     // Otherwise, ask if they want to practice again
-    const gather = vr.gather({
+    vr.say(
+      { voice: TWILIO_VOICE },
+      "Would you like to practice that again, or end this session?"
+    );
+
+    vr.gather({
       input: "speech dtmf",
       hints: "practice again, end session",
       numDigits: 1,
@@ -5423,11 +5428,6 @@ app.post("/gather-wrap-up", async (req, res) => {
       action: "/process-wrap-up",
       method: "POST",
     });
-
-    gather.say(
-      { voice: TWILIO_VOICE },
-      "Would you like to practice that again, or end this session?"
-    );
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
