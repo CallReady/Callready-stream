@@ -54,14 +54,15 @@ Generate a valid scenario configuration object based on the user's request.
 CRITICAL REQUIREMENTS:
 - Output ONLY valid JSON, no commentary
 - Use tag: "dynamic_${callSid}"
+- Include roleplayMode: "flex" at the top level
+- Include validation: { "mode": "trust_ai" } at the top level
+- Include completion: { "mode": "all_required_slots_complete" } at the top level
 - Include 3-10 total slots with "call_purpose" as FIRST and "questions" as LAST
-- The FIRST slot must ALWAYS be "call_purpose" with a proper greeting
+- The FIRST slot must ALWAYS be "call_purpose"
 - The LAST slot must ALWAYS be "questions" for asking if they have any questions
 - Between call_purpose and questions, include 1-8 relevant fields for the scenario
 - Create a realistic business name that fits the scenario context
 - answererRole must include the business name and staff role (e.g., "front desk staff at BodyBuilders Gym")
-- The call_purpose baseQuestion must be a natural greeting: "Thanks for calling [Business Name]. This is [Staff Name]. How can I help you?"
-- All other questions should follow naturally in conversation order
 - Never include placeholders like {{TOTAL}} or [generate something]
 - practiceLabel: what the caller is practicing (e.g., "calling a gym to cancel a membership")
 - goalStatement: 1-2 sentences describing success
@@ -70,7 +71,25 @@ CRITICAL REQUIREMENTS:
   * For appointments: "We'll see you on [day]. Have a great day!"
   * For orders: "Your order is confirmed. Thanks for calling!"
   * Must sound natural and in-character for the business type
-- The "questions" slot must have loopUntilDone: true
+- Include a slotSpecs object with an entry for every slot in the slots array
+- Do NOT include a questions object - flex mode does not use it
+
+SLOTSPECS REQUIREMENTS:
+Every slot in slotSpecs must include:
+- promptIntent: what the AI should elicit from the caller (a brief phrase)
+- requirement: what counts as a valid answer (a brief phrase)
+- validatorHint: a rule object for validating the caller's response
+  * For name slots: { "type": "name" }
+  * For most other slots: { "type": "min_words", "minWords": 2 }
+- gating: true for call_purpose and any account or identity slots (name, account number, membership ID, etc.), false for all others
+- priority: sequential numbers starting at 1 (lower = asked sooner)
+
+The call_purpose slot's promptIntent should produce a natural greeting from the staff member, e.g. "Thanks for calling [Business Name]. This is [Staff Name]. How can I help you?"
+
+The "questions" slot must additionally include:
+- loopUntilDone: true
+- loopPromptIntent: "Ask if they have any other questions."
+- loopDoneHint: { "type": "keywords_any", "keywords": ["no", "nope", "that's all", "nothing", "i'm good", "thats it"], "minMatches": 1 }
 
 IMPORTANT CONTEXT AWARENESS:
 - Understand what the user wants to practice (e.g., canceling, scheduling, ordering, etc.)
@@ -85,60 +104,64 @@ Example for "calling a gym to cancel membership":
 {
   "tag": "dynamic_CA123",
   "displayName": "Cancel Gym Membership",
+  "roleplayMode": "flex",
+  "validation": { "mode": "trust_ai" },
+  "completion": { "mode": "all_required_slots_complete" },
   "practiceLabel": "calling a gym to cancel a membership",
   "answererRole": "customer service representative at FitLife Gym",
   "goalStatement": "Successfully cancel a gym membership by providing required information and completing the cancellation process.",
   "slots": ["call_purpose", "member_name", "membership_number", "reason_for_cancellation", "confirmation", "questions"],
-  "questions": {
+  "slotSpecs": {
     "call_purpose": {
-      "baseQuestion": "Thanks for calling FitLife Gym. This is Sarah. How can I help you today?",
-      "waitForResponse": true,
-      "validation": {
-        "requirement": "confirmation they want to cancel their membership"
-      },
-      "helpIfStuck": "If unclear, try: 'Are you calling about your membership?'"
+      "promptIntent": "Greet the caller and find out why they are calling",
+      "requirement": "confirmation they want to cancel their membership",
+      "validatorHint": { "type": "min_words", "minWords": 2 },
+      "gating": true,
+      "priority": 1
     },
     "member_name": {
-      "baseQuestion": "Can I get your full name please?",
-      "helpIfStuck": "I need the name on the membership account.",
-      "validation": {
-        "requirement": "full name"
-      }
+      "promptIntent": "Ask for the full name on the membership account",
+      "requirement": "a full first and last name",
+      "validatorHint": { "type": "name" },
+      "gating": true,
+      "priority": 2
     },
     "membership_number": {
-      "baseQuestion": "What's your membership number or the phone number on your account?",
-      "helpIfStuck": "I can look you up by your membership ID or phone number.",
-      "validation": {
-        "requirement": "membership number or phone number"
-      }
+      "promptIntent": "Ask for their membership number or account phone number",
+      "requirement": "a membership ID or phone number",
+      "validatorHint": { "type": "min_words", "minWords": 1 },
+      "gating": true,
+      "priority": 3
     },
     "reason_for_cancellation": {
-      "baseQuestion": "I see. May I ask why you'd like to cancel?",
-      "helpIfStuck": "Understanding the reason helps us improve our services.",
-      "validation": {
-        "requirement": "reason for cancellation"
-      }
+      "promptIntent": "Ask why they want to cancel",
+      "requirement": "a brief reason for cancellation",
+      "validatorHint": { "type": "min_words", "minWords": 2 },
+      "gating": false,
+      "priority": 4
     },
     "confirmation": {
-      "baseQuestion": "Just to confirm, you'd like to cancel your membership effective immediately. Is that correct?",
-      "helpIfStuck": "I need you to confirm the cancellation.",
-      "validation": {
-        "requirement": "confirmation of cancellation"
-      }
+      "promptIntent": "Ask them to confirm they want to proceed with the cancellation",
+      "requirement": "verbal confirmation they want to proceed",
+      "validatorHint": { "type": "min_words", "minWords": 1 },
+      "gating": false,
+      "priority": 5
     },
     "questions": {
-      "baseQuestion": "Do you have any questions about the cancellation or your final bill?",
+      "promptIntent": "Ask if they have any questions before closing",
+      "requirement": "confirmation they have no more questions",
+      "validatorHint": { "type": "keywords_any", "keywords": ["no", "nope", "that's all", "nothing", "i'm good", "thats it"], "minMatches": 1 },
+      "gating": false,
       "loopUntilDone": true,
-      "helpIfStuck": "I'm happy to answer any questions before we finalize this.",
-      "validation": {
-        "requirement": "confirmation they have no more questions"
-      }
+      "loopPromptIntent": "Ask if they have any other questions.",
+      "loopDoneHint": { "type": "keywords_any", "keywords": ["no", "nope", "that's all", "nothing", "i'm good", "thats it"], "minMatches": 1 },
+      "priority": 6
     }
   },
   "closingMessage": "Thank you for being a member. Have a great day!"
 }
 
-Now generate a scenario based on the user's request. Be creative with business names, make them realistic and appropriate. Use natural conversational questions.`;
+Now generate a scenario based on the user's request. Be creative with business names, make them realistic and appropriate.`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
