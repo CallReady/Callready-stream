@@ -6794,7 +6794,7 @@ wss.on("connection", (twilioWs, req) => {
 
       // Check for config-driven mode FIRST
       const scenario = callState.scenarioTag ? resolveScenarioWithDynamic(callState, callState.scenarioTag) : null;
-      const hasConfigMode = scenario && scenario.questions && scenario.slots;
+      const hasConfigMode = scenario && scenario.slots && (scenario.questions || scenario.slotSpecs);
 
       let instructions = header;
 
