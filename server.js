@@ -4250,7 +4250,7 @@ function resolveScenarioWithDynamic(callState, scenarioTag) {
 
   // Check if it's a dynamic scenario
   if (scenarioTag.startsWith("dynamic_")) {
-    const dynamicScenario = getDynamicScenario(scenarioTag);
+    const dynamicScenario = getDynamicScenario(callState && callState.callSid ? callState.callSid : scenarioTag);
     if (dynamicScenario) return dynamicScenario;
   }
 
