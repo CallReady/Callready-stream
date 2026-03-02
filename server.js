@@ -2970,6 +2970,7 @@ app.post("/wait-for-scenario", async (req, res) => {
   try {
     const callSid = req.body?.CallSid || req.query?.callSid || "";
     const status = scenarioGenerationStatus.get(callSid);
+    const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
     if (status === 'ready') {
