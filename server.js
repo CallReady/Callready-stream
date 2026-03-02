@@ -2537,8 +2537,21 @@ app.post("/process-choose-scenario", async (req, res) => {
         "It might take a little bit, so be patient while I build it."
       );
 
-      // Redirect to generation endpoint
-      vr.redirect({ method: "POST" }, `/generate-dynamic-scenario?description=${encodeURIComponent(speechResult)}`);
+      // Mark generation as pending
+      scenarioGenerationStatus.set(callSid, 'pending');
+
+      // Fire generation in background without waiting
+      fetch(`https://${req.headers.host}/generate-dynamic-scenario?description=${encodeURIComponent(speechResult)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `CallSid=${encodeURIComponent(callSid)}`
+      }).catch(err => {
+        console.error(nowIso(), 'Background generation error:', err);
+        scenarioGenerationStatus.set(callSid, 'error');
+      });
+
+      // Immediately redirect Twilio to the wait loop
+      vr.redirect({ method: 'POST' }, `/wait-for-scenario?callSid=${encodeURIComponent(callSid)}`);
       res.type("text/xml").send(vr.toString());
       return;
     }
@@ -2625,6 +2638,7 @@ app.post("/generate-dynamic-scenario", async (req, res) => {
 
     if (callSid) {
       twilioScenarioFlags.set(callSid, genResult.scenario.tag);
+      scenarioGenerationStatus.set(callSid, 'ready');
     }
 
     // Redirect to confirmation flow for dynamic scenario
@@ -2947,6 +2961,37 @@ app.post("/process-describe-call", async (req, res) => {
     res.type("text/xml").send(vr.toString());
   } catch (err) {
     console.error("/process-describe-call ERROR:", err);
+    res.status(500).send("Error");
+  }
+});
+
+// SCENARIO MATCHING FLOW: Wait for dynamic scenario generation to complete
+app.post("/wait-for-scenario", async (req, res) => {
+  try {
+    const callSid = req.body?.CallSid || req.query?.callSid || "";
+    const status = scenarioGenerationStatus.get(callSid);
+    const vr = new VoiceResponse();
+
+    if (status === 'ready') {
+      // Generation complete, move to confirmation
+      scenarioGenerationStatus.delete(callSid);
+      const tag = twilioScenarioFlags.get(callSid);
+      vr.redirect({ method: 'POST' }, `/gather-confirm-suggested-scenario?tag=${encodeURIComponent(tag)}`);
+    } else if (status === 'error') {
+      // Generation failed
+      scenarioGenerationStatus.delete(callSid);
+      vr.say({ voice: TWILIO_VOICE }, "I'm sorry, I wasn't able to build that scenario. Please try calling back and describing what you'd like to practice.");
+      vr.hangup();
+    } else {
+      // Still pending, loop back
+      vr.say({ voice: TWILIO_VOICE }, "Almost there, just a moment more.");
+      vr.pause({ length: 3 });
+      vr.redirect({ method: 'POST' }, `/wait-for-scenario?callSid=${encodeURIComponent(callSid)}`);
+    }
+
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error(nowIso(), "/wait-for-scenario error:", err);
     res.status(500).send("Error");
   }
 });
@@ -4988,6 +5033,7 @@ let runtimeRoleplayModeForce = null; // Runtime toggle set by /dev/roleplay/mode
 // Track active WebSocket connections and calls for graceful shutdown
 global.activeWebSockets = new Map(); // callSid => ws
 global.activeCalls = new Set(); // Set of active callSids
+const scenarioGenerationStatus = new Map(); // callSid => 'pending' | 'ready' | 'error'
 global.httpServer = null; // Will be set when server.listen() is called
 
 // Helper function to create hash from string
