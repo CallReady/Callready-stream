@@ -8921,6 +8921,15 @@ wss.on("connection", (twilioWs, req) => {
             }
           }
 
+          // For flex/dynamic scenarios, fall back to slotSpecs promptIntent
+          if (!startLine && greetingScenario && greetingScenario.slotSpecs && greetingScenario.slots) {
+            const firstSlotId = greetingScenario.slots[0];
+            const slotSpec = greetingScenario.slotSpecs[firstSlotId];
+            if (slotSpec && slotSpec.promptIntent) {
+              startLine = slotSpec.promptIntent;
+            }
+          }
+
           // If no greeting found, log error clearly - scenario config should always have first question
           if (!startLine) {
             console.error(nowIso(), "[SCENARIO_CONFIG_ERROR] No greeting found for scenario", {
@@ -10256,6 +10265,15 @@ wss.on("connection", (twilioWs, req) => {
               const firstQuestion = greetingScenario.questions[firstSlotId];
               if (firstQuestion && firstQuestion.baseQuestion) {
                 startLine = firstQuestion.baseQuestion;
+              }
+            }
+
+            // For flex/dynamic scenarios, fall back to slotSpecs promptIntent
+            if (!startLine && greetingScenario && greetingScenario.slotSpecs && greetingScenario.slots) {
+              const firstSlotId = greetingScenario.slots[0];
+              const slotSpec = greetingScenario.slotSpecs[firstSlotId];
+              if (slotSpec && slotSpec.promptIntent) {
+                startLine = slotSpec.promptIntent;
               }
             }
 
