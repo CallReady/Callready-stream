@@ -8278,12 +8278,14 @@ wss.on("connection", (twilioWs, req) => {
 
     // Get question config for this slot
     const questionConfig = scenario.questions ? scenario.questions[nextTargetSlotId] : null;
-    if (!questionConfig || !questionConfig.baseQuestion) {
+
+    // Get slotSpec from normalized scenario if available
+    const slotSpec = normalizedScenario.slotSpecs ? normalizedScenario.slotSpecs[nextTargetSlotId] : null;
+
+    // For flex mode (slotSpecs), we don't need questionConfig
+    if (!useFlexible && (!questionConfig || !questionConfig.baseQuestion)) {
       return null;
     }
-
-    // Get slotSpec from normalized scenario if available  
-    const slotSpec = normalizedScenario.slotSpecs ? normalizedScenario.slotSpecs[nextTargetSlotId] : null;
 
     return {
       scenarioTag: normalizedScenario.tag,
@@ -8292,14 +8294,14 @@ wss.on("connection", (twilioWs, req) => {
       practiceLabel: normalizedScenario.practiceLabel || "",
       goalStatement: normalizedScenario.goalStatement || normalizedScenario.goal || "",
       nextTargetSlotId: nextTargetSlotId,
-      baseQuestion: questionConfig.baseQuestion || "",
-      transitionPhrase: questionConfig.transitionPhrase || "",
-      helpIfStuck: questionConfig.helpIfStuck || "",
-      allowParaphrase: true,  // Allow paraphrase for now
-      validation: questionConfig.validation || null,
-      waitForResponse: questionConfig.waitForResponse,
-      loopUntilDone: questionConfig.loopUntilDone || false,
-      slotSpec: slotSpec  // Include slotSpec for flexible asking mode
+      baseQuestion: questionConfig ? (questionConfig.baseQuestion || "") : "",
+      transitionPhrase: questionConfig ? (questionConfig.transitionPhrase || "") : "",
+      helpIfStuck: questionConfig ? (questionConfig.helpIfStuck || "") : "",
+      allowParaphrase: true,
+      validation: questionConfig ? (questionConfig.validation || null) : null,
+      waitForResponse: questionConfig ? questionConfig.waitForResponse : undefined,
+      loopUntilDone: slotSpec ? (slotSpec.loopUntilDone || false) : (questionConfig ? (questionConfig.loopUntilDone || false) : false),
+      slotSpec: slotSpec
     };
   }
 
