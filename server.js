@@ -2985,9 +2985,15 @@ app.post("/wait-for-scenario", async (req, res) => {
       vr.hangup();
     } else {
       // Still pending, loop back
-      vr.say({ voice: TWILIO_VOICE }, "Almost there, just a moment more.");
-      vr.pause({ length: 3 });
-      vr.redirect({ method: 'POST' }, `/wait-for-scenario?callSid=${encodeURIComponent(callSid)}`);
+      const attempt = parseInt(req.body?.attempt || req.query?.attempt || "0", 10);
+      if (attempt === 0) {
+        // First check - give more breathing room after the "be patient" line
+        vr.pause({ length: 5 });
+      } else {
+        vr.say({ voice: TWILIO_VOICE }, "Almost there, just a moment more.");
+        vr.pause({ length: 5 });
+      }
+      vr.redirect({ method: 'POST' }, `/wait-for-scenario?callSid=${encodeURIComponent(callSid)}&attempt=${attempt + 1}`);
     }
 
     res.type("text/xml").send(vr.toString());
