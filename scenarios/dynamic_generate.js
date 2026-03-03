@@ -85,7 +85,7 @@ Every slot in slotSpecs must include:
 - gating: true for call_purpose and any account or identity slots (name, account number, membership ID, etc.), false for all others
 - priority: sequential numbers starting at 1 (lower = asked sooner)
 
-The call_purpose slot's promptIntent should produce a natural greeting from the staff member, e.g. "Thanks for calling [Business Name]. This is [Staff Name]. How can I help you?"
+The call_purpose slot must include an additional field called "answererGreeting" — this is the literal spoken greeting the staff member says when the call connects, e.g. "Thanks for calling StreamLine Cable. This is Jamie. How can I help you today?" Keep it natural and specific to the business. The promptIntent for call_purpose should be a brief instruction like "Greet the caller and find out why they are calling."
 
 The "questions" slot must additionally include:
 - loopUntilDone: true
@@ -115,6 +115,7 @@ Example for "calling a gym to cancel membership":
   "slotSpecs": {
     "call_purpose": {
       "promptIntent": "Greet the caller and find out why they are calling",
+      "answererGreeting": "Thanks for calling FitLife Gym. This is Jordan. How can I help you today?",
       "requirement": "confirmation they want to cancel their membership",
       "validatorHint": { "type": "min_words", "minWords": 2 },
       "gating": true,

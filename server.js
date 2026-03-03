@@ -8927,12 +8927,12 @@ wss.on("connection", (twilioWs, req) => {
             }
           }
 
-          // For flex/dynamic scenarios, fall back to slotSpecs promptIntent
+          // For flex/dynamic scenarios, fall back to slotSpecs answererGreeting or promptIntent
           if (!startLine && greetingScenario && greetingScenario.slotSpecs && greetingScenario.slots) {
             const firstSlotId = greetingScenario.slots[0];
             const slotSpec = greetingScenario.slotSpecs[firstSlotId];
-            if (slotSpec && slotSpec.promptIntent) {
-              startLine = slotSpec.promptIntent;
+            if (slotSpec && (slotSpec.answererGreeting || slotSpec.promptIntent)) {
+              startLine = slotSpec.answererGreeting || slotSpec.promptIntent;
             }
           }
 
@@ -10278,8 +10278,8 @@ wss.on("connection", (twilioWs, req) => {
             if (!startLine && greetingScenario && greetingScenario.slotSpecs && greetingScenario.slots) {
               const firstSlotId = greetingScenario.slots[0];
               const slotSpec = greetingScenario.slotSpecs[firstSlotId];
-              if (slotSpec && slotSpec.promptIntent) {
-                startLine = slotSpec.promptIntent;
+              if (slotSpec && (slotSpec.answererGreeting || slotSpec.promptIntent)) {
+                startLine = slotSpec.answererGreeting || slotSpec.promptIntent;
               }
             }
 
