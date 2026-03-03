@@ -8187,7 +8187,9 @@ wss.on("connection", (twilioWs, req) => {
     }
 
     if (!scenario.questions || typeof scenario.questions !== "object") {
-      return null;
+      if (!scenario.slotSpecs || typeof scenario.slotSpecs !== "object") {
+        return null;
+      }
     }
 
     // Check if flexible mode is enabled
