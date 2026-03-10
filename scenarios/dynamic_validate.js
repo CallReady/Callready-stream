@@ -249,10 +249,26 @@ function validateAndNormalizeScenario(rawScenario) {
     }
   }
 
-  // Ensure the last slot is "questions" with loopUntilDone
+  // Ensure the last slot is "questions" with loopUntilDone — auto-inject if missing
   const lastSlotId = rawScenario.slots[rawScenario.slots.length - 1];
   if (lastSlotId !== "questions") {
-    throw new Error("Last slot must be 'questions' for asking if caller has any questions");
+    console.warn("[DYNAMIC_VALIDATE] Last slot was not 'questions', auto-injecting it");
+    rawScenario.slots.push("questions");
+    if (!rawScenario.slotSpecs) rawScenario.slotSpecs = {};
+    rawScenario.slotSpecs["questions"] = {
+      promptIntent: "Ask if the caller has any questions before ending the call",
+      requirement: "either confirmation of no further questions or addressing any questions they have",
+      validatorHint: { type: "min_words", minWords: 1 },
+      gating: false,
+      priority: 99,
+      loopUntilDone: true,
+      loopPromptIntent: "Ask if they have any other questions.",
+      loopDoneHint: {
+        type: "keywords_any",
+        keywords: ["no", "nope", "that's all", "nothing", "i'm good", "thats it", "all set", "no thanks"],
+        minMatches: 1
+      }
+    };
   }
   
   if (hasQuestions) {
