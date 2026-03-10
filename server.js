@@ -3118,8 +3118,8 @@ app.post("/process-confirm-suggested-scenario", async (req, res) => {
     }
 
     if (noRe.test(text)) {
-      // User rejected the suggestion, offer custom call
-      vr.redirect({ method: "POST" }, "/gather-custom-call-confirmation");
+      // User rejected the suggestion, go straight to describe-call
+      vr.redirect({ method: "POST" }, "/gather-describe-call");
       res.type("text/xml").send(vr.toString());
       return;
     }
@@ -3313,8 +3313,8 @@ app.post("/process-confirm-doctor", async (req, res) => {
     }
 
     if (noRe.test(text)) {
-      // User wants different scenario, show menu
-      vr.redirect({ method: "POST" }, "/gather-scenario-menu");
+      // User wants different scenario, go to describe-call
+      vr.redirect({ method: "POST" }, "/gather-describe-call");
       res.type("text/xml").send(vr.toString());
       return;
     }
