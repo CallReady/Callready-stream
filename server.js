@@ -2578,78 +2578,7 @@ app.post("/process-choose-scenario", async (req, res) => {
   }
 });
 
-app.post("/generate-dynamic-scenario", async (req, res) => {
-  try {
-    const callSid = req.body?.CallSid || "";
-    const description = req.query?.description || req.body?.description || "";
 
-    console.log(nowIso(), "/generate-dynamic-scenario", { callSid, description });
-
-    const VoiceResponse = twilio.twiml.VoiceResponse;
-    const vr = new VoiceResponse();
-
-    if (!description) {
-      console.error(nowIso(), "/generate-dynamic-scenario missing description", { callSid });
-      vr.say({ voice: TWILIO_VOICE }, "I didn't get your scenario description. Let's try again.");
-      vr.redirect({ method: "POST" }, "/gather-choose-scenario");
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
-    // Generate the dynamic scenario
-    console.log(nowIso(), "/generate-dynamic-scenario: Generating scenario", {
-      callSid,
-      userDescription: description
-    });
-
-    const genResult = await generateDynamicScenario({
-      promptText: description,
-      callSid: callSid,
-      openaiApiKey: OPENAI_API_KEY
-    });
-
-    if (!genResult.ok) {
-      console.log(nowIso(), "[DYNAMIC_SCENARIO_FAILED]", { callSid, error: genResult.error, details: genResult.details });
-      // Failed to generate, ask them to try again
-      const failText = "I wasn't able to create that scenario. Let's try something else. Tell me about the call you want to practice, or say 'you choose' if you want me to pick.";
-      vr.say({ voice: TWILIO_VOICE }, failText);
-      vr.gather({
-        input: "speech",
-        timeout: 3,
-        speechTimeout: 0.8,
-        action: "/process-choose-scenario",
-        method: "POST",
-        language: "en-US"
-      });
-      res.type("text/xml").send(vr.toString());
-      return;
-    }
-
-    // Success! Store the scenario
-    setDynamicScenario(callSid, genResult.scenario);
-    console.log(nowIso(), "[DYNAMIC_SCENARIO_GENERATED]", {
-      callSid,
-      tag: genResult.scenario.tag,
-      slots: genResult.scenario.slots,
-      answererRole: genResult.scenario.answererRole,
-      practiceLabel: genResult.scenario.practiceLabel,
-      firstQuestion: genResult.scenario.questions && genResult.scenario.questions.call_purpose ? genResult.scenario.questions.call_purpose.baseQuestion : null
-    });
-
-    if (callSid) {
-      twilioScenarioFlags.set(callSid, genResult.scenario.tag);
-      scenarioGenerationStatus.set(callSid, 'ready');
-    }
-
-    // Redirect to confirmation flow for dynamic scenario
-    vr.redirect({ method: "POST" }, `/gather-confirm-suggested-scenario?tag=${encodeURIComponent(genResult.scenario.tag)}`);
-    res.type("text/xml").send(vr.toString());
-
-  } catch (err) {
-    console.error("/generate-dynamic-scenario ERROR:", err);
-    res.status(500).send("Error");
-  }
-});
 
 app.post("/gather-scenario-choice-confirm", async (req, res) => {
   try {
@@ -4531,7 +4460,11 @@ app.post("/debug/openai-realtime-check", async (req, res) => {
   }
 });
 
-// Test route for dynamic scenario generation
+// Rate limiting for dynamic scenario generation
+const dynamicScenarioRateLimit = new Map(); // callSid -> last generation timestamp
+const DYNAMIC_SCENARIO_RATE_LIMIT_MS = 30000; // 30 seconds between generations per callSid
+
+// Dynamic scenario generation route
 // Accepts application/x-www-form-urlencoded (uses global urlencoded middleware)
 app.post("/generate-dynamic-scenario", async (req, res) => {
   try {
@@ -4540,6 +4473,14 @@ app.post("/generate-dynamic-scenario", async (req, res) => {
     if (!CallSid || typeof CallSid !== "string") {
       return res.status(400).json({ ok: false, error: "missing_call_sid" });
     }
+
+    // Rate limit check
+    const lastGenTime = dynamicScenarioRateLimit.get(CallSid);
+    if (lastGenTime && (Date.now() - lastGenTime) < DYNAMIC_SCENARIO_RATE_LIMIT_MS) {
+      console.log(nowIso(), "[RATE_LIMIT] Dynamic scenario generation rate limited", { CallSid });
+      return res.status(429).json({ ok: false, error: "rate_limited" });
+    }
+    dynamicScenarioRateLimit.set(CallSid, Date.now());
 
     if (!promptText || typeof promptText !== "string") {
       return res.status(400).json({ ok: false, error: "missing_prompt_text" });
@@ -4910,6 +4851,16 @@ app.post("/end", async (req, res) => {
     } else {
       vr.say(IN_CALL_CONFIRM_NO);
       vr.hangup();
+    }
+
+    // Clean up per-call Maps to prevent memory leaks
+    if (callSid) {
+      twilioCallStates.delete(callSid);
+      lastInstructionsByCallSid.delete(callSid);
+      twilioCoachingContexts.delete(callSid);
+      twilioThresholdContexts.delete(callSid);
+      dynamicScenarioRateLimit.delete(callSid);
+      console.log(nowIso(), "[CLEANUP] Deleted call state maps", { callSid });
     }
 
     res.type("text/xml").send(vr.toString());
@@ -10721,6 +10672,14 @@ app.post("/dev/roleplay/start", (req, res) => {
     return res.status(404).json({ error: "Not found" });
   }
 
+  const debugSecret = process.env.DEBUG_SECRET;
+  if (process.env.NODE_ENV === "production" && debugSecret) {
+    const provided = req.headers["x-debug-secret"];
+    if (!provided || String(provided) !== String(debugSecret)) {
+      return res.status(403).json({ ok: false, error: "forbidden" });
+    }
+  }
+
   try {
     const { callSid, scenarioTag } = req.body || {};
 
@@ -10850,6 +10809,14 @@ app.post("/dev/roleplay/start", (req, res) => {
 app.post("/dev/roleplay/utterance", async (req, res) => {
   if (!ENABLE_ROLEPLAY_SIM) {
     return res.status(404).json({ error: "Not found" });
+  }
+
+  const debugSecret = process.env.DEBUG_SECRET;
+  if (process.env.NODE_ENV === "production" && debugSecret) {
+    const provided = req.headers["x-debug-secret"];
+    if (!provided || String(provided) !== String(debugSecret)) {
+      return res.status(403).json({ ok: false, error: "forbidden" });
+    }
   }
 
   try {
@@ -11094,6 +11061,14 @@ app.post("/dev/roleplay/reset", (req, res) => {
     return res.status(404).json({ error: "Not found" });
   }
 
+  const debugSecret = process.env.DEBUG_SECRET;
+  if (process.env.NODE_ENV === "production" && debugSecret) {
+    const provided = req.headers["x-debug-secret"];
+    if (!provided || String(provided) !== String(debugSecret)) {
+      return res.status(403).json({ ok: false, error: "forbidden" });
+    }
+  }
+
   try {
     const count = simulatorCallStates.size;
     simulatorCallStates.clear();
@@ -11128,6 +11103,14 @@ app.post("/dev/roleplay/reset", (req, res) => {
 app.post("/dev/roleplay/mode", (req, res) => {
   if (!ENABLE_ROLEPLAY_SIM) {
     return res.status(404).json({ error: "Not found" });
+  }
+
+  const debugSecret = process.env.DEBUG_SECRET;
+  if (process.env.NODE_ENV === "production" && debugSecret) {
+    const provided = req.headers["x-debug-secret"];
+    if (!provided || String(provided) !== String(debugSecret)) {
+      return res.status(403).json({ ok: false, error: "forbidden" });
+    }
   }
 
   try {
@@ -11182,6 +11165,14 @@ app.post("/dev/roleplay/mode", (req, res) => {
 app.get("/dev/callstate", (req, res) => {
   if (!ENABLE_ROLEPLAY_SIM) {
     return res.status(404).json({ error: "Not found" });
+  }
+
+  const debugSecret = process.env.DEBUG_SECRET;
+  if (process.env.NODE_ENV === "production" && debugSecret) {
+    const provided = req.headers["x-debug-secret"];
+    if (!provided || String(provided) !== String(debugSecret)) {
+      return res.status(403).json({ ok: false, error: "forbidden" });
+    }
   }
 
   try {

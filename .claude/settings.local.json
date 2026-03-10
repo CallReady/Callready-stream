@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"questions\\\\|slotSpecs\\\\|answererGreeting\" /c/Dev/Callready-stream/scenarios/*.js)",
+      "Bash(grep -n \"baseQuestion\" /c/Dev/Callready-stream/scenarios/*.js)",
+      "Bash(grep -n \"hardcod\\\\|magic.*number\\\\|''[0-9]\\\\{3,\\\\}''\\\\|\"\"[0-9]\\\\{3,\\\\}\"\"\" /c/Dev/Callready-stream/server.js)"
+    ]
+  }
+}
