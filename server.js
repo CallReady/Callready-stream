@@ -4801,15 +4801,18 @@ app.post("/unavailable", async (req, res) => {
 app.post('/gather-end-confirmation', (req, res) => {
   const callSid = req.body.CallSid || req.query.callSid;
   const scenarioTag = req.query.scenarioTag || '';
+  const utterance = req.query.utterance || '';
+  const promptText = utterance
+    ? `I think I heard you say "${utterance}", which makes me think you're wanting to end this practice session. Is that right?`
+    : `I think you may be wanting to end this practice session. Is that right?`;
   const vr = new VoiceResponse();
   const gather = vr.gather({
-    input: 'speech dtmf',
+    input: 'speech',
     timeout: 5,
-    numDigits: 1,
     action: `/process-end-confirmation?scenarioTag=${encodeURIComponent(scenarioTag)}`,
     method: 'POST'
   });
-  gather.say({ voice: 'Polly.Joanna' }, "It looks like you may want to end your practice session. Press 1 or say yes to end, or press 2 or say no to keep going.");
+  gather.say({ voice: TWILIO_VOICE }, promptText);
   vr.redirect({ method: 'POST' }, `/end?callSid=${callSid}`);
   res.type('text/xml');
   res.send(vr.toString());
@@ -4819,8 +4822,7 @@ app.post('/process-end-confirmation', (req, res) => {
   const callSid = req.body.CallSid || req.query.callSid;
   const scenarioTag = req.query.scenarioTag || '';
   const speech = (req.body.SpeechResult || '').toLowerCase().trim();
-  const digit = (req.body.Digits || '').trim();
-  const wantsEnd = digit === '1' || /\b(yes|yeah|yep|end|stop|quit)\b/.test(speech);
+  const wantsEnd = /\b(yes|yeah|yep|yup|correct|right|end|stop|quit|done)\b/.test(speech);
   const vr = new VoiceResponse();
   if (wantsEnd) {
     vr.redirect({ method: 'POST' }, `/end?callSid=${callSid}`);
@@ -9964,7 +9966,7 @@ wss.on("connection", (twilioWs, req) => {
                   (async () => {
                     try {
                       await twilioClient().calls(callSid).update({
-                        twiml: `<Response><Redirect method="POST">/gather-end-confirmation?scenarioTag=${encodeURIComponent(callState.scenarioTag || '')}</Redirect></Response>`
+                        twiml: `<Response><Redirect method="POST">/gather-end-confirmation?scenarioTag=${encodeURIComponent(callState.scenarioTag || '')}&utterance=${encodeURIComponent(args.caller_utterance || '')}</Redirect></Response>`
                       });
                     } catch (e) {
                       console.log(nowIso(), "Failed to redirect on end_session_tool:", e && e.message ? e.message : e);
