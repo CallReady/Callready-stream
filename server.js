@@ -3849,7 +3849,7 @@ app.post("/gather-roleplay", async (req, res) => {
 
       // Redirect to coaching gather endpoint (assume it exists or fall back to hangup)
       vr.say({ voice: TWILIO_VOICE }, "Now let's review how that went.");
-      vr.hangup(); // TODO: redirect to /gather-coaching when implemented
+      vr.redirect({ method: "POST" }, `/gather-coaching-feedback?callSid=${encodeURIComponent(callSid)}`);
 
       res.type("text/xml").send(vr.toString());
       return;
