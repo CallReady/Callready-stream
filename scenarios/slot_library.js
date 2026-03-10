@@ -251,6 +251,25 @@ const SLOT_REASON_FOR_VISIT = {
   complicationNote: null
 };
 
+const SLOT_INFORMATION_PROVIDED = {
+  promptIntent: "Provide the information the caller is asking for, then confirm they have what they need",
+  answererGreeting: null,
+  requirement: "the requested information has been provided and the caller has acknowledged it",
+  validatorHint: { type: "min_words", minWords: 1 },
+  repromptHelp: null,
+  helpIfStuck: null,
+  examplesGood: ["Got it, thanks", "That's what I needed", "Perfect"],
+  examplesBad: null,
+  followups: null,
+  loopUntilDone: false,
+  loopPromptIntent: null,
+  loopDoneHint: null,
+  gating: false,
+  priority: 2,
+  complication: false,
+  complicationNote: null
+};
+
 const SLOT_APPOINTMENT_PREFERENCE = {
   promptIntent: "Ask for the caller's preferred date and time for the appointment",
   answererGreeting: null,
@@ -537,6 +556,7 @@ module.exports = {
   SLOT_ADDRESS_ON_ACCOUNT,
   SLOT_NEW_OR_RETURNING,
   SLOT_REASON_FOR_VISIT,
+  SLOT_INFORMATION_PROVIDED,
   SLOT_APPOINTMENT_PREFERENCE,
   SLOT_CONFIRMATION_METHOD,
   SLOT_REASON_FOR_CANCELLATION,

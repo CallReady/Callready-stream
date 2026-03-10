@@ -69,7 +69,7 @@ ${slotMenu}
 
 SLOT SELECTION RULES BY CATEGORY:
 - PERSONAL: no verification slots, no business greeting, use a person's name not a business name. Use only as many slots as the conversation realistically needs — simple calls may only need 2.
-- INFORMATIONAL: call_purpose plus only the slots needed to answer the question, then questions. Do not pad with extra slots. A "what are your hours" call needs call_purpose and questions only.
+- INFORMATIONAL: call_purpose, then an information_provided slot where the answerer gives the caller what they asked for and confirms they have what they need, then questions. Always include information_provided for informational calls — never go directly from call_purpose to questions.
 - TRANSACTIONAL: call_purpose, relevant item/order slots, contact info, confirmation, questions. Use only slots the transaction actually requires.
 - ACCOUNT_SERVICE: call_purpose, identity verification slots, task-specific slots, at least one complication slot, questions.
 - MEDICAL_PROFESSIONAL: call_purpose, identity/verification slots, scheduling slots, questions.
