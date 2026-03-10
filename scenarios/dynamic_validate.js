@@ -162,9 +162,23 @@ function validateAndNormalizeScenario(rawScenario) {
   if (!Array.isArray(rawScenario.slots)) {
     throw new Error("slots must be an array");
   }
-  
-  if (rawScenario.slots.length < 3 || rawScenario.slots.length > 10) {
-    throw new Error("slots array must contain 3 to 10 items (must have call_purpose, questions, and 1-8 other fields)");
+
+  // Strip 'closing' slot — the engine handles closing automatically
+  rawScenario.slots = rawScenario.slots.filter(id => id !== "closing");
+
+  // Deduplicate slots, preserving first occurrence
+  const seen = new Set();
+  rawScenario.slots = rawScenario.slots.filter(id => {
+    if (seen.has(id)) {
+      console.warn("[DYNAMIC_VALIDATE] Removing duplicate slot:", id);
+      return false;
+    }
+    seen.add(id);
+    return true;
+  });
+
+  if (rawScenario.slots.length < 2 || rawScenario.slots.length > 10) {
+    throw new Error("slots array must contain 2 to 10 items after cleanup");
   }
 
   // Validate slot IDs
