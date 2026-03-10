@@ -9066,8 +9066,19 @@ wss.on("connection", (twilioWs, req) => {
           const isTherapy = detectTherapyRequest(utter);
 
           if (isSelfHarm) {
-            console.log(nowIso(), "SAFETY_ALERT: Self-harm language detected", { utter, callSid, phase: callState.phase });
-            // Let AI handle with crisis response per instructions
+            console.log(nowIso(), "SAFETY_ALERT: Self-harm language detected — hard enforcement triggered", { utter, callSid, phase: callState.phase });
+            setPhase("ending", "self_harm_safety_exit");
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "IMPORTANT: Speak this message exactly as written, then stop:\n" +
+                  "It sounds like you might be going through something really difficult right now, and I want to make sure you have support. Please reach out to the 988 Suicide and Crisis Lifeline — you can call or text 9 8 8 any time. Someone is always there to listen. We'll pause our practice session for now. Please take care of yourself.\n" +
+                  "CALLREADY_END: END_CALL_NOW"
+              }
+            }, "self_harm_exit");
+            return;
           }
 
           if (isJailbreak) {
