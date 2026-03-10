@@ -8837,6 +8837,21 @@ wss.on("connection", (twilioWs, req) => {
                 },
                 required: ["target_slot_id", "caller_question_detected", "should_reprompt", "thinks_goal_met", "wants_to_close_now"]
               }
+            },
+            {
+              type: "function",
+              name: "request_end_session",
+              description: "Call this tool ONLY when the caller explicitly wants to stop practicing and end the call. Do NOT call this if they are simply finishing the roleplay scenario naturally — only when they break character to ask to stop, hang up, or end the session.",
+              parameters: {
+                type: "object",
+                properties: {
+                  caller_utterance: {
+                    type: "string",
+                    description: "The exact thing the caller said that indicated they want to end"
+                  }
+                },
+                required: ["caller_utterance"]
+              }
             }
           ],
           tool_choice: "auto"
@@ -9334,7 +9349,7 @@ wss.on("connection", (twilioWs, req) => {
           // Reroute: end (strong intent only)
           if (callState.redirectingToCoaching || callState.roleplayComplete) {
             // Ignore end phrases while transitioning to coaching
-          } else if (userUtteranceRequestsEnd(u, callState.phase)) {
+          } else if (false && userUtteranceRequestsEnd(u, callState.phase)) { // disabled: AI tool request_end_session handles this now
             endingRequested = true;
             cancelOpenAIResponseIfAnyOnce("reroute ending");
             setPhase("ending", "reroute_user_end_phrase");
@@ -9936,6 +9951,31 @@ wss.on("connection", (twilioWs, req) => {
                 }
               } catch (e) {
                 console.log(nowIso(), "Error processing function call", { error: e.message });
+              }
+            }
+
+            if (item.type === "function_call" && item.name === "request_end_session") {
+              try {
+                const args = JSON.parse(item.arguments || '{}');
+                console.log(nowIso(), "[END_SESSION_REQUESTED]", { utterance: args.caller_utterance, callSid });
+                cancelOpenAIResponseIfAnyOnce("end_session_tool");
+                setPhase("ending", "end_session_tool");
+                if (callSid && hasTwilioRest()) {
+                  (async () => {
+                    try {
+                      await twilioClient().calls(callSid).update({
+                        twiml: `<Response><Redirect method="POST">/gather-end-confirmation?scenarioTag=${encodeURIComponent(callState.scenarioTag || '')}</Redirect></Response>`
+                      });
+                    } catch (e) {
+                      console.log(nowIso(), "Failed to redirect on end_session_tool:", e && e.message ? e.message : e);
+                    }
+                    closeAll("end_session_tool");
+                  })();
+                } else {
+                  closeAll("end_session_tool");
+                }
+              } catch (e) {
+                console.log(nowIso(), "Error handling request_end_session tool:", e && e.message ? e.message : e);
               }
             }
           }
