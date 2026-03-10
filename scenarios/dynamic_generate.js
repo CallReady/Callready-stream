@@ -68,11 +68,12 @@ Here is the full slot library. Select appropriate slots for the call type and ca
 ${slotMenu}
 
 SLOT SELECTION RULES BY CATEGORY:
-- PERSONAL: no verification slots, no business greeting, use a person's name not a business name, 2-4 slots total
-- INFORMATIONAL: call_purpose plus 1-2 answer slots, questions slot, 3 slots total max
-- TRANSACTIONAL: call_purpose, relevant item/order slots, contact info, confirmation, questions
-- ACCOUNT_SERVICE: call_purpose, identity verification slots, task-specific slots, at least one complication slot, questions
-- MEDICAL_PROFESSIONAL: call_purpose, identity/verification slots, scheduling slots, questions
+- PERSONAL: no verification slots, no business greeting, use a person's name not a business name. Use only as many slots as the conversation realistically needs — simple calls may only need 2.
+- INFORMATIONAL: call_purpose plus only the slots needed to answer the question, then questions. Do not pad with extra slots. A "what are your hours" call needs call_purpose and questions only.
+- TRANSACTIONAL: call_purpose, relevant item/order slots, contact info, confirmation, questions. Use only slots the transaction actually requires.
+- ACCOUNT_SERVICE: call_purpose, identity verification slots, task-specific slots, at least one complication slot, questions.
+- MEDICAL_PROFESSIONAL: call_purpose, identity/verification slots, scheduling slots, questions.
+- ALL CATEGORIES: Never include a slot called "closing" — the engine handles the closing automatically. Including it will break the call.
 
 COMPLICATION RULES:
 - ACCOUNT_SERVICE calls must include at least one complication slot (SLOT_RETENTION_OFFER_RESPONSE, SLOT_HOLD_ACKNOWLEDGMENT, SLOT_POLICY_PUSHBACK_RESPONSE, or SLOT_UNEXPECTED_NEWS_RESPONSE)
@@ -114,10 +115,11 @@ Every slot must include ALL of these fields:
 - complication: true for complication slots, false for all others
 - complicationNote: null for non-complication slots, brief description for complication slots
 
-The call_purpose slot answererGreeting must be:
-- For business calls: a natural spoken greeting with the business name and staff name, e.g. "Thanks for calling FitLife Gym, this is Jordan, how can I help you today?"
+The call_purpose slot answererGreeting is REQUIRED and must never be null. It must be:
+- For business calls: a natural spoken greeting with the business name and a staff name, e.g. "Thanks for calling FitLife Gym, this is Jordan, how can I help you today?"
 - For personal calls: a natural way a person would answer the phone, e.g. "Hello?" or "Hey, who's this?"
-- For informational calls: same as business calls
+- For informational calls: same as business calls — always include a business name and staff name
+- NEVER set answererGreeting to null on the call_purpose slot. If you do not have a business name, invent a realistic one.
 
 The "questions" slot must always have:
 - loopUntilDone: true

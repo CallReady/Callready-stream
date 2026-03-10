@@ -263,6 +263,15 @@ function validateAndNormalizeScenario(rawScenario) {
     }
   }
 
+  // Ensure call_purpose slotSpec has a non-null answererGreeting
+  if (hasSlotSpecs && rawScenario.slotSpecs["call_purpose"]) {
+    const cpSpec = rawScenario.slotSpecs["call_purpose"];
+    if (!cpSpec.answererGreeting || typeof cpSpec.answererGreeting !== "string" || cpSpec.answererGreeting.trim().length < 10) {
+      console.warn("[DYNAMIC_VALIDATE] call_purpose answererGreeting missing or too short, substituting fallback");
+      cpSpec.answererGreeting = "Thank you for calling, how can I help you today?";
+    }
+  }
+
   // Ensure the last slot is "questions" with loopUntilDone — auto-inject if missing
   const lastSlotId = rawScenario.slots[rawScenario.slots.length - 1];
   if (lastSlotId !== "questions") {
