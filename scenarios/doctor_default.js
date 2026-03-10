@@ -125,8 +125,8 @@ module.exports = {
       validatorHint: {
         type: "all_of",
         rules: [
-          { type: "keywords_any", keywords: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "today", "tomorrow", "next week", "this week", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"], minMatches: 1 },
-          { type: "keywords_any", keywords: ["morning", "afternoon", "evening", "night", "am", "pm", "12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"], minMatches: 1 }
+          { type: "keywords_any", keywords: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "today", "tomorrow", "next week"], minMatches: 1 },
+          { type: "keywords_any", keywords: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "noon", "midnight", "am", "pm", "o'clock", "oclock"], minMatches: 1 }
         ]
       },
       repromptHelp: "I need both a day AND a time. For example: Tuesday morning, or next Wednesday at 2pm.",
