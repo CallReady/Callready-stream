@@ -1,6 +1,7 @@
 // Dynamic scenario generation using OpenAI with safety checks
 
 const { validateAndNormalizeScenario } = require('./dynamic_validate');
+const SLOTS = require('./slot_library');
 
 // Safety: reject requests containing dangerous keywords
 const UNSAFE_KEYWORDS = [
@@ -47,123 +48,83 @@ async function generateDynamicScenario({ promptText, callSid, openaiApiKey }) {
     return { ok: false, error: "missing_api_key" };
   }
 
-  const systemPrompt = `You are a scenario config generator for a roleplay practice system.
+  const slotMenu = Object.entries(SLOTS).map(([name, slot]) => {
+    return `${name}: { promptIntent: "${slot.promptIntent}", requirement: "${slot.requirement}", gating: ${slot.gating}, priority: ${slot.priority}, complication: ${slot.complication} }`;
+  }).join('\n');
 
-Generate a valid scenario configuration object based on the user's request.
+  const systemPrompt = `You are a scenario config generator for a phone call roleplay practice system called CallReady. Your job is to generate realistic, well-structured call scenarios that help anxious callers practice real-world phone calls.
 
-CRITICAL REQUIREMENTS:
-- Output ONLY valid JSON, no commentary
-- Use tag: "dynamic_${callSid}"
-- Include displayName: a short human-readable name for the scenario (e.g., "Cancel Gym Membership")
-- Include roleplayMode: "flex" at the top level
-- Include validation: { "mode": "trust_ai" } at the top level
-- Include completion: { "mode": "all_required_slots_complete" } at the top level
-- Include 3-10 total slots with "call_purpose" as FIRST and "questions" as LAST
-- The FIRST slot must ALWAYS be "call_purpose"
-- The LAST slot must ALWAYS be "questions" for asking if they have any questions
-- Between call_purpose and questions, include 1-8 relevant fields for the scenario
-- Create a realistic business name that fits the scenario context
-- answererRole must include the business name and staff role (e.g., "front desk staff at BodyBuilders Gym")
-- Never include placeholders like {{TOTAL}} or [generate something]
-- practiceLabel: what the caller is practicing (e.g., "calling a gym to cancel a membership")
-- goalStatement: 1-2 sentences describing success
-- closingMessage: REQUIRED - A brief, warm, professional closing from the business staff that wraps up the call
-  * For cancellations: "Thank you for being a member. Have a great day!"
-  * For appointments: "We'll see you on [day]. Have a great day!"
-  * For orders: "Your order is confirmed. Thanks for calling!"
-  * Must sound natural and in-character for the business type
-- Include a slotSpecs object with an entry for every slot in the slots array
-- Do NOT include a questions object - flex mode does not use it
+STEP 1 — CLASSIFY THE CALL TYPE:
+Before choosing any slots, classify the call into one of these categories:
+- PERSONAL: calling family, friends, neighbors. No verification slots. Casual tone. No business structure.
+- INFORMATIONAL: calling to ask a quick question like hours, directions, pricing, availability. 2-3 slots max. Answer and close.
+- TRANSACTIONAL: placing an order, making a reservation, booking a service. Collect what is needed to complete the task.
+- ACCOUNT_SERVICE: cancellations, disputes, billing issues, changes to an account. Identity verification required, then the task.
+- MEDICAL_PROFESSIONAL: doctor, dentist, therapist, pharmacy. Verification plus scheduling or information.
+
+STEP 2 — SELECT SLOTS FROM THE LIBRARY:
+Here is the full slot library. Select appropriate slots for the call type and category. You may also invent new slots if nothing in the library fits — but prefer library slots where possible.
+
+${slotMenu}
+
+SLOT SELECTION RULES BY CATEGORY:
+- PERSONAL: no verification slots, no business greeting, use a person's name not a business name, 2-4 slots total
+- INFORMATIONAL: call_purpose plus 1-2 answer slots, questions slot, 3 slots total max
+- TRANSACTIONAL: call_purpose, relevant item/order slots, contact info, confirmation, questions
+- ACCOUNT_SERVICE: call_purpose, identity verification slots, task-specific slots, at least one complication slot, questions
+- MEDICAL_PROFESSIONAL: call_purpose, identity/verification slots, scheduling slots, questions
+
+COMPLICATION RULES:
+- ACCOUNT_SERVICE calls must include at least one complication slot (SLOT_RETENTION_OFFER_RESPONSE, SLOT_HOLD_ACKNOWLEDGMENT, SLOT_POLICY_PUSHBACK_RESPONSE, or SLOT_UNEXPECTED_NEWS_RESPONSE)
+- MEDICAL_PROFESSIONAL calls should include at least one complication slot
+- TRANSACTIONAL calls may include one complication slot if realistic
+- PERSONAL and INFORMATIONAL calls should NOT include complication slots
+
+STEP 3 — BUILD THE SCENARIO CONFIG:
+Output ONLY valid JSON with these rules:
+- tag: "dynamic_${callSid}"
+- displayName: short human-readable name (e.g. "Cancel Gym Membership")
+- callCategory: the category you assigned in Step 1 (e.g. "ACCOUNT_SERVICE")
+- roleplayMode: "flex"
+- validation: { "mode": "trust_ai" }
+- completion: { "mode": "all_required_slots_complete" }
+- practiceLabel: what the caller is practicing (e.g. "calling a gym to cancel a membership")
+- answererRole: for business calls, include the business name and staff role. For personal calls, use a natural description like "Brad's grandmother Margaret"
+- goalStatement: 1-2 sentences describing what success looks like
+- closingMessage: a brief, warm, in-character closing line appropriate to the call type
+- slots: array of slot ids in order, always starting with "call_purpose" and ending with "questions"
+- slotSpecs: an entry for every slot in the slots array
 
 SLOTSPECS REQUIREMENTS:
-Every slot in slotSpecs must include:
-- promptIntent: what the AI should elicit from the caller (a brief phrase)
-- requirement: what counts as a valid answer (a brief phrase)
-- validatorHint: a rule object for validating the caller's response
-  * For name slots: { "type": "name" }
-  * For most other slots: { "type": "min_words", "minWords": 2 }
-- gating: true for call_purpose and any account or identity slots (name, account number, membership ID, etc.), false for all others
-- priority: sequential numbers starting at 1 (lower = asked sooner)
+Every slot must include ALL of these fields:
+- promptIntent: what the AI should elicit (brief phrase)
+- answererGreeting: null for all slots except call_purpose, where it is the literal spoken opening line
+- requirement: what counts as a valid answer
+- validatorHint: { "type": "min_words", "minWords": 2 } for most slots, { "type": "name" } for name slots, { "type": "keywords_any", ... } where specific words are expected
+- repromptHelp: null or a brief hint for the AI if the caller is stuck
+- helpIfStuck: null or additional guidance
+- examplesGood: null or array of example good responses
+- examplesBad: null
+- followups: null or array of { when, ask } objects
+- loopUntilDone: false for all slots except "questions" where it is true
+- loopPromptIntent: null for all slots except "questions"
+- loopDoneHint: null for all slots except "questions"
+- gating: true for call_purpose and identity/verification slots, false for all others
+- priority: sequential numbers starting at 1
+- complication: true for complication slots, false for all others
+- complicationNote: null for non-complication slots, brief description for complication slots
 
-The call_purpose slot must include an additional field called "answererGreeting" — this is the literal spoken greeting the staff member says when the call connects, e.g. "Thanks for calling StreamLine Cable. This is Jamie. How can I help you today?" Keep it natural and specific to the business. The promptIntent for call_purpose should be a brief instruction like "Greet the caller and find out why they are calling."
+The call_purpose slot answererGreeting must be:
+- For business calls: a natural spoken greeting with the business name and staff name, e.g. "Thanks for calling FitLife Gym, this is Jordan, how can I help you today?"
+- For personal calls: a natural way a person would answer the phone, e.g. "Hello?" or "Hey, who's this?"
+- For informational calls: same as business calls
 
-The "questions" slot must additionally include:
+The "questions" slot must always have:
 - loopUntilDone: true
 - loopPromptIntent: "Ask if they have any other questions."
-- loopDoneHint: { "type": "keywords_any", "keywords": ["no", "nope", "that's all", "nothing", "i'm good", "thats it"], "minMatches": 1 }
+- loopDoneHint: { "type": "keywords_any", "keywords": ["no", "nope", "that's all", "nothing", "i'm good", "thats it", "all set", "no thanks"], "minMatches": 1 }
 
-IMPORTANT CONTEXT AWARENESS:
-- Understand what the user wants to practice (e.g., canceling, scheduling, ordering, etc.)
-- Choose appropriate fields to collect based on the call type
-- For cancellations: get member/account info, reason, confirmation
-- For appointments: get name, contact, reason, date/time preference
-- For orders: get items, delivery/pickup, contact, payment
-- Make the staff name realistic (use common female first names appropriate to the business type)
-- Make the business name creative and realistic for the industry
-
-Example for "calling a gym to cancel membership":
-{
-  "tag": "dynamic_CA123",
-  "displayName": "Cancel Gym Membership",
-  "roleplayMode": "flex",
-  "validation": { "mode": "trust_ai" },
-  "completion": { "mode": "all_required_slots_complete" },
-  "practiceLabel": "calling a gym to cancel a membership",
-  "answererRole": "customer service representative at FitLife Gym",
-  "goalStatement": "Successfully cancel a gym membership by providing required information and completing the cancellation process.",
-  "slots": ["call_purpose", "member_name", "membership_number", "reason_for_cancellation", "confirmation", "questions"],
-  "slotSpecs": {
-    "call_purpose": {
-      "promptIntent": "Greet the caller and find out why they are calling",
-      "answererGreeting": "Thanks for calling FitLife Gym. This is Jordan. How can I help you today?",
-      "requirement": "confirmation they want to cancel their membership",
-      "validatorHint": { "type": "min_words", "minWords": 2 },
-      "gating": true,
-      "priority": 1
-    },
-    "member_name": {
-      "promptIntent": "Ask for the full name on the membership account",
-      "requirement": "a full first and last name",
-      "validatorHint": { "type": "name" },
-      "gating": true,
-      "priority": 2
-    },
-    "membership_number": {
-      "promptIntent": "Ask for their membership number or account phone number",
-      "requirement": "a membership ID or phone number",
-      "validatorHint": { "type": "min_words", "minWords": 1 },
-      "gating": true,
-      "priority": 3
-    },
-    "reason_for_cancellation": {
-      "promptIntent": "Ask why they want to cancel",
-      "requirement": "a brief reason for cancellation",
-      "validatorHint": { "type": "min_words", "minWords": 2 },
-      "gating": false,
-      "priority": 4
-    },
-    "confirmation": {
-      "promptIntent": "Ask them to confirm they want to proceed with the cancellation",
-      "requirement": "verbal confirmation they want to proceed",
-      "validatorHint": { "type": "min_words", "minWords": 1 },
-      "gating": false,
-      "priority": 5
-    },
-    "questions": {
-      "promptIntent": "Ask if they have any questions before closing",
-      "requirement": "confirmation they have no more questions",
-      "validatorHint": { "type": "keywords_any", "keywords": ["no", "nope", "that's all", "nothing", "i'm good", "thats it"], "minMatches": 1 },
-      "gating": false,
-      "loopUntilDone": true,
-      "loopPromptIntent": "Ask if they have any other questions.",
-      "loopDoneHint": { "type": "keywords_any", "keywords": ["no", "nope", "that's all", "nothing", "i'm good", "thats it"], "minMatches": 1 },
-      "priority": 6
-    }
-  },
-  "closingMessage": "Thank you for being a member. Have a great day!"
-}
-
-Now generate a scenario based on the user's request. Be creative with business names, make them realistic and appropriate.`;
+IMPORTANT: Output ONLY the JSON object. No commentary, no markdown, no code fences.`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
