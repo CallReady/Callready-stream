@@ -8899,18 +8899,13 @@ wss.on("connection", (twilioWs, req) => {
           if (!startLine && greetingScenario && greetingScenario.slotSpecs && greetingScenario.slots) {
             const firstSlotId = greetingScenario.slots[0];
             const slotSpec = greetingScenario.slotSpecs[firstSlotId];
-            console.log("[GREETING_DEBUG]", {
-              firstSlotId,
-              answererGreeting: slotSpec && slotSpec.answererGreeting,
-              hasSlotSpecs: !!(greetingScenario && greetingScenario.slotSpecs),
-              slotSpec: slotSpec ? JSON.stringify(slotSpec).substring(0, 200) : null
-            });
             if (slotSpec && (slotSpec.answererGreeting || slotSpec.promptIntent)) {
               startLine = slotSpec.answererGreeting || slotSpec.promptIntent;
             }
           }
 
           // If no greeting found, log error clearly - scenario config should always have first question
+          console.log("[GREETING_FALLTHROUGH]", { hasSlotSpecs: !!(greetingScenario && greetingScenario.slotSpecs), hasSlots: !!(greetingScenario && greetingScenario.slots), slotSpecKeys: greetingScenario && greetingScenario.slotSpecs ? Object.keys(greetingScenario.slotSpecs).join(",") : "none" });
           if (!startLine) {
             console.error(nowIso(), "[SCENARIO_CONFIG_ERROR] No greeting found for scenario", {
               scenarioTag: callState.scenarioTag,
