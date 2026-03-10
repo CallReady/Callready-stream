@@ -9352,14 +9352,13 @@ wss.on("connection", (twilioWs, req) => {
                   } catch (e) {
                     console.log(nowIso(), "Failed to redirect call on user end phrase:", e && e.message ? e.message : e);
                   }
+                  closeAll("reroute_user_end_phrase");
                 })();
               } catch (e) {
                 console.log(nowIso(), "Error setting up ending redirect on user end phrase:", e && e.message ? e.message : e);
+                closeAll("reroute_user_end_phrase");
               }
             }
-
-            // Close WebSocket
-            closeAll("reroute_user_end_phrase");
             sawCallerSpeechSinceLastAIDone = false;
             sawSpeechStarted = false;
 
