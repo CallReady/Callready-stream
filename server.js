@@ -8899,6 +8899,12 @@ wss.on("connection", (twilioWs, req) => {
           if (!startLine && greetingScenario && greetingScenario.slotSpecs && greetingScenario.slots) {
             const firstSlotId = greetingScenario.slots[0];
             const slotSpec = greetingScenario.slotSpecs[firstSlotId];
+            console.log("[GREETING_DEBUG]", {
+              firstSlotId,
+              answererGreeting: slotSpec && slotSpec.answererGreeting,
+              hasSlotSpecs: !!(greetingScenario && greetingScenario.slotSpecs),
+              slotSpec: slotSpec ? JSON.stringify(slotSpec).substring(0, 200) : null
+            });
             if (slotSpec && (slotSpec.answererGreeting || slotSpec.promptIntent)) {
               startLine = slotSpec.answererGreeting || slotSpec.promptIntent;
             }
