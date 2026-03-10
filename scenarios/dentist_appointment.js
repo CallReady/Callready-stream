@@ -27,6 +27,7 @@ module.exports = {
 
     slotSpecs: {
         call_purpose: {
+            answererGreeting: "Thanks for calling BrightSmile Dental, this is Mary, how can I help you?",
             promptIntent: "confirm they're calling to schedule an appointment",
             requirement: "confirmation that they are calling about scheduling an appointment",
             repromptHelp: "Ask if they're calling to schedule a dental appointment, or clarify the reason for the call.",
@@ -182,107 +183,6 @@ module.exports = {
         }
     },
 
-    questions: {
-        call_purpose: {
-            baseQuestion: "Thanks for calling BrightSmile Dental, this is Mary, how can I help you?",
-            waitForResponse: true,
-            validation: {
-                requirement: "confirmation that they want to schedule a dentist appointment"
-            },
-            helpIfStuck: "If unclear, try: 'Are you calling to schedule a dental appointment?'"
-        },
-
-        new_or_returning_patient: {
-            baseQuestion: "Are you a new patient or a returning patient?",
-            waitForResponse: true,
-            validation: {
-                requirement: "confirmation of whether they are a new or returning patient"
-            },
-            helpIfStuck: "If they are unsure, clarify whether they have visited this dental office before."
-        },
-
-        patient_name: {
-            baseQuestion: "What is your full name?",
-            waitForResponse: true,
-            validation: {
-                requirement: "a full name for the patient"
-            },
-            helpIfStuck: "If unclear, ask them to spell it."
-        },
-
-        birthdate: {
-            baseQuestion: "What is your date of birth?",
-            waitForResponse: true,
-            validation: {
-                requirement: "a complete date of birth"
-            },
-            helpIfStuck: "Accept any common format."
-        },
-
-        contact_phone: {
-            baseQuestion: "What's the best phone number to reach you?",
-            waitForResponse: true,
-            validation: {
-                requirement: "a complete phone number with area code"
-            },
-            helpIfStuck: "A phone number with area code is needed for confirmation and reminders."
-        },
-
-        insurance_provider: {
-            baseQuestion: "Do you have dental insurance or will you be self-pay?",
-            waitForResponse: true,
-            validation: {
-                requirement: "either a dental insurance company name or confirmation of self-pay"
-            },
-            helpIfStuck: "If they have insurance, ask for the company name. Otherwise note self-pay."
-        },
-
-        reason_for_appointment: {
-            baseQuestion: "Are you coming in for a routine checkup and cleaning, or is there a specific dental issue we should know about?",
-            waitForResponse: true,
-            validation: {
-                requirement: "clear identification of either a routine visit or a specific dental concern"
-            },
-            helpIfStuck: "For example: 'just a cleaning' or 'I have tooth pain on the right side.'"
-        },
-
-        duration_or_last_visit: {
-            baseQuestion: "If this is for a specific issue, how long has it been going on? If this is for a checkup, when was the last time you saw a dentist?",
-            waitForResponse: true,
-            validation: {
-                requirement: "either a time duration for a dental issue or a timeframe since last dental visit"
-            },
-            helpIfStuck: "You can answer with something like 'about three days' or 'it has been about a year since my last visit.'"
-        },
-
-        appointment_preference: {
-            baseQuestion: "What day and time works best for you?",
-            waitForResponse: true,
-            validation: {
-                requirement: "a specific date (or day name) AND a specific time of day"
-            },
-            helpIfStuck: "I need both a day AND a time. For example: Tuesday morning, or next week in the afternoon."
-        },
-
-        confirmation_preference: {
-            baseQuestion: "Would you prefer a text reminder, a phone call reminder, or no reminder?",
-            waitForResponse: true,
-            validation: {
-                requirement: "confirmation of reminder preference"
-            },
-            helpIfStuck: "Most patients prefer text, but clarify their choice."
-        },
-
-        questions: {
-            baseQuestion: "Do you have any questions for me?",
-            waitForResponse: true,
-            loopUntilDone: true,
-            validation: {
-                requirement: "either confirmation of no further questions or addressing any questions they have"
-            },
-            helpIfStuck: "Answer briefly in character, then ask if there is anything else."
-        }
-    },
 
     closingMessage: "Thank you for calling BrightSmile. We look forward to seeing you soon!",
 
