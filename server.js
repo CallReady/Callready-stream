@@ -9336,6 +9336,7 @@ wss.on("connection", (twilioWs, req) => {
             // Ignore end phrases while transitioning to coaching
           } else if (userUtteranceRequestsEnd(u, callState.phase)) {
             endingRequested = true;
+            cancelOpenAIResponseIfAnyOnce("reroute ending");
             setPhase("ending", "reroute_user_end_phrase");
             console.log(nowIso(), "User requested end", { utterance: u });
 
@@ -9359,7 +9360,6 @@ wss.on("connection", (twilioWs, req) => {
 
             // Close WebSocket
             closeAll("reroute_user_end_phrase");
-            cancelOpenAIResponseIfAnyOnce("reroute ending");
             sawCallerSpeechSinceLastAIDone = false;
             sawSpeechStarted = false;
 
