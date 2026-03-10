@@ -2914,14 +2914,26 @@ app.post("/wait-for-scenario", async (req, res) => {
     } else {
       // Still pending, loop back
       const attempt = parseInt(req.body?.attempt || req.query?.attempt || "0", 10);
-      if (attempt === 0) {
-        // First check - give more breathing room after the "be patient" line
+      const MAX_WAIT_ATTEMPTS = 12;
+      if (attempt >= MAX_WAIT_ATTEMPTS) {
+        vr.say({ voice: TWILIO_VOICE }, "Sorry about that, I wasn't able to set up that scenario. Let's try something else.");
+        vr.redirect({ method: 'POST' }, `/gather-describe-call?callSid=${encodeURIComponent(callSid)}`);
+      } else if (attempt === 0) {
         vr.pause({ length: 5 });
+        vr.redirect({ method: 'POST' }, `/wait-for-scenario?callSid=${encodeURIComponent(callSid)}&attempt=${attempt + 1}`);
       } else {
-        vr.say({ voice: TWILIO_VOICE }, "Almost there, just a moment more.");
+        const pendingPhrases = [
+          "Just a moment, I'm getting that ready.",
+          "Almost there, hang tight.",
+          "One more second, setting that up now.",
+          "Still working on it, just a little longer.",
+          "Getting everything ready for you."
+        ];
+        const phrase = pendingPhrases[(attempt - 1) % pendingPhrases.length];
+        vr.say({ voice: TWILIO_VOICE }, phrase);
         vr.pause({ length: 5 });
+        vr.redirect({ method: 'POST' }, `/wait-for-scenario?callSid=${encodeURIComponent(callSid)}&attempt=${attempt + 1}`);
       }
-      vr.redirect({ method: 'POST' }, `/wait-for-scenario?callSid=${encodeURIComponent(callSid)}&attempt=${attempt + 1}`);
     }
 
     res.type("text/xml").send(vr.toString());
@@ -4506,6 +4518,8 @@ app.post("/generate-dynamic-scenario", async (req, res) => {
     // Store the generated scenario
     setDynamicScenario(CallSid, result.scenario);
     console.log(nowIso(), "Dynamic scenario stored. Tag:", result.scenario.tag);
+    scenarioGenerationStatus.set(CallSid, 'ready');
+    twilioScenarioFlags.set(CallSid, result.scenario.tag);
     console.log(nowIso(), "Slots:", result.scenario.slots);
 
     res.status(200).json({
