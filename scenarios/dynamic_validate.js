@@ -344,7 +344,19 @@ function validateAndNormalizeScenario(rawScenario) {
 
   // Use AI-generated slotSpecs if present, otherwise build from templates
   if (hasSlotSpecs) {
-    normalized.slotSpecs = rawScenario.slotSpecs;
+    // If AI generated slotSpecs as an array instead of a keyed object, convert it
+    if (Array.isArray(rawScenario.slotSpecs)) {
+      console.warn("[DYNAMIC_VALIDATE] slotSpecs was an array, converting to keyed object using slots array");
+      const converted = {};
+      rawScenario.slots.forEach((slotId, i) => {
+        if (rawScenario.slotSpecs[i]) {
+          converted[slotId] = rawScenario.slotSpecs[i];
+        }
+      });
+      normalized.slotSpecs = converted;
+    } else {
+      normalized.slotSpecs = rawScenario.slotSpecs;
+    }
   } else {
     // Generate slotSpecs for flexible roleplay mode from templates
     const slotSpecs = {};

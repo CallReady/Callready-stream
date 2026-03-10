@@ -252,9 +252,9 @@ const SLOT_REASON_FOR_VISIT = {
 };
 
 const SLOT_INFORMATION_PROVIDED = {
-  promptIntent: "Provide the information the caller is asking for, then confirm they have what they need",
+  promptIntent: "You have the information the caller needs — provide it clearly and naturally, then ask if that answers their question",
   answererGreeting: null,
-  requirement: "the requested information has been provided and the caller has acknowledged it",
+  requirement: "the caller has acknowledged receiving the information",
   validatorHint: { type: "min_words", minWords: 1 },
   repromptHelp: null,
   helpIfStuck: null,
