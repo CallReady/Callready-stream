@@ -2543,7 +2543,7 @@ app.post("/process-choose-scenario", async (req, res) => {
       fetch(`https://${req.headers.host}/generate-dynamic-scenario?description=${encodeURIComponent(speechResult)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `CallSid=${encodeURIComponent(callSid)}`
+        body: `CallSid=${encodeURIComponent(callSid)}&promptText=${encodeURIComponent(speechResult)}`
       }).catch(err => {
         console.error(nowIso(), 'Background generation error:', err);
         scenarioGenerationStatus.set(callSid, 'error');
