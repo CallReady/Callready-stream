@@ -1384,8 +1384,7 @@ app.get("/route-check", (req, res) => res.status(200).send("route-check-ok"));
 app.get("/cron/reengage", async (req, res) => {
   try {
     const provided =
-      (req.headers && req.headers["x-cron-secret"] ? String(req.headers["x-cron-secret"]) : "") ||
-      (req.query && req.query.secret ? String(req.query.secret) : "");
+      (req.headers && req.headers["x-cron-secret"] ? String(req.headers["x-cron-secret"]) : "");
 
     if (!REENGAGE_CRON_SECRET || provided !== String(REENGAGE_CRON_SECRET)) {
       res.status(401).json({ ok: false, error: "unauthorized" });
@@ -7326,7 +7325,7 @@ wss.on("connection", (twilioWs, req) => {
     try {
       const sid = s.callSid || callSid || null;
       if (sid) {
-        logAiUsageToDb(sid, s).catch(() => { });
+        logAiUsageToDb(sid, s).catch((e) => { console.error(nowIso(), "[SILENT_ERROR]", e && e.message ? e.message : e); });
       }
     } catch { }
 
@@ -7343,7 +7342,7 @@ wss.on("connection", (twilioWs, req) => {
     try {
       const sid = s.callSid || callSid || null;
       if (sid) {
-        logAiUsageToDb(sid, s).catch(() => { });
+        logAiUsageToDb(sid, s).catch((e) => { console.error(nowIso(), "[SILENT_ERROR]", e && e.message ? e.message : e); });
       }
     } catch { }
 
@@ -8425,7 +8424,7 @@ wss.on("connection", (twilioWs, req) => {
         console.log(nowIso(), "End fallback timer fired, forcing hangup");
         await hardHangupViaTwilio("end_fallback_timer");
         closeAll("End fallback hangup");
-      })().catch(() => { });
+      })().catch((e) => { console.error(nowIso(), "[SILENT_ERROR]", e && e.message ? e.message : e); });
     }, 4000);
 
     const ok = await redirectToEndWithRetry(reason, opts);
@@ -10302,7 +10301,7 @@ wss.on("connection", (twilioWs, req) => {
                 cancelOpenAIResponseIfAnyOnce("soft_threshold_end");
                 await requestScenarioTagTextOnlyOnce("soft_threshold_end");
                 await requestEnd("soft_threshold_end", { skipTransition: true });
-              })().catch(() => { });
+              })().catch((e) => { console.error(nowIso(), "[SILENT_ERROR]", e && e.message ? e.message : e); });
             }
           } catch { }
 
@@ -10315,7 +10314,7 @@ wss.on("connection", (twilioWs, req) => {
               await requestScenarioTagTextOnlyOnce("ai_end");
               await requestEnd("AI requested end", { skipTransition: true });
 
-            })().catch(() => { });
+            })().catch((e) => { console.error(nowIso(), "[SILENT_ERROR]", e && e.message ? e.message : e); });
             return;
           }
 
@@ -10476,7 +10475,7 @@ wss.on("connection", (twilioWs, req) => {
                     cancelOpenAIResponseIfAnyOnce("hard_ceiling_end");
                     await requestScenarioTagTextOnlyOnce("hard_ceiling_end");
                     await requestEnd("hard_ceiling_end", { skipTransition: true });
-                  })().catch(() => { });
+                  })().catch((e) => { console.error(nowIso(), "[SILENT_ERROR]", e && e.message ? e.message : e); });
                 } catch { }
               }
 
