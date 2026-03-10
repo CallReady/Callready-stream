@@ -5190,7 +5190,7 @@ Respond with just the transformed text, nothing else.`;
 }
 
 // Helper function to generate coaching feedback via OpenAI REST API
-async function generateCoachingFeedback(transcript) {
+async function generateCoachingFeedback(transcript, scenarioTag, userCustomDescription) {
   if (!OPENAI_API_KEY) {
     console.log(nowIso(), "ERROR: Missing OPENAI_API_KEY for feedback generation");
     return null;
@@ -5216,13 +5216,17 @@ async function generateCoachingFeedback(transcript) {
           {
             role: "system",
             content:
-              "You are a coaching assistant for phone call practice. Your feedback must be for the HUMAN caller only, not the receptionist/AI.\n" +
-              "Review the conversation transcript and provide exactly two sentences of feedback:\n" +
-              "1) One sentence about something specific the caller did well during the call (e.g., clarity, asking questions, providing information clearly).\n" +
-              "2) One sentence about what they might try next time to improve (be specific and constructive based on the conversation).\n" +
-              "Address the caller as \"you\" and do not coach the receptionist/AI.\n" +
-              "Format: [Positive feedback sentence] [Improvement suggestion sentence]\n" +
-              "Be encouraging and specific. Do not include introductions or explanations.",
+              "You are a warm, supportive friend who just listened in on a phone call practice session. " +
+              "Your job is to give honest, caring feedback to the caller — not the receptionist.\n\n" +
+              "Keep your feedback to 4-6 sentences total. Be specific — reference actual moments from the call where possible. " +
+              "Do not be generic or use filler phrases like 'great job' or 'well done'.\n\n" +
+              "Structure your feedback like this:\n" +
+              "- Start with something genuinely specific the caller did well\n" +
+              "- Identify one moment that was tricky and give a concrete, friendly tip for next time\n" +
+              "- End with a brief encouraging note that feels personal to what they were practicing\n\n" +
+              "Address the caller as 'you'. Speak conversationally, like a friend — not like a teacher or a report.\n" +
+              (scenarioTag ? `The caller was practicing: ${userCustomDescription || scenarioTag.replace(/_/g, ' ')}.\n` : "") +
+              "Do not include introductions, headers, or explanations. Just the feedback itself.",
           },
           {
             role: "user",
@@ -5230,7 +5234,7 @@ async function generateCoachingFeedback(transcript) {
           },
         ],
         temperature: 0.7,
-        max_tokens: 200,
+        max_tokens: 350,
       }),
     });
 
@@ -5409,7 +5413,7 @@ app.post("/process-coaching-feedback-generate", async (req, res) => {
     }
 
     // Generate feedback via OpenAI
-    const feedback = await generateCoachingFeedback(context.transcript);
+    const feedback = await generateCoachingFeedback(context.transcript, context.scenarioTag, context.userCustomDescription);
 
     if (feedback) {
       // Update context with feedback
