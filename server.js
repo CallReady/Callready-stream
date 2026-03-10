@@ -4797,6 +4797,40 @@ app.post("/unavailable", async (req, res) => {
     res.status(500).send("Error");
   }
 });
+
+app.post('/gather-end-confirmation', (req, res) => {
+  const callSid = req.body.CallSid || req.query.callSid;
+  const scenarioTag = req.query.scenarioTag || '';
+  const vr = new VoiceResponse();
+  const gather = vr.gather({
+    input: 'speech dtmf',
+    timeout: 5,
+    numDigits: 1,
+    action: `/process-end-confirmation?scenarioTag=${encodeURIComponent(scenarioTag)}`,
+    method: 'POST'
+  });
+  gather.say({ voice: 'Polly.Joanna' }, "It looks like you may want to end your practice session. Press 1 or say yes to end, or press 2 or say no to keep going.");
+  vr.redirect({ method: 'POST' }, `/end?callSid=${callSid}`);
+  res.type('text/xml');
+  res.send(vr.toString());
+});
+
+app.post('/process-end-confirmation', (req, res) => {
+  const callSid = req.body.CallSid || req.query.callSid;
+  const scenarioTag = req.query.scenarioTag || '';
+  const speech = (req.body.SpeechResult || '').toLowerCase().trim();
+  const digit = (req.body.Digits || '').trim();
+  const wantsEnd = digit === '1' || /\b(yes|yeah|yep|end|stop|quit)\b/.test(speech);
+  const vr = new VoiceResponse();
+  if (wantsEnd) {
+    vr.redirect({ method: 'POST' }, `/end?callSid=${callSid}`);
+  } else {
+    vr.redirect({ method: 'POST' }, `/stream-roleplay?scenario=${encodeURIComponent(scenarioTag)}`);
+  }
+  res.type('text/xml');
+  res.send(vr.toString());
+});
+
 app.post("/end", async (req, res) => {
   try {
     const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -9312,7 +9346,7 @@ wss.on("connection", (twilioWs, req) => {
                 (async () => {
                   try {
                     await client.calls(callSid).update({
-                      twiml: `<Response><Redirect method="POST">/end</Redirect></Response>`
+                      twiml: `<Response><Redirect method="POST">/gather-end-confirmation?scenarioTag=${encodeURIComponent(callState.scenarioTag || '')}</Redirect></Response>`
                     });
                   } catch (e) {
                     console.log(nowIso(), "Failed to redirect call on user end phrase:", e && e.message ? e.message : e);
