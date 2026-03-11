@@ -254,11 +254,11 @@ const SLOT_REASON_FOR_VISIT = {
 const SLOT_INFORMATION_PROVIDED = {
   promptIntent: "You have the information the caller needs — provide it clearly and naturally, then ask if that answers their question",
   answererGreeting: null,
-  requirement: "the caller has acknowledged receiving the information",
+  requirement: "you have spoken the answer to the caller's question and they have responded in any way that shows they heard you — including 'okay', 'thanks', 'got it', 'yeah', 'yep', 'great', 'perfect', 'no I'm good', or any acknowledgment at all",
   validatorHint: { type: "min_words", minWords: 1 },
   repromptHelp: null,
   helpIfStuck: null,
-  examplesGood: ["Got it, thanks", "That's what I needed", "Perfect"],
+  examplesGood: ["okay", "thanks", "got it", "yeah", "yep", "great", "perfect", "no I'm good", "that's all I needed"],
   examplesBad: null,
   followups: null,
   loopUntilDone: false,
