@@ -6982,8 +6982,12 @@ wss.on("connection", (twilioWs, req) => {
               "5. Do NOT change slot order or decide when the call is complete.\n" +
               "6. NEVER provide examples of acceptable answers on your first ask for this slot.\n" +
               "   (Examples may be offered only if the caller seems confused after they respond.)\n" +
-              "7. When you believe you got an acceptable answer for " + spec.nextTargetSlotId + ", call:\n" +
-              "   mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<extracted>')\n" +
+              "7. " + (spec.nextTargetSlotId === 'information_provided'
+                ? "For this slot, YOU are providing the information — not collecting it. Speak the answer clearly. As soon as the caller responds in any way (even just 'okay', 'thanks', 'yeah', 'got it', 'you too'), immediately call:\n" +
+                  "   mark_checklist_item_complete(field_id='information_provided', value='provided')\n"
+                : "When you believe you got an acceptable answer for " + spec.nextTargetSlotId + ", call:\n" +
+                  "   mark_checklist_item_complete(field_id='" + spec.nextTargetSlotId + "', value='<extracted>')\n"
+              ) +
               "8. After speaking, call report_turn_result with your analysis (required).\n" +
               "9. STOP and WAIT for the caller's response.\n\n"
 
@@ -9088,6 +9092,21 @@ wss.on("connection", (twilioWs, req) => {
           if (isSelfHarm) {
             console.log(nowIso(), "SAFETY_ALERT: Self-harm language detected — hard enforcement triggered", { utter, callSid, phase: callState.phase });
             setPhase("ending", "self_harm_safety_exit");
+            cancelOpenAIResponseIfAnyOnce("self_harm_safety_exit");
+            if (callSid && hasTwilioRest()) {
+              setTimeout(() => {
+                (async () => {
+                  try {
+                    await twilioClient().calls(callSid).update({
+                      twiml: `<Response><Redirect method="POST">/end?callSid=${callSid}</Redirect></Response>`
+                    });
+                  } catch (e) {
+                    console.log(nowIso(), "Failed to redirect on self_harm_safety_exit:", e && e.message ? e.message : e);
+                  }
+                  closeAll("self_harm_safety_exit");
+                })();
+              }, 12000);
+            }
             openaiResponseCreate({
               type: "response.create",
               response: {
