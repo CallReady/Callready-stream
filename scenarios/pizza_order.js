@@ -2,6 +2,8 @@ const {
   SLOT_CALL_PURPOSE,
   SLOT_CALLER_NAME,
   SLOT_PHONE_NUMBER_ON_ACCOUNT,
+  SLOT_DELIVERY_ADDRESS,
+  SLOT_PAYMENT_METHOD,
   SLOT_QUESTIONS
 } = require('./slot_library');
 
@@ -49,10 +51,10 @@ module.exports = {
         },
 
         delivery_address: {
+            ...SLOT_DELIVERY_ADDRESS,
             promptIntent: "Collect the delivery address",
             requirement: "a complete street address with number and street name",
             repromptHelp: "Ask for street number and apartment number if needed.",
-            gating: false,
             priority: 100
         },
 
@@ -81,10 +83,10 @@ module.exports = {
         },
 
         payment_method: {
+            ...SLOT_PAYMENT_METHOD,
             promptIntent: "Determine the payment method",
             requirement: "either 'cash' or 'card' as the payment method",
             repromptHelp: "If card, clarify: 'Card now or will you pay at the door?'",
-            gating: false,
             priority: 100
         },
 

@@ -523,6 +523,44 @@ const SLOT_ITEM_DESCRIPTION = {
   complicationNote: null
 };
 
+const SLOT_DELIVERY_ADDRESS = {
+  promptIntent: "Ask the caller for their delivery address",
+  answererGreeting: null,
+  requirement: "a complete street address including street number, street name, and city",
+  validatorHint: { type: "min_words", minWords: 4 },
+  repromptHelp: "Ask them to confirm the full street address including city",
+  helpIfStuck: null,
+  examplesGood: ["123 Main Street, Portland", "456 Oak Avenue, Springfield"],
+  examplesBad: ["my house", "the usual place"],
+  followups: null,
+  loopUntilDone: false,
+  loopPromptIntent: null,
+  loopDoneHint: null,
+  gating: false,
+  priority: 2,
+  complication: false,
+  complicationNote: null
+};
+
+const SLOT_PAYMENT_METHOD = {
+  promptIntent: "Ask the caller how they would like to pay",
+  answererGreeting: null,
+  requirement: "a payment method such as cash, credit card, or debit card",
+  validatorHint: { type: "keyword", all_of: ["cash", "credit", "debit", "card", "visa", "mastercard", "amex", "apple pay", "venmo"] },
+  repromptHelp: "Ask whether they will be paying with cash or card",
+  helpIfStuck: null,
+  examplesGood: ["credit card", "cash", "debit card"],
+  examplesBad: ["I don't know", "whatever"],
+  followups: null,
+  loopUntilDone: false,
+  loopPromptIntent: null,
+  loopDoneHint: null,
+  gating: false,
+  priority: 2,
+  complication: false,
+  complicationNote: null
+};
+
 const SLOT_PREFERRED_RESOLUTION = {
   promptIntent: "Ask what resolution the caller is looking for",
   answererGreeting: null,
@@ -570,5 +608,7 @@ module.exports = {
   SLOT_UNEXPECTED_NEWS_RESPONSE,
   SLOT_ORDER_NUMBER,
   SLOT_ITEM_DESCRIPTION,
+  SLOT_DELIVERY_ADDRESS,
+  SLOT_PAYMENT_METHOD,
   SLOT_PREFERRED_RESOLUTION
 };
