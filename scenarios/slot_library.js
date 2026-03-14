@@ -207,6 +207,44 @@ const SLOT_ADDRESS_ON_ACCOUNT = {
   complicationNote: null
 };
 
+const SLOT_EMAIL_ADDRESS = {
+  promptIntent: "Ask the caller for their email address",
+  answererGreeting: null,
+  requirement: "a valid email address with an @ symbol and domain",
+  validatorHint: { type: "keyword", all_of: ["@"] },
+  repromptHelp: "Ask them to spell it out slowly if needed",
+  helpIfStuck: null,
+  examplesGood: ["john@gmail.com", "sarah.smith@outlook.com"],
+  examplesBad: ["I don't have email", "I'm not sure"],
+  followups: null,
+  loopUntilDone: false,
+  loopPromptIntent: null,
+  loopDoneHint: null,
+  gating: false,
+  priority: 2,
+  complication: false,
+  complicationNote: null
+};
+
+const SLOT_CALLBACK_NUMBER = {
+  promptIntent: "Ask the caller for a good callback number",
+  answererGreeting: null,
+  requirement: "a 10-digit phone number",
+  validatorHint: { type: "min_words", minWords: 1 },
+  repromptHelp: "Ask them to repeat the number slowly",
+  helpIfStuck: null,
+  examplesGood: ["541-555-1234", "my cell is 503 555 6789"],
+  examplesBad: ["you already have it", "same as before"],
+  followups: null,
+  loopUntilDone: false,
+  loopPromptIntent: null,
+  loopDoneHint: null,
+  gating: false,
+  priority: 2,
+  complication: false,
+  complicationNote: null
+};
+
 // ─── SCHEDULING SLOTS ────────────────────────────────────────────────────────
 
 const SLOT_NEW_OR_RETURNING = {
@@ -285,6 +323,25 @@ const SLOT_APPOINTMENT_PREFERENCE = {
   loopDoneHint: null,
   gating: false,
   priority: 5,
+  complication: false,
+  complicationNote: null
+};
+
+const SLOT_APPOINTMENT_DATE = {
+  promptIntent: "Ask the caller for the date of their existing appointment",
+  answererGreeting: null,
+  requirement: "a specific date including month and day",
+  validatorHint: { type: "min_words", minWords: 1 },
+  repromptHelp: "Ask them to confirm the month and day of the appointment",
+  helpIfStuck: null,
+  examplesGood: ["March 15th", "the 22nd of April", "next Tuesday the 8th"],
+  examplesBad: ["soon", "I'm not sure"],
+  followups: null,
+  loopUntilDone: false,
+  loopPromptIntent: null,
+  loopDoneHint: null,
+  gating: false,
+  priority: 2,
   complication: false,
   complicationNote: null
 };
@@ -561,6 +618,25 @@ const SLOT_PAYMENT_METHOD = {
   complicationNote: null
 };
 
+const SLOT_ISSUE_DESCRIPTION = {
+  promptIntent: "Ask the caller to describe the issue or problem they are calling about",
+  answererGreeting: null,
+  requirement: "a clear description of the problem or issue with enough detail to understand what happened",
+  validatorHint: { type: "min_words", minWords: 4 },
+  repromptHelp: "Ask them to describe what happened and when it occurred",
+  helpIfStuck: null,
+  examplesGood: ["my order arrived damaged", "I was charged twice for the same item", "the service has been out for two days"],
+  examplesBad: ["it's broken", "something's wrong"],
+  followups: null,
+  loopUntilDone: false,
+  loopPromptIntent: null,
+  loopDoneHint: null,
+  gating: false,
+  priority: 2,
+  complication: false,
+  complicationNote: null
+};
+
 const SLOT_PREFERRED_RESOLUTION = {
   promptIntent: "Ask what resolution the caller is looking for",
   answererGreeting: null,
@@ -592,10 +668,13 @@ module.exports = {
   SLOT_PHONE_NUMBER_ON_ACCOUNT,
   SLOT_LAST_FOUR_SSN,
   SLOT_ADDRESS_ON_ACCOUNT,
+  SLOT_EMAIL_ADDRESS,
+  SLOT_CALLBACK_NUMBER,
   SLOT_NEW_OR_RETURNING,
   SLOT_REASON_FOR_VISIT,
   SLOT_INFORMATION_PROVIDED,
   SLOT_APPOINTMENT_PREFERENCE,
+  SLOT_APPOINTMENT_DATE,
   SLOT_CONFIRMATION_METHOD,
   SLOT_REASON_FOR_CANCELLATION,
   SLOT_CONFIRMATION_OF_CANCELLATION,
@@ -610,5 +689,6 @@ module.exports = {
   SLOT_ITEM_DESCRIPTION,
   SLOT_DELIVERY_ADDRESS,
   SLOT_PAYMENT_METHOD,
+  SLOT_ISSUE_DESCRIPTION,
   SLOT_PREFERRED_RESOLUTION
 };
