@@ -124,25 +124,6 @@ module.exports = {
     },
     appointment_preference: {
       ...SLOT_APPOINTMENT_PREFERENCE,
-      promptIntent: "Ask what day and time works best for them",
-      requirement: "a specific date (or day name) AND a specific time of day",
-      validatorHint: {
-        type: "all_of",
-        rules: [
-          { type: "keywords_any", keywords: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "today", "tomorrow", "next week"], minMatches: 1 },
-          { type: "keywords_any", keywords: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "noon", "midnight", "am", "pm", "o'clock", "oclock"], minMatches: 1 }
-        ]
-      },
-      repromptHelp: "I need both a day AND a time. For example: Tuesday morning, or next Wednesday at 2pm.",
-      examplesGood: [
-        "Tuesday morning",
-        "Next week in the afternoon",
-        "Any time next Thursday"
-      ],
-      followups: [
-        { when: "vague", ask: "Can you give me both a day AND a time? Like 'Tuesday morning' or 'next week in the afternoon'?" },
-        { when: "missing", ask: "When works best - what day and what time of day?" }
-      ],
       priority: 40
     },
     confirmation_preference: {

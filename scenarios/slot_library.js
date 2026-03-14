@@ -271,14 +271,14 @@ const SLOT_INFORMATION_PROVIDED = {
 };
 
 const SLOT_APPOINTMENT_PREFERENCE = {
-  promptIntent: "Ask for the caller's preferred date and time for the appointment",
+  promptIntent: "Offer the caller a specific available appointment with an exact day and exact time (e.g. 'I have an opening next Thursday at 3:30 PM — would that work for you?'). If the caller declines, offer a different specific day and time. Keep offering until they accept one.",
   answererGreeting: null,
-  requirement: "a specific day AND a specific time of day — both are required before this slot is complete. Vague answers like 'Friday afternoon' or 'sometime next week' are not sufficient.",
-  validatorHint: { type: "min_words", minWords: 3 },
-  repromptHelp: null,
-  helpIfStuck: null,
-  examplesGood: ["Tuesday at 2pm", "Next Monday morning around 9", "Friday at 3 o'clock"],
-  examplesBad: ["Friday afternoon", "sometime next week", "in the morning"],
+  requirement: "the caller has confirmed acceptance of a specific appointment that includes both an exact day (e.g. 'Thursday', 'next Monday', 'March 20th') AND an exact clock time (e.g. '3:30 PM', '10 AM', '2 o'clock'). Words like 'morning', 'afternoon', 'evening', or 'sometime next week' do NOT count as a specific time.",
+  validatorHint: { type: "keyword", all_of: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "tomorrow", "today", "o'clock", "oclock", "am", "pm", "noon", "midnight", ":00", ":15", ":30", ":45"] },
+  repromptHelp: "Offer another specific day and clock time — do not ask the caller to pick one",
+  helpIfStuck: "Try offering two options: 'I have next Tuesday at 10 AM or Wednesday at 2:30 PM — which works better?'",
+  examplesGood: ["yeah Thursday at 3:30 works", "sure let's do Tuesday at 10", "that 2 o'clock on Monday is perfect"],
+  examplesBad: ["morning", "afternoon", "sometime next week", "whenever"],
   followups: null,
   loopUntilDone: false,
   loopPromptIntent: null,

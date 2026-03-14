@@ -222,9 +222,11 @@ const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID;
 
 const AI_END_CALL_TRIGGER = "END_CALL_NOW";
 
-const TWILIO_END_TRANSITION =
-  "Thanks for practicing with CallReady. " +
-  "If you'd like more sessions each month, you can explore memberships at CallReady dot live. " +
+const TWILIO_END_TRANSITION_BASE =
+  "Thanks for practicing with CallReady. ";
+const TWILIO_END_TRANSITION_UPSELL =
+  "If you'd like more sessions each month, you can explore memberships at CallReady dot live. ";
+const TWILIO_END_TRANSITION_ENCOURAGEMENT =
   "You did something important today by practicing. " +
   "That counts, even if it felt awkward.";
 
@@ -1353,7 +1355,17 @@ function resolveScenarioTagFromSpeech(speechRaw) {
     "schedule a dentist appointment": "dentist_appointment",
     "dental appointment": "dentist_appointment",
     "schedule dental appointment": "dentist_appointment",
-    "schedule a dental appointment": "dentist_appointment"
+    "schedule a dental appointment": "dentist_appointment",
+    "cancel appointment": "appointment_cancellation",
+    "cancel an appointment": "appointment_cancellation",
+    "cancel my appointment": "appointment_cancellation",
+    "cancellation": "appointment_cancellation",
+    "reschedule": "appointment_cancellation",
+    "reschedule appointment": "appointment_cancellation",
+    "reschedule an appointment": "appointment_cancellation",
+    "reschedule my appointment": "appointment_cancellation",
+    "change appointment": "appointment_cancellation",
+    "change my appointment": "appointment_cancellation"
   };
 
   if (aliasMap[normalized]) {
@@ -1370,6 +1382,9 @@ function resolveScenarioTagFromSpeech(speechRaw) {
   }
   if (normalized.includes("dentist") || normalized.includes("dental")) {
     if (registry && registry["dentist_appointment"]) return "dentist_appointment";
+  }
+  if (normalized.includes("cancel") || normalized.includes("reschedule")) {
+    if (registry && registry["appointment_cancellation"]) return "appointment_cancellation";
   }
 
   return null;
@@ -2050,7 +2065,7 @@ app.post("/stream", (req, res) => {
     const vr = new VoiceResponse();
 
     if (!PUBLIC_WSS_URL) {
-      vr.say("Server is missing PUBLIC W S S U R L.");
+      vr.say({ voice: TWILIO_VOICE }, "Server is missing PUBLIC W S S U R L.");
       vr.hangup();
       res.type("text/xml").send(vr.toString());
       return;
@@ -2122,7 +2137,7 @@ app.post("/voice", async (req, res) => {
         fireAndForgetCallEndLog(callSid, "no_sessions_remaining");
       }
 
-      vr.say(TWILIO_NO_SESSIONS_LEFT);
+      vr.say({ voice: TWILIO_VOICE }, TWILIO_NO_SESSIONS_LEFT);
       vr.hangup();
       res.type("text/xml").send(vr.toString());
       return;
@@ -2428,7 +2443,7 @@ app.post("/process-choose-scenario", async (req, res) => {
       vr.pause({ length: 2 });
 
       // Randomly select a scenario from available scenarios
-      const availableScenarios = ["doctor_default", "dentist_appointment", "pizza_order"];
+      const availableScenarios = ["doctor_default", "dentist_appointment", "pizza_order", "appointment_cancellation"];
       const randomScenario = availableScenarios[Math.floor(Math.random() * availableScenarios.length)];
 
       console.log(nowIso(), "[RANDOM_SCENARIO_SELECTED]", { callSid, selectedScenario: randomScenario, availableCount: availableScenarios.length });
@@ -3309,7 +3324,7 @@ app.post("/stream-roleplay", async (req, res) => {
     // REALTIME WEBSOCKET ENGINE (default)
     if (!PUBLIC_WSS_URL) {
       console.log(nowIso(), "/stream-roleplay ERROR: PUBLIC_WSS_URL is missing");
-      vr.say("Server is missing WSS URL.");
+      vr.say({ voice: TWILIO_VOICE }, "Server is missing WSS URL.");
       vr.hangup();
       res.type("text/xml").send(vr.toString());
       return;
@@ -3365,7 +3380,7 @@ app.post("/stream-choose-scenario", async (req, res) => {
 
     if (!PUBLIC_WSS_URL) {
       console.log(nowIso(), "/stream-choose-scenario ERROR: PUBLIC_WSS_URL is missing");
-      vr.say("Server is missing WSS URL.");
+      vr.say({ voice: TWILIO_VOICE }, "Server is missing WSS URL.");
       vr.hangup();
       res.type("text/xml").send(vr.toString());
       return;
@@ -3754,7 +3769,7 @@ app.post("/gather-roleplay", async (req, res) => {
       // Initialize call state for gather mode
       const scenario = resolveScenarioWithDynamic(null, scenarioTag);
       if (!scenario) {
-        vr.say("Scenario not found.");
+        vr.say({ voice: TWILIO_VOICE }, "Scenario not found.");
         vr.hangup();
         res.type("text/xml").send(vr.toString());
         return;
@@ -3797,7 +3812,7 @@ app.post("/gather-roleplay", async (req, res) => {
     // Get scenario config
     const scenario = resolveScenarioWithDynamic(callState, callState.scenarioTag);
     if (!scenario) {
-      vr.say("Configuration error.");
+      vr.say({ voice: TWILIO_VOICE }, "Configuration error.");
       vr.hangup();
       res.type("text/xml").send(vr.toString());
       return;
@@ -3981,7 +3996,7 @@ app.post("/gather-roleplay", async (req, res) => {
     console.error(nowIso(), "[GATHER_ROLEPLAY] ERROR", err);
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
-    vr.say("An error occurred.");
+    vr.say({ voice: TWILIO_VOICE }, "An error occurred.");
     vr.hangup();
     res.type("text/xml").send(vr.toString());
   }
@@ -4008,7 +4023,7 @@ app.post("/gather-roleplay-input", async (req, res) => {
     // Load call state
     const callState = twilioCallStates.get(callSid);
     if (!callState) {
-      vr.say("Session expired.");
+      vr.say({ voice: TWILIO_VOICE }, "Session expired.");
       vr.hangup();
       res.type("text/xml").send(vr.toString());
       return;
@@ -4043,7 +4058,7 @@ app.post("/gather-roleplay-input", async (req, res) => {
     // Get scenario and spec
     const scenario = resolveScenarioWithDynamic(callState, scenarioTag);
     if (!scenario) {
-      vr.say("Configuration error.");
+      vr.say({ voice: TWILIO_VOICE }, "Configuration error.");
       vr.hangup();
       res.type("text/xml").send(vr.toString());
       return;
@@ -4163,7 +4178,7 @@ app.post("/gather-roleplay-input", async (req, res) => {
     console.error(nowIso(), "[GATHER_ROLEPLAY_INPUT] ERROR", err);
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
-    vr.say("An error occurred.");
+    vr.say({ voice: TWILIO_VOICE }, "An error occurred.");
     vr.hangup();
     res.type("text/xml").send(vr.toString());
   }
@@ -4790,7 +4805,7 @@ app.post("/unavailable", async (req, res) => {
   try {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
-    vr.say(TWILIO_SERVICE_UNAVAILABLE);
+    vr.say({ voice: TWILIO_VOICE }, TWILIO_SERVICE_UNAVAILABLE);
     vr.hangup();
     res.type("text/xml").send(vr.toString());
   } catch (err) {
@@ -4800,6 +4815,7 @@ app.post("/unavailable", async (req, res) => {
 });
 
 app.post('/gather-end-confirmation', (req, res) => {
+  const VoiceResponse = twilio.twiml.VoiceResponse;
   const callSid = req.body.CallSid || req.query.callSid;
   const scenarioTag = req.query.scenarioTag || '';
   const utterance = req.query.utterance || '';
@@ -4820,6 +4836,7 @@ app.post('/gather-end-confirmation', (req, res) => {
 });
 
 app.post('/process-end-confirmation', (req, res) => {
+  const VoiceResponse = twilio.twiml.VoiceResponse;
   const scenarioTag = req.query.scenarioTag || '';
   const speech = (req.body.SpeechResult || '').toLowerCase().trim();
   const wantsEnd = /\b(yes|yeah|yep|yup|correct|right|end|stop|quit|done)\b/.test(speech);
@@ -4851,12 +4868,12 @@ app.post("/end", async (req, res) => {
 
     // Hard threshold: speak limit message then hand off to shared close
     if (hardEnd) {
-      vr.say(TWILIO_HARD_LIMIT_MESSAGE);
+      vr.say({ voice: TWILIO_VOICE }, TWILIO_HARD_LIMIT_MESSAGE);
     }
 
     // Soft threshold: speak soft explanation then hand off to shared close
     if (isSoftEnd) {
-      vr.say(
+      vr.say({ voice: TWILIO_VOICE },
         "That last scenario ran a little over our usual session time, so we'll wrap up here. You can call back anytime to keep practicing."
       );
     }
@@ -4890,13 +4907,32 @@ app.post("/shared-close", async (req, res) => {
         fireAndForgetCallEndLog(callSid, "completed");
       }
 
+      // Look up caller tier to decide whether to include upsell
+      let callerTier = "free";
+      try {
+        if (pool && from) {
+          const tierRow = await pool.query("select tier from callers where phone_e164 = $1 limit 1", [from]);
+          if (tierRow && tierRow.rows && tierRow.rows[0] && tierRow.rows[0].tier != null) {
+            callerTier = String(tierRow.rows[0].tier).toLowerCase();
+          }
+        }
+      } catch (e) {
+        console.log(nowIso(), "Tier lookup failed in /shared-close, defaulting to free:", e && e.message ? e.message : e);
+      }
+      const isPaid = callerTier !== "free";
+
+      // Build transition message — skip upsell for paid members
+      const transitionText = TWILIO_END_TRANSITION_BASE +
+        (isPaid ? "" : TWILIO_END_TRANSITION_UPSELL) +
+        TWILIO_END_TRANSITION_ENCOURAGEMENT;
+
       // Check if already opted in
       const alreadyOptedIn = await isAlreadyOptedInByPhone(from);
       if (alreadyOptedIn) {
-        console.log(nowIso(), "Skipping SMS opt-in prompt, caller already opted in", { from, callSid });
+        console.log(nowIso(), "Skipping SMS opt-in prompt, caller already opted in", { from, callSid, callerTier });
 
-        vr.say(TWILIO_END_TRANSITION);
-        vr.say("We'd love to hear your feedback. You can email us at feedback at callready dot live. Have a great day!");
+        vr.say({ voice: TWILIO_VOICE }, transitionText);
+        vr.say({ voice: TWILIO_VOICE }, "We'd love to hear your feedback. You can email us at feedback at callready dot live. Have a great day!");
         vr.hangup();
 
         // Clean up per-call Maps to prevent memory leaks
@@ -4914,7 +4950,7 @@ app.post("/shared-close", async (req, res) => {
       }
 
       // Not opted in: speak transition then opt-in prompt
-      vr.say(TWILIO_END_TRANSITION);
+      vr.say({ voice: TWILIO_VOICE }, transitionText);
       vr.say({ voice: TWILIO_VOICE }, TWILIO_OPTIN_PROMPT);
     } else {
       // Retry: speak retry prompt
@@ -4934,7 +4970,7 @@ app.post("/shared-close", async (req, res) => {
     if (!isRetry) {
       vr.redirect({ method: "POST" }, "/shared-close?retry=1");
     } else {
-      vr.say(IN_CALL_CONFIRM_NO);
+      vr.say({ voice: TWILIO_VOICE }, IN_CALL_CONFIRM_NO);
       vr.hangup();
     }
 
@@ -5010,10 +5046,10 @@ app.post("/gather-result", async (req, res) => {
         console.log(nowIso(), "Opt-in confirmation SMS threw", e && e.message ? e.message : e);
       }
 
-      vr.say(IN_CALL_CONFIRM_YES);
+      vr.say({ voice: TWILIO_VOICE }, IN_CALL_CONFIRM_YES);
       vr.hangup();
     } else {
-      vr.say(IN_CALL_CONFIRM_NO);
+      vr.say({ voice: TWILIO_VOICE }, IN_CALL_CONFIRM_NO);
       vr.hangup();
     }
 
@@ -5341,7 +5377,7 @@ app.post("/gather-coaching-feedback", async (req, res) => {
   } catch (err) {
     console.error("/gather-coaching-feedback ERROR:", err);
     const vr = new (twilio.twiml.VoiceResponse)();
-    vr.say("An error occurred. The call will end.");
+    vr.say({ voice: TWILIO_VOICE }, "An error occurred. The call will end.");
     vr.hangup();
     res.type("text/xml").send(vr.toString());
   }
@@ -5427,7 +5463,7 @@ app.post("/process-coaching-feedback", async (req, res) => {
   } catch (err) {
     console.error("/process-coaching-feedback ERROR:", err);
     const vr = new (twilio.twiml.VoiceResponse)();
-    vr.say("An error occurred. The call will end.");
+    vr.say({ voice: TWILIO_VOICE }, "An error occurred. The call will end.");
     vr.hangup();
     res.type("text/xml").send(vr.toString());
   }
@@ -5473,7 +5509,7 @@ app.post("/process-coaching-feedback-generate", async (req, res) => {
   } catch (err) {
     console.error("/process-coaching-feedback-generate ERROR:", err);
     const vr = new (twilio.twiml.VoiceResponse)();
-    vr.say("An error occurred. The call will end.");
+    vr.say({ voice: TWILIO_VOICE }, "An error occurred. The call will end.");
     vr.hangup();
     res.type("text/xml").send(vr.toString());
   }
@@ -5528,7 +5564,7 @@ app.post("/gather-wrap-up", async (req, res) => {
   } catch (err) {
     console.error("/gather-wrap-up ERROR:", err);
     const vr = new (twilio.twiml.VoiceResponse)();
-    vr.say("An error occurred. The call will end.");
+    vr.say({ voice: TWILIO_VOICE }, "An error occurred. The call will end.");
     vr.hangup();
     res.type("text/xml").send(vr.toString());
   }
@@ -5588,7 +5624,7 @@ app.post("/process-wrap-up", async (req, res) => {
   } catch (err) {
     console.error("/process-wrap-up ERROR:", err);
     const vr = new (twilio.twiml.VoiceResponse)();
-    vr.say("An error occurred. The call will end.");
+    vr.say({ voice: TWILIO_VOICE }, "An error occurred. The call will end.");
     vr.hangup();
     res.type("text/xml").send(vr.toString());
   }
@@ -10024,7 +10060,7 @@ wss.on("connection", (twilioWs, req) => {
                     } catch (e) {
                       console.log(nowIso(), "Failed to redirect on end_session_tool:", e && e.message ? e.message : e);
                     }
-                    closeAll("end_session_tool");
+                    setTimeout(() => closeAll("end_session_tool"), 3000);
                   })();
                 } else {
                   closeAll("end_session_tool");
