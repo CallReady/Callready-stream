@@ -1,3 +1,15 @@
+const {
+  SLOT_CALL_PURPOSE,
+  SLOT_NEW_OR_RETURNING,
+  SLOT_CALLER_NAME,
+  SLOT_DATE_OF_BIRTH,
+  SLOT_PHONE_NUMBER_ON_ACCOUNT,
+  SLOT_REASON_FOR_VISIT,
+  SLOT_APPOINTMENT_PREFERENCE,
+  SLOT_CONFIRMATION_METHOD,
+  SLOT_QUESTIONS
+} = require('./slot_library');
+
 module.exports = {
     tag: "dentist_appointment",
     displayName: "Schedule a dentist appointment",
@@ -27,6 +39,7 @@ module.exports = {
 
     slotSpecs: {
         call_purpose: {
+            ...SLOT_CALL_PURPOSE,
             answererGreeting: "Thanks for calling BrightSmile Dental, this is Mary, how can I help you?",
             promptIntent: "confirm they're calling to schedule an appointment",
             requirement: "confirmation that they are calling about scheduling an appointment",
@@ -42,11 +55,11 @@ module.exports = {
             followups: [
                 { when: "vague", ask: "Just to confirm, you're calling to schedule a dental appointment?" }
             ],
-            gating: true,
             priority: 0
         },
 
         new_or_returning_patient: {
+            ...SLOT_NEW_OR_RETURNING,
             promptIntent: "determine if patient is new to the office or returning",
             requirement: "clear indication of whether they are a new or returning patient",
             repromptHelp: "Ask if they have been to this dental office before, or if they are new to the practice.",
@@ -55,11 +68,11 @@ module.exports = {
             followups: [
                 { when: "unclear", ask: "Have you had an appointment with us before?" }
             ],
-            gating: true,
             priority: 1
         },
 
         patient_name: {
+            ...SLOT_CALLER_NAME,
             promptIntent: "collect the patient's full name",
             requirement: "the patient's full name (first and last name)",
             repromptHelp: "Ask for their full name or offer to have them spell it if unclear.",
@@ -71,6 +84,7 @@ module.exports = {
         },
 
         birthdate: {
+            ...SLOT_DATE_OF_BIRTH,
             promptIntent: "collect the patient's date of birth",
             requirement: "a valid date of birth in any common format",
             repromptHelp: "Ask for their date of birth, accepting any common format like MM/DD/YYYY or spoken date.",
@@ -84,6 +98,7 @@ module.exports = {
         },
 
         contact_phone: {
+            ...SLOT_PHONE_NUMBER_ON_ACCOUNT,
             promptIntent: "collect the patient's phone number",
             requirement: "a complete phone number with area code",
             repromptHelp: "Ask for their phone number with area code, or clarify if the number they gave was incomplete.",
@@ -108,6 +123,7 @@ module.exports = {
         },
 
         reason_for_appointment: {
+            ...SLOT_REASON_FOR_VISIT,
             promptIntent: "determine if this is routine or for a specific reason",
             requirement: "clear identification of either routine checkup or specific dental concern",
             repromptHelp: "Ask if they're coming for a routine checkup/cleaning, or if there's a specific concern like tooth pain.",
@@ -116,7 +132,6 @@ module.exports = {
             followups: [
                 { when: "vague", ask: "Is this for a routine checkup, or is there something specific bothering you?" }
             ],
-            gating: false,
             priority: 50
         },
 
@@ -134,6 +149,7 @@ module.exports = {
         },
 
         appointment_preference: {
+            ...SLOT_APPOINTMENT_PREFERENCE,
             promptIntent: "tell them what the next available appointment is and confirm if that works",
             requirement: "a specific date (or day name) AND a specific time of day",
             repromptHelp: "I need both a day AND a time. For example: Tuesday at noon, or next Wednesday at 2pm.",
@@ -148,11 +164,11 @@ module.exports = {
             followups: [
                 { when: "vague", ask: "What time of day works best, morning or afternoon?" }
             ],
-            gating: false,
             priority: 70
         },
 
         confirmation_preference: {
+            ...SLOT_CONFIRMATION_METHOD,
             promptIntent: "collect reminder preference (optional)",
             requirement: "preferred reminder method: text, phone call, or none",
             repromptHelp: "Ask if they prefer a text reminder, phone call, or no reminder.",
@@ -165,20 +181,13 @@ module.exports = {
         },
 
         questions: {
+            ...SLOT_QUESTIONS,
             promptIntent: "address any final questions from the patient",
             requirement: "confirmation that patient has no further questions or brief resolution of any questions",
             repromptHelp: "Ask 'Do you have any other questions for me?' If they say no, mark the slot as done.",
             validatorHint: { type: "min_words", minWords: 2 },
             examplesGood: ["No questions", "That sounds good", "All set", "Nope, I'm good"],
             followups: [],
-            gating: false,
-            loopUntilDone: true,
-            loopPromptIntent: "Ask if they have any other questions.",
-            loopDoneHint: {
-                type: "keywords_any",
-                keywords: ["no", "nope", "nah", "that's all", "all set", "nothing else", "nothing more", "i'm good", "all good", "that's it", "that covers it", "we're all set"],
-                minMatches: 1
-            },
             priority: 90
         }
     },

@@ -1,3 +1,10 @@
+const {
+  SLOT_CALL_PURPOSE,
+  SLOT_CALLER_NAME,
+  SLOT_PHONE_NUMBER_ON_ACCOUNT,
+  SLOT_QUESTIONS
+} = require('./slot_library');
+
 module.exports = {
     tag: "pizza_order",
     displayName: "Order a pizza",
@@ -14,6 +21,7 @@ module.exports = {
     // New slotSpecs format for flexible mode
     slotSpecs: {
         call_purpose: {
+            ...SLOT_CALL_PURPOSE,
             promptIntent: "Confirm the caller is placing a pizza order",
             answererGreeting: "Coastline Pizza, how can I help you?",
             requirement: "confirmation that they want to place a pizza order",
@@ -23,6 +31,7 @@ module.exports = {
         },
 
         customer_name: {
+            ...SLOT_CALLER_NAME,
             promptIntent: "Collect the name for the order",
             requirement: "a name to put the order under",
             repromptHelp: "If unclear, ask them to tell their full name for the order.",
@@ -31,6 +40,7 @@ module.exports = {
         },
 
         phone_number: {
+            ...SLOT_PHONE_NUMBER_ON_ACCOUNT,
             promptIntent: "Get the best contact phone number",
             requirement: "a complete phone number with area code (at least 10 digits)",
             repromptHelp: "If they hesitate, explain it's just in case there's an issue.",
@@ -95,6 +105,7 @@ module.exports = {
         },
 
         questions: {
+            ...SLOT_QUESTIONS,
             promptIntent: "Ask if they have any final questions",
             requirement: "confirmation of no further questions",
             repromptHelp: "It's okay if they don't have any questions.",

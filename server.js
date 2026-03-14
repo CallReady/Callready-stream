@@ -8721,7 +8721,7 @@ wss.on("connection", (twilioWs, req) => {
     if (!text) return false;
 
     // Detect self-harm or suicidal ideation language
-    const selfHarmPatterns = /\b(want to die|kill myself|end (my|it all)|suicide|suicidal|hurt myself|self[- ]?harm|no reason to live|better off dead|can't go on)\b/;
+    const selfHarmPatterns = /\b(want to die|kill(ing)? myself|end (my|it all)|suicide|suicidal|hurt(ing)? myself|self[- ]?harm|no reason to live|better off dead|can't go on)\b/;
     return selfHarmPatterns.test(text);
   }
 

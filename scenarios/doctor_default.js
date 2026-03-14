@@ -1,3 +1,14 @@
+const {
+  SLOT_CALL_PURPOSE,
+  SLOT_NEW_OR_RETURNING,
+  SLOT_DATE_OF_BIRTH,
+  SLOT_CALLER_NAME,
+  SLOT_REASON_FOR_VISIT,
+  SLOT_APPOINTMENT_PREFERENCE,
+  SLOT_CONFIRMATION_METHOD,
+  SLOT_QUESTIONS
+} = require('./slot_library');
+
 module.exports = {
   tag: "doctor_default",
   displayName: "Schedule a doctor appointment",
@@ -11,9 +22,9 @@ module.exports = {
 
   roleplayMode: "flex",
 
-  // New slotSpecs format - coexists with questions object for backward compatibility
   slotSpecs: {
     call_purpose: {
+      ...SLOT_CALL_PURPOSE,
       promptIntent: "Collect the caller's purpose for calling",
       answererGreeting: "Thanks for calling Evergreen Medical Clinic. This is Denise. How can I help you today?",
       requirement: "confirmation that they want to schedule a doctor appointment",
@@ -32,11 +43,10 @@ module.exports = {
       followups: [
         { when: "vague", ask: "Just to confirm, you want to schedule a doctor appointment?" },
         { when: "missing", ask: "Is this about scheduling an appointment with us?" }
-      ],
-      gating: true,
-      priority: 1
+      ]
     },
     new_or_returning_patient: {
+      ...SLOT_NEW_OR_RETURNING,
       promptIntent: "Ask if they are a new patient or returning patient",
       requirement: "confirmation of whether they are new or have visited before",
       validatorHint: {
@@ -50,11 +60,10 @@ module.exports = {
       ],
       followups: [
         { when: "confused", ask: "Have you visited our clinic before?" }
-      ],
-      gating: true,
-      priority: 2
+      ]
     },
     birthdate: {
+      ...SLOT_DATE_OF_BIRTH,
       promptIntent: "Collect the patient's date of birth",
       requirement: "a complete date of birth in any common format (MM/DD/YYYY, MM/DD/YY, or spoken date)",
       validatorHint: {
@@ -79,22 +88,17 @@ module.exports = {
       priority: 10
     },
     patient_name: {
+      ...SLOT_CALLER_NAME,
       promptIntent: "Ask for the patient's full name",
       requirement: "a complete first and last name",
-      validatorHint: {
-        type: "name"
-      },
       repromptHelp: "Please provide your first and last name.",
       gating: false,
       priority: 15
     },
     reason_for_appointment: {
+      ...SLOT_REASON_FOR_VISIT,
       promptIntent: "Ask what they need to come in for",
       requirement: "a brief reason for the visit",
-      validatorHint: {
-        type: "min_words",
-        minWords: 2
-      },
       repromptHelp: "What brings you in? For example: checkup, injury, illness, etc.",
       examplesGood: [
         "Annual physical checkup",
@@ -105,7 +109,6 @@ module.exports = {
         { when: "vague", ask: "Can you tell me a bit more about what you need help with?" },
         { when: "missing", ask: "Is this for a routine checkup, or something else?" }
       ],
-      gating: false,
       priority: 30
     },
     insurance: {
@@ -120,6 +123,7 @@ module.exports = {
       priority: 50
     },
     appointment_preference: {
+      ...SLOT_APPOINTMENT_PREFERENCE,
       promptIntent: "Ask what day and time works best for them",
       requirement: "a specific date (or day name) AND a specific time of day",
       validatorHint: {
@@ -139,10 +143,10 @@ module.exports = {
         { when: "vague", ask: "Can you give me both a day AND a time? Like 'Tuesday morning' or 'next week in the afternoon'?" },
         { when: "missing", ask: "When works best - what day and what time of day?" }
       ],
-      gating: false,
       priority: 40
     },
     confirmation_preference: {
+      ...SLOT_CONFIRMATION_METHOD,
       promptIntent: "Ask if they prefer text or phone call for appointment reminder",
       requirement: "confirmation of reminder method",
       validatorHint: {
@@ -150,10 +154,10 @@ module.exports = {
         keywords: ["text", "sms", "message", "phone", "call", "email", "no reminder", "none"]
       },
       repromptHelp: "Would you prefer a text message or phone call reminder?",
-      gating: false,
       priority: 60
     },
     questions: {
+      ...SLOT_QUESTIONS,
       promptIntent: "Ask if they have any questions before closing",
       requirement: "confirmation they have no more questions",
       validatorHint: {
@@ -161,18 +165,10 @@ module.exports = {
         keywords: ["no", "nope", "no questions", "no thanks", "all set", "that's all", "nothing", "good"]
       },
       repromptHelp: "Ask 'Do you have any other questions for me?' If they say no, mark the slot as done.",
-      gating: false,
-      loopUntilDone: true,
-      loopPromptIntent: "Ask if they have any other questions.",
-      loopDoneHint: {
-        type: "keywords_any",
-        keywords: ["no", "nope", "nah", "that's all", "all set", "nothing else", "nothing more", "i'm good", "all good", "that's it", "that covers it", "we're all set"],
-        minMatches: 1
-      },
       priority: 70
     }
   },
-  
+
   slots: [
     "call_purpose",
     "new_or_returning_patient",
@@ -184,9 +180,9 @@ module.exports = {
     "confirmation_preference",
     "questions"
   ],
-  
+
   closingMessage: "Okay, thanks for scheduling. We'll see you soon!",
-  
+
   closingKeyPhrases: [
     "thank you",
     "thanks",
