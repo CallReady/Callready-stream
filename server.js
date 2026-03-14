@@ -240,11 +240,10 @@ const COACHING_REDIRECT_DELAY_MS = 4500;
 const TWILIO_OPTIN_PROMPT =
   "You can choose to receive text messages from CallReady. " +
   "We'll send short reminders about what you practiced and what to try next. " +
-  "Press 1 to opt in. " +
-  "Press 2 to skip.";
+  "Say yes to opt in, or say no to skip.";
 
 const GATHER_RETRY_PROMPT =
-  "I didn't get a response. Press 1 to receive texts, or press 2 to skip.";
+  "I didn't catch that. Say yes to receive texts, or say no to skip.";
 
 const IN_CALL_CONFIRM_YES =
   "You're opted in to receive text messages from CallReady. " +
@@ -4923,8 +4922,11 @@ app.post("/shared-close", async (req, res) => {
     }
 
     vr.gather({
+      input: "speech dtmf",
+      hints: "yes, no",
       numDigits: 1,
-      timeout: 7,
+      timeout: 5,
+      speechTimeout: "auto",
       action: "/gather-result",
       method: "POST",
     });
@@ -4956,21 +4958,23 @@ app.post("/shared-close", async (req, res) => {
 app.post("/gather-result", async (req, res) => {
   try {
     const digits = req.body && req.body.Digits ? String(req.body.Digits) : "";
+    const speech = req.body && req.body.SpeechResult ? String(req.body.SpeechResult).toLowerCase().trim() : "";
     const from = req.body && req.body.From ? String(req.body.From) : "";
     const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
 
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    const pressed1 = digits === "1";
+    const saidYes = /\b(yes|yeah|yep|yup|sure|ok|okay)\b/.test(speech);
+    const pressed1 = digits === "1" || saidYes;
 
     try {
       if (pool) {
         await pool.query(
           "insert into sms_optins (call_sid, from_phone, digits, opted_in, consent_version, source) values ($1, $2, $3, $4, $5, $6)",
-          [callSid, from, digits, pressed1, "sms_optin_v1", "DTMF during call"]
+          [callSid, from, digits || speech, pressed1, "sms_optin_v1", speech ? "speech during call" : "DTMF during call"]
         );
-        console.log(nowIso(), "Saved SMS opt-in to DB", { callSid, from, digits, optedIn: pressed1 });
+        console.log(nowIso(), "Saved SMS opt-in to DB", { callSid, from, digits, speech, optedIn: pressed1 });
       } else {
         console.log(nowIso(), "DB not configured, skipping sms_optins insert");
       }
