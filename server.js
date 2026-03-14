@@ -4942,6 +4942,12 @@ app.post("/shared-close", async (req, res) => {
           twilioCoachingContexts.delete(callSid);
           twilioThresholdContexts.delete(callSid);
           dynamicScenarioRateLimit.delete(callSid);
+          scenarioGenerationStatus.delete(callSid);
+          twilioScenarioFlags.delete(callSid);
+          twilioChooseScenarioRetries.delete(callSid);
+          twilioOpenerPlayedFlags.delete(callSid);
+          twilioReturningCallerContexts.delete(callSid);
+          clearDynamicScenario(callSid);
           console.log(nowIso(), "[CLEANUP] Deleted call state maps", { callSid });
         }
 
@@ -4981,6 +4987,12 @@ app.post("/shared-close", async (req, res) => {
       twilioCoachingContexts.delete(callSid);
       twilioThresholdContexts.delete(callSid);
       dynamicScenarioRateLimit.delete(callSid);
+      scenarioGenerationStatus.delete(callSid);
+      twilioScenarioFlags.delete(callSid);
+      twilioChooseScenarioRetries.delete(callSid);
+      twilioOpenerPlayedFlags.delete(callSid);
+      twilioReturningCallerContexts.delete(callSid);
+      clearDynamicScenario(callSid);
       console.log(nowIso(), "[CLEANUP] Deleted call state maps", { callSid });
     }
 
@@ -9030,7 +9042,6 @@ wss.on("connection", (twilioWs, req) => {
           }
 
           // If no greeting found, log error clearly - scenario config should always have first question
-          console.log("[GREETING_FALLTHROUGH]", { hasSlotSpecs: !!(greetingScenario && greetingScenario.slotSpecs), hasSlots: !!(greetingScenario && greetingScenario.slots), slotSpecKeys: greetingScenario && greetingScenario.slotSpecs ? Object.keys(greetingScenario.slotSpecs).join(",") : "none" });
           if (!startLine) {
             console.error(nowIso(), "[SCENARIO_CONFIG_ERROR] No greeting found for scenario", {
               scenarioTag: callState.scenarioTag,
