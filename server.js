@@ -2981,7 +2981,9 @@ app.post("/gather-confirm-suggested-scenario", async (req, res) => {
 
     const questionText = retry
       ? `Does that sound good?`
-      : `Okay, I found a scenario for you. We'll practice ${scenarioLabel}. Does that sound good?`;
+      : scenarioTag.startsWith('dynamic_')
+        ? `Okay, I put together a scenario for you. We'll practice ${scenarioLabel}. Are you ready?`
+        : `Okay, I found a scenario for you. We'll practice ${scenarioLabel}. Does that sound good?`;
 
     vr.say({ voice: TWILIO_VOICE }, questionText);
 
@@ -4819,16 +4821,22 @@ app.post('/gather-end-confirmation', (req, res) => {
 });
 
 app.post('/process-end-confirmation', (req, res) => {
-  const callSid = req.body.CallSid || req.query.callSid;
   const scenarioTag = req.query.scenarioTag || '';
   const speech = (req.body.SpeechResult || '').toLowerCase().trim();
   const wantsEnd = /\b(yes|yeah|yep|yup|correct|right|end|stop|quit|done)\b/.test(speech);
   const vr = new VoiceResponse();
   if (wantsEnd) {
-    vr.redirect({ method: 'POST' }, `/end?callSid=${callSid}`);
+    vr.redirect({ method: 'POST' }, `/shared-close`);
   } else {
     vr.redirect({ method: 'POST' }, `/stream-roleplay?scenario=${encodeURIComponent(scenarioTag)}`);
   }
+  res.type('text/xml');
+  res.send(vr.toString());
+});
+
+app.post('/emergency-end', (req, res) => {
+  const vr = new VoiceResponse();
+  vr.hangup();
   res.type('text/xml');
   res.send(vr.toString());
 });
@@ -4838,54 +4846,81 @@ app.post("/end", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    const retry = req.query && req.query.retry ? String(req.query.retry) : "0";
-    const isRetry = retry === "1";
-
-    const skipTransition =
-      req.query && req.query.skip_transition ? String(req.query.skip_transition) === "1" : false;
-
-    const from = req.body && req.body.From ? String(req.body.From) : "";
     const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
     const hardEnd = req.query && String(req.query.hard_end || "") === "1";
+    const isSoftEnd = !hardEnd && (req.query && String(req.query.soft_end || "") === "1");
 
-    if (!isRetry && hardEnd) {
+    // Hard threshold: speak limit message then hand off to shared close
+    if (hardEnd) {
       vr.say(TWILIO_HARD_LIMIT_MESSAGE);
     }
 
-    const isSoftEnd = !hardEnd && (req.query && String(req.query.soft_end || "") === "1");
-
-    if (!isRetry && isSoftEnd) {
+    // Soft threshold: speak soft explanation then hand off to shared close
+    if (isSoftEnd) {
       vr.say(
         "That last scenario ran a little over our usual session time, so we'll wrap up here. You can call back anytime to keep practicing."
       );
     }
 
+    // All paths (including self-harm redirect) funnel into /shared-close
+    vr.redirect({ method: "POST" }, "/shared-close");
+    res.type("text/xml").send(vr.toString());
+  } catch (err) {
+    console.error("Error building /end TwiML:", err);
+    res.status(500).send("Error");
+  }
+});
+
+// POST /shared-close
+// Single warm closing endpoint for all non-self-harm exit paths.
+// Handles: SMS opt-in prompt, already-opted-in farewell, Map cleanup, call end logging.
+app.post("/shared-close", async (req, res) => {
+  try {
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const vr = new VoiceResponse();
+
+    const retry = req.query && req.query.retry ? String(req.query.retry) : "0";
+    const isRetry = retry === "1";
+
+    const from = req.body && req.body.From ? String(req.body.From) : "";
+    const callSid = req.body && req.body.CallSid ? String(req.body.CallSid) : "";
+
     if (!isRetry) {
+      // Log call end
+      if (callSid) {
+        fireAndForgetCallEndLog(callSid, "completed");
+      }
+
+      // Check if already opted in
       const alreadyOptedIn = await isAlreadyOptedInByPhone(from);
       if (alreadyOptedIn) {
         console.log(nowIso(), "Skipping SMS opt-in prompt, caller already opted in", { from, callSid });
 
-        if (callSid) {
-          fireAndForgetCallEndLog(callSid, "completed_already_opted_in");
-        }
-
-        if (!skipTransition && !hardEnd) {
-          vr.say(TWILIO_END_TRANSITION);
-        }
-
-        vr.say("We hope your practice session was helpful. If you'd like to share feedback, email us at callready dot live at gmail dot com. We'd love to hear from you. Have a great day.");
+        vr.say(TWILIO_END_TRANSITION);
+        vr.say("We'd love to hear your feedback. You can email us at feedback at callready dot live. Have a great day!");
         vr.hangup();
+
+        // Clean up per-call Maps to prevent memory leaks
+        if (callSid) {
+          twilioCallStates.delete(callSid);
+          lastInstructionsByCallSid.delete(callSid);
+          twilioCoachingContexts.delete(callSid);
+          twilioThresholdContexts.delete(callSid);
+          dynamicScenarioRateLimit.delete(callSid);
+          console.log(nowIso(), "[CLEANUP] Deleted call state maps", { callSid });
+        }
+
         res.type("text/xml").send(vr.toString());
         return;
       }
-    }
 
-    if (!isRetry && !skipTransition && !hardEnd) {
+      // Not opted in: speak transition then opt-in prompt
       vr.say(TWILIO_END_TRANSITION);
+      vr.say({ voice: TWILIO_VOICE }, TWILIO_OPTIN_PROMPT);
+    } else {
+      // Retry: speak retry prompt
+      vr.say({ voice: TWILIO_VOICE }, GATHER_RETRY_PROMPT);
     }
-
-    if (isRetry) vr.say({ voice: TWILIO_VOICE }, GATHER_RETRY_PROMPT);
-    else vr.say({ voice: TWILIO_VOICE }, TWILIO_OPTIN_PROMPT);
 
     vr.gather({
       numDigits: 1,
@@ -4895,8 +4930,7 @@ app.post("/end", async (req, res) => {
     });
 
     if (!isRetry) {
-      const retryUrl = skipTransition ? "/end?retry=1&skip_transition=1" : "/end?retry=1";
-      vr.redirect({ method: "POST" }, retryUrl);
+      vr.redirect({ method: "POST" }, "/shared-close?retry=1");
     } else {
       vr.say(IN_CALL_CONFIRM_NO);
       vr.hangup();
@@ -4914,7 +4948,7 @@ app.post("/end", async (req, res) => {
 
     res.type("text/xml").send(vr.toString());
   } catch (err) {
-    console.error("Error building /end TwiML:", err);
+    console.error("Error building /shared-close TwiML:", err);
     res.status(500).send("Error");
   }
 });
@@ -5458,14 +5492,14 @@ app.post("/gather-wrap-up", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    // If soft threshold exceeded, announce time limit and end
+    // If soft threshold exceeded, announce time limit and redirect to shared close
     if (softThresholdExceeded) {
-      console.log(nowIso(), "Soft threshold exceeded, ending session");
+      console.log(nowIso(), "Soft threshold exceeded, redirecting to /shared-close");
       vr.say(
         { voice: TWILIO_VOICE },
-        "We've reached the time available for this session. We'll wrap up here. Thanks for practicing with CallReady, and call again soon!"
+        "We've reached the time available for this session. We'll wrap up here."
       );
-      vr.hangup();
+      vr.redirect({ method: "POST" }, "/shared-close");
       res.type("text/xml").send(vr.toString());
       return;
     }
@@ -5514,14 +5548,10 @@ app.post("/process-wrap-up", async (req, res) => {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const vr = new VoiceResponse();
 
-    // User wants to end session
+    // User wants to end session — hand off to shared close
     if (userWantsEnd) {
-      console.log(nowIso(), "User ended session");
-      vr.say(
-        { voice: TWILIO_VOICE },
-        "Thanks for practicing with CallReady. We'd love to hear your feedback about your experience so we can use it to improve what we do. Please shoot us an email at callready dot live at gmail dot com and let us know how things went for you. Thanks for practicing, and call again soon!"
-      );
-      vr.hangup();
+      console.log(nowIso(), "User ended session, redirecting to /shared-close");
+      vr.redirect({ method: "POST" }, "/shared-close");
       res.type("text/xml").send(vr.toString());
       return;
     }
@@ -9098,7 +9128,7 @@ wss.on("connection", (twilioWs, req) => {
                 (async () => {
                   try {
                     await twilioClient().calls(callSid).update({
-                      twiml: `<Response><Redirect method="POST">/end?callSid=${callSid}</Redirect></Response>`
+                      twiml: `<Response><Redirect method="POST">/emergency-end?callSid=${callSid}</Redirect></Response>`
                     });
                   } catch (e) {
                     console.log(nowIso(), "Failed to redirect on self_harm_safety_exit:", e && e.message ? e.message : e);
