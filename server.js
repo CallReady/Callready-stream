@@ -11450,7 +11450,7 @@ app.get("/dev/callstate", (req, res) => {
 app.post('/openroad-voice', (req, res) => {
   const VoiceResponse = twilio.twiml.VoiceResponse;
   const vr = new VoiceResponse();
-  vr.say({ voice: 'Polly.Matthew-Generative' }, "Thank you for calling Openroad Apps LLC. Please leave a message and we'll get back to you.");
+  // greeting temporarily disabled for verification
   vr.record({
     action: '/openroad-recording',
     method: 'POST',
