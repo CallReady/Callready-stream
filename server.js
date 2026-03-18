@@ -13,6 +13,7 @@ const { spawn } = require("child_process");
 const scenariosRegistry = require("./scenarios");
 const { setDynamicScenario, getDynamicScenario, clearDynamicScenario, getDynamicScenarioCount } = require("./scenarios/dynamic_store");
 const { generateDynamicScenario } = require("./scenarios/dynamic_generate");
+const nodemailer = require('nodemailer');
 
 const app = express();
 
@@ -11441,6 +11442,64 @@ app.get("/dev/callstate", (req, res) => {
       ok: false,
       error: e && e.message ? e.message : String(e)
     });
+  }
+});
+
+// ─── OPENROAD APPS VOICEMAIL ───────────────────────────────────────────────
+
+app.post('/openroad-voice', (req, res) => {
+  const vr = new VoiceResponse();
+  vr.say({ voice: 'Polly.Matthew-Generative' }, "Thank you for calling Openroad Apps LLC. Please leave a message and we'll get back to you.");
+  vr.record({
+    action: '/openroad-recording',
+    method: 'POST',
+    maxLength: 120,
+    transcribe: true,
+    transcribeCallback: '/openroad-transcription',
+    playBeep: true
+  });
+  vr.say({ voice: 'Polly.Matthew-Generative' }, "We did not receive a recording. Goodbye.");
+  vr.hangup();
+  res.type('text/xml');
+  res.send(vr.toString());
+});
+
+app.post('/openroad-recording', (req, res) => {
+  const vr = new VoiceResponse();
+  vr.say({ voice: 'Polly.Matthew-Generative' }, "Thank you for your message. We'll get back to you as soon as possible. Have a great day.");
+  vr.hangup();
+  res.type('text/xml');
+  res.send(vr.toString());
+});
+
+app.post('/openroad-transcription', async (req, res) => {
+  res.sendStatus(200);
+  const transcriptionText = req.body.TranscriptionText || '(no transcription available)';
+  const recordingUrl = req.body.RecordingUrl || '(no recording URL)';
+  const from = req.body.From || '(unknown)';
+  const callSid = req.body.CallSid || '(unknown)';
+  const calledAt = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD
+    }
+  });
+
+  const mailOptions = {
+    from: process.env.GMAIL_USER,
+    to: 'bradreedthompson@gmail.com',
+    subject: `New Voicemail from ${from} — Openroad Apps`,
+    text: `You have a new voicemail.\n\nFrom: ${from}\nReceived: ${calledAt}\nCall SID: ${callSid}\n\nTranscription:\n${transcriptionText}\n\nRecording URL:\n${recordingUrl}`
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log('[OPENROAD_VOICEMAIL] Email sent successfully', { from, callSid });
+  } catch (e) {
+    console.error('[OPENROAD_VOICEMAIL] Failed to send email', { error: e.message, from, callSid });
   }
 });
 
