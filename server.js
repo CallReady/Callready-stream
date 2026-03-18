@@ -11505,6 +11505,35 @@ app.post('/openroad-transcription', async (req, res) => {
   }
 });
 
+app.post('/openroad-sms', async (req, res) => {
+  res.sendStatus(200);
+  const from = req.body.From || '(unknown)';
+  const body = req.body.Body || '(no message)';
+  const receivedAt = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD
+    }
+  });
+
+  const mailOptions = {
+    from: process.env.GMAIL_USER,
+    to: 'bradreedthompson@gmail.com',
+    subject: `New Text Message from ${from} — Openroad Apps`,
+    text: `You have a new text message.\n\nFrom: ${from}\nReceived: ${receivedAt}\n\nMessage:\n${body}`
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log('[OPENROAD_SMS] Email sent successfully', { from });
+  } catch (e) {
+    console.error('[OPENROAD_SMS] Failed to send email', { error: e.message, from });
+  }
+});
+
 server.listen(PORT, () => {
   global.httpServer = server; // Store server reference for graceful shutdown
   console.log(nowIso(), `Server listening on ${PORT}`, "version:", CALLREADY_VERSION);
