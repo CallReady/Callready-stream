@@ -48,6 +48,7 @@ const STRIPE_PRICE_MEMBER = process.env.STRIPE_PRICE_MEMBER;
 const STRIPE_PRICE_POWER = process.env.STRIPE_PRICE_POWER;
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 const REENGAGE_CRON_SECRET = process.env.REENGAGE_CRON_SECRET;
+const DEV_ALLOWED_NUMBER = (process.env.DEV_ALLOWED_NUMBER || "+15419794582").trim();
 app.post(
   "/webhook/stripe",
   express.raw({ type: "application/json" }),
@@ -1393,7 +1394,6 @@ function resolveScenarioTagFromSpeech(speechRaw) {
 
 app.get("/", (req, res) => res.status(200).send("CallReady server up"));
 
-app.get("/health", (req, res) => res.status(200).json({ ok: true, version: CALLREADY_VERSION }));
 app.get("/healthz", (req, res) => res.status(200).json({ ok: true, version: CALLREADY_VERSION }));
 app.get("/route-check", (req, res) => res.status(200).send("route-check-ok"));
 app.get("/cron/reengage", async (req, res) => {
@@ -2055,7 +2055,7 @@ function buildOpenerSpeechForTwilio(priorContext, callerRuntime, perCallCapSecon
 
 // Health check endpoint for testing/monitoring
 app.get("/health", (req, res) => {
-  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+  res.status(200).json({ status: "ok", version: CALLREADY_VERSION, timestamp: new Date().toISOString() });
 });
 
 app.get("/voice", (req, res) => res.status(200).send("OK. Configure Twilio to POST here."));
@@ -2092,6 +2092,24 @@ app.post("/voice", async (req, res) => {
     res.type("text/xml").send(vr.toString());
     return;
   }
+
+  // ── DEV GATE ────────────────────────────────────────────────────────────────
+  {
+    const incomingFrom = (req.body && req.body.From ? String(req.body.From) : "").trim();
+    if (incomingFrom !== DEV_ALLOWED_NUMBER) {
+      console.log(nowIso(), "[DEV_GATE_BLOCKED]", {
+        last4: incomingFrom.slice(-4),
+        allowed: DEV_ALLOWED_NUMBER.slice(-4)
+      });
+      const vr = new VoiceResponse();
+      vr.say({ voice: TWILIO_VOICE }, "Thanks for calling CallReady. We're still putting the finishing touches on the service and aren't ready for callers just yet. Please check back soon.");
+      vr.hangup();
+      res.type("text/xml").send(vr.toString());
+      return;
+    }
+    console.log(nowIso(), "[DEV_GATE_ALLOWED]", { last4: incomingFrom.slice(-4) });
+  }
+  // ── END DEV GATE ─────────────────────────────────────────────────────────────
 
   try {
     const forceUnavailable =
