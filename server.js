@@ -2101,6 +2101,7 @@ app.post("/voice", async (req, res) => {
         last4: incomingFrom.slice(-4),
         allowed: DEV_ALLOWED_NUMBER.slice(-4)
       });
+      const VoiceResponse = twilio.twiml.VoiceResponse;
       const vr = new VoiceResponse();
       vr.say({ voice: TWILIO_VOICE }, "Thanks for calling CallReady. We're still putting the finishing touches on the service and aren't ready for callers just yet. Please check back soon.");
       vr.hangup();
