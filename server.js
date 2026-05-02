@@ -14,6 +14,7 @@ const scenariosRegistry = require("./scenarios");
 const { setDynamicScenario, getDynamicScenario, clearDynamicScenario, getDynamicScenarioCount } = require("./scenarios/dynamic_store");
 const { generateDynamicScenario } = require("./scenarios/dynamic_generate");
 const nodemailer = require('nodemailer');
+const { buildFreeformInstructions } = require('./instructions/freeform');
 
 const app = express();
 
@@ -203,7 +204,12 @@ function initiateGracefulShutdown() {
 const OPENAI_REALTIME_MODEL =
   process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-mini";
 
+const OPENAI_REALTIME_MODEL_FREEFORM =
+  process.env.OPENAI_REALTIME_MODEL_FREEFORM || "gpt-realtime-1.5";
+
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "marin";
+
+const ROLEPLAY_PATH = (process.env.ROLEPLAY_PATH || "legacy").toLowerCase();
 
 const ROLEPLAY_ENGINE = (process.env.ROLEPLAY_ENGINE || "realtime").toLowerCase();
 const isGatherMode = ROLEPLAY_ENGINE === "gather";
@@ -8842,7 +8848,178 @@ wss.on("connection", (twilioWs, req) => {
     return "";
   }
 
+  function startOpenAIRealtimeFreeform() {
+    if (!OPENAI_API_KEY) {
+      console.error("Missing OPENAI_API_KEY (freeform)");
+      closeAll("Missing OPENAI_API_KEY");
+      return;
+    }
+
+    const sc = callState.scenarioConfig;
+    let scenarioDescription = (sc && sc.practiceLabel)
+      ? sc.practiceLabel
+      : (callState.goal || callState.scenarioTag || "a phone call");
+
+    if (sc && sc.answererRole) {
+      scenarioDescription += ". You are playing the role of: " + sc.answererRole;
+    }
+    if (sc && sc.goalStatement) {
+      scenarioDescription += ". Goal: " + sc.goalStatement;
+    }
+
+    console.log(nowIso(), "[FREEFORM] Starting freeform session", {
+      model: OPENAI_REALTIME_MODEL_FREEFORM,
+      scenarioTag: callState.scenarioTag,
+      scenarioDescriptionLen: scenarioDescription.length
+    });
+
+    const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(OPENAI_REALTIME_MODEL_FREEFORM)}`;
+
+    openaiWs = new WebSocket(url, {
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "OpenAI-Beta": "realtime=v1",
+      },
+    });
+
+    openaiWs.on("open", () => {
+      openaiReady = true;
+      console.log(nowIso(), "[FREEFORM] OpenAI WS open");
+
+      openaiSend({
+        type: "session.update",
+        session: {
+          type: "realtime",
+          audio: {
+            input: { format: "g711_ulaw" },
+            output: { format: "g711_ulaw", voice: OPENAI_VOICE }
+          },
+          turn_detection: {
+            type: "server_vad",
+            create_response: true
+          },
+          temperature: 0.8,
+          modalities: ["audio", "text"],
+          input_audio_transcription: { model: "whisper-1" },
+          instructions: buildFreeformInstructions(scenarioDescription),
+          tools: [
+            {
+              type: "function",
+              name: "request_end_session",
+              description: "Call this tool ONLY when the caller explicitly wants to stop practicing and end the call. Do NOT call this if they are simply finishing the roleplay scenario naturally — only when they break character to ask to stop, hang up, or end the session.",
+              parameters: {
+                type: "object",
+                properties: {
+                  caller_utterance: {
+                    type: "string",
+                    description: "The exact thing the caller said that indicated they want to end"
+                  }
+                },
+                required: ["caller_utterance"]
+              }
+            }
+          ],
+          tool_choice: "auto"
+        }
+      });
+
+      openaiSend({ type: "input_audio_buffer.clear" });
+
+      setPhase("roleplay", "freeform_start");
+      console.log(nowIso(), "[FREEFORM] Session configured, phase=roleplay");
+    });
+
+    openaiWs.on("message", (data) => {
+      let msg;
+      try { msg = JSON.parse(data); } catch { return; }
+
+      // Audio forwarding
+      if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
+        twilioSend({ event: "media", streamSid, media: { payload: msg.delta } });
+        return;
+      }
+
+      // Mark buffer committed
+      if (msg.type === "input_audio_buffer.committed") {
+        return;
+      }
+
+      // Transcript — self-harm detection only
+      if (
+        msg.type === "conversation.item.input_audio_transcription.completed" &&
+        msg.transcript
+      ) {
+        const utter = (msg.transcript || "").trim();
+        if (utter && detectSelfHarmLanguage(utter)) {
+          console.log(nowIso(), "[FREEFORM] SAFETY_ALERT: Self-harm detected", { utter, callSid });
+          setPhase("ending", "self_harm_safety_exit");
+          if (callSid && hasTwilioRest()) {
+            setTimeout(() => {
+              (async () => {
+                try {
+                  await twilioClient().calls(callSid).update({
+                    twiml: `<Response><Redirect method="POST">/emergency-end?callSid=${callSid}</Redirect></Response>`
+                  });
+                } catch (e) {
+                  console.log(nowIso(), "[FREEFORM] Failed to redirect on self_harm:", e && e.message ? e.message : e);
+                }
+                closeAll("freeform_self_harm");
+              })();
+            }, 12000);
+          }
+        }
+        return;
+      }
+
+      // Tool calls via response.done
+      if (msg.type === "response.done") {
+        if (msg.response && msg.response.output) {
+          for (const item of msg.response.output) {
+            if (item.type === "function_call" && item.name === "request_end_session") {
+              try {
+                const args = JSON.parse(item.arguments || '{}');
+                console.log(nowIso(), "[FREEFORM][END_SESSION_REQUESTED]", { utterance: args.caller_utterance, callSid });
+                setPhase("ending", "end_session_tool");
+                if (callSid && hasTwilioRest()) {
+                  (async () => {
+                    try {
+                      await twilioClient().calls(callSid).update({
+                        twiml: `<Response><Redirect method="POST">/gather-end-confirmation?scenarioTag=${encodeURIComponent(callState.scenarioTag || '')}&utterance=${encodeURIComponent(args.caller_utterance || '')}</Redirect></Response>`
+                      });
+                    } catch (e) {
+                      console.log(nowIso(), "[FREEFORM] Failed to redirect on end_session_tool:", e && e.message ? e.message : e);
+                    }
+                    setTimeout(() => closeAll("freeform_end_session_tool"), 3000);
+                  })();
+                } else {
+                  closeAll("freeform_end_session_tool");
+                }
+              } catch (e) {
+                console.log(nowIso(), "[FREEFORM] Error handling request_end_session:", e && e.message ? e.message : e);
+              }
+            }
+          }
+        }
+        return;
+      }
+    });
+
+    openaiWs.on("error", (err) => {
+      console.error(nowIso(), "[FREEFORM] OpenAI WS error:", err && err.message ? err.message : err);
+    });
+
+    openaiWs.on("close", () => {
+      console.log(nowIso(), "[FREEFORM] OpenAI WS closed");
+      openaiReady = false;
+    });
+  }
+
   function startOpenAIRealtime() {
+    if (ROLEPLAY_PATH === "freeform") {
+      startOpenAIRealtimeFreeform();
+      return;
+    }
+
     if (!OPENAI_API_KEY) {
       console.error("Missing OPENAI_API_KEY");
       closeAll("Missing OPENAI_API_KEY");
