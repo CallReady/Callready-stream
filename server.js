@@ -205,7 +205,7 @@ const OPENAI_REALTIME_MODEL =
   process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-mini";
 
 const OPENAI_REALTIME_MODEL_FREEFORM =
-  process.env.OPENAI_REALTIME_MODEL_FREEFORM || "gpt-realtime-1.5";
+  process.env.OPENAI_REALTIME_MODEL_FREEFORM || "gpt-realtime";
 
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "marin";
 
@@ -8850,16 +8850,16 @@ wss.on("connection", (twilioWs, req) => {
 
   function startOpenAIRealtimeFreeform() {
     if (!OPENAI_API_KEY) {
-      console.error("Missing OPENAI_API_KEY (freeform)");
+      console.error("Missing OPENAI_API_KEY");
       closeAll("Missing OPENAI_API_KEY");
       return;
     }
 
+    // Compose scenario description from resolved scenario config
     const sc = callState.scenarioConfig;
     let scenarioDescription = (sc && sc.practiceLabel)
       ? sc.practiceLabel
       : (callState.goal || callState.scenarioTag || "a phone call");
-
     if (sc && sc.answererRole) {
       scenarioDescription += ". You are playing the role of: " + sc.answererRole;
     }
@@ -8868,11 +8868,13 @@ wss.on("connection", (twilioWs, req) => {
     }
 
     console.log(nowIso(), "[FREEFORM] Starting freeform session", {
+      callSid,
       model: OPENAI_REALTIME_MODEL_FREEFORM,
       scenarioTag: callState.scenarioTag,
-      scenarioDescriptionLen: scenarioDescription.length
+      scenarioDescription
     });
 
+    // Same URL/header pattern as legacy — flat beta format, same endpoint
     const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(OPENAI_REALTIME_MODEL_FREEFORM)}`;
 
     openaiWs = new WebSocket(url, {
@@ -8886,18 +8888,13 @@ wss.on("connection", (twilioWs, req) => {
       openaiReady = true;
       console.log(nowIso(), "[FREEFORM] OpenAI WS open");
 
-      openaiSend({
+      const sessionUpdate = {
         type: "session.update",
         session: {
-          type: "realtime",
-          audio: {
-            input: { format: "g711_ulaw" },
-            output: { format: "g711_ulaw", voice: OPENAI_VOICE }
-          },
-          turn_detection: {
-            type: "server_vad",
-            create_response: true
-          },
+          voice: OPENAI_VOICE,
+          input_audio_format: "g711_ulaw",
+          output_audio_format: "g711_ulaw",
+          turn_detection: { type: "server_vad" },
           temperature: 0.8,
           modalities: ["audio", "text"],
           input_audio_transcription: { model: "whisper-1" },
@@ -8921,64 +8918,255 @@ wss.on("connection", (twilioWs, req) => {
           ],
           tool_choice: "auto"
         }
-      });
+      };
 
-      openaiSend({ type: "input_audio_buffer.clear" });
+      console.log(nowIso(), "[FREEFORM] Sending session.update:", JSON.stringify(sessionUpdate));
+      openaiSend(sessionUpdate);
 
-      setPhase("roleplay", "freeform_start");
-      console.log(nowIso(), "[FREEFORM] Session configured, phase=roleplay");
+      // Mirror the legacy 250ms setTimeout exactly: clear buffer, enable VAD, set flags, then ring + opener
+      setTimeout(() => {
+        console.log(nowIso(), "[FREEFORM] Post-open setup", { scenarioChosen: callState.scenarioChosen, scenarioTag: callState.scenarioTag });
+
+        openaiSend({ type: "input_audio_buffer.clear" });
+
+        // Enable VAD with same params as legacy
+        openaiSend({
+          type: "session.update",
+          session: {
+            turn_detection: {
+              type: "server_vad",
+              silence_duration_ms: 1000,
+              prefix_padding_ms: 500,
+              threshold: 0.45,
+              create_response: false,
+              interrupt_response: false,
+            },
+          },
+        });
+
+        // Critical: enable the Twilio media forwarding gate
+        turnDetectionEnabled = true;
+
+        // Set flags as if opener just completed (same as legacy)
+        waitingForFirstCallerSpeech = false;
+        sawSpeechStarted = true;
+        requireCallerSpeechBeforeNextAI = false;
+        sawCallerSpeechSinceLastAIDone = true;
+
+        try {
+          if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
+        } catch { }
+
+        aiSpeakingTailTimer = setTimeout(() => {
+          aiSpeaking = false;
+          try { openaiSend({ type: "input_audio_buffer.clear" }); } catch { }
+        }, 50);
+
+        // Go straight to ring + opener (freeform always has a scenario context)
+        setPhase("connecting", "freeform_connecting");
+        callState.connectingStartedAtMs = Date.now();
+        callState.connectingStep = "ring_audio";
+        callState.role = "answerer";
+        callState.turnIndex = 0;
+
+        console.log(nowIso(), "[FREEFORM] CONNECTING_BEGIN scenarioTag=" + String(callState.scenarioTag || "") + " role=answerer");
+
+        if (streamSid) {
+          streamRingAudioToTwilio(streamSid);
+        }
+
+        // After ring (~3.5s), trigger the AI opener
+        setTimeout(() => {
+          if (callState && callState.connectingStep === "ring_audio" && callState.phase === "connecting") {
+            setPhase("roleplay", "freeform_after_ring");
+            callState.turnIndex = 0;
+
+            const openerMsg = {
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions: "Begin the call now as the person answering. Start speaking immediately."
+              }
+            };
+
+            console.log(nowIso(), "[FREEFORM] Sending opener response.create:", JSON.stringify(openerMsg));
+            openaiSend(openerMsg);
+            callState.turnIndex += 1;
+          }
+        }, 3500);
+      }, 250);
     });
 
     openaiWs.on("message", (data) => {
-      let msg;
-      try { msg = JSON.parse(data); } catch { return; }
+      const msg = safeJsonParse(data.toString());
+      if (!msg) return;
+      recordRealtimeServerEvent(msg);
 
-      // Audio forwarding
-      if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
-        twilioSend({ event: "media", streamSid, media: { payload: msg.delta } });
+      // Log every message type for diagnostics
+      console.log(nowIso(), "[FREEFORM] OpenAI msg:", msg.type);
+
+      if (msg.type === "error") {
+        const errObj = msg.error || msg;
+        const code = errObj && typeof errObj.code === "string" ? errObj.code : null;
+        if (code === "response_cancel_not_active") {
+          console.log(nowIso(), "[FREEFORM] OpenAI non-fatal error (ignored):", errObj);
+          return;
+        }
+        console.log(nowIso(), "[FREEFORM] OpenAI error event (full):", JSON.stringify(errObj));
+        closeAll("openai_freeform_error");
         return;
       }
 
-      // Mark buffer committed
-      if (msg.type === "input_audio_buffer.committed") {
+      if (msg.type === "session.created") {
+        console.log(nowIso(), "[FREEFORM] session.created confirmed");
         return;
       }
 
-      // Transcript — self-harm detection only
+      if (msg.type === "session.updated") {
+        console.log(nowIso(), "[FREEFORM] session.updated confirmed");
+        return;
+      }
+
+      // Caller transcript: self-harm detection only (no slot tracking)
       if (
-        msg.type === "conversation.item.input_audio_transcription.completed" &&
-        msg.transcript
+        msg.type === "conversation.item.input_audio_transcription.completed" ||
+        msg.type === "conversation.item.input_audio_transcription.delta"
       ) {
-        const utter = (msg.transcript || "").trim();
-        if (utter && detectSelfHarmLanguage(utter)) {
-          console.log(nowIso(), "[FREEFORM] SAFETY_ALERT: Self-harm detected", { utter, callSid });
-          setPhase("ending", "self_harm_safety_exit");
-          if (callSid && hasTwilioRest()) {
-            setTimeout(() => {
-              (async () => {
-                try {
-                  await twilioClient().calls(callSid).update({
-                    twiml: `<Response><Redirect method="POST">/emergency-end?callSid=${callSid}</Redirect></Response>`
-                  });
-                } catch (e) {
-                  console.log(nowIso(), "[FREEFORM] Failed to redirect on self_harm:", e && e.message ? e.message : e);
-                }
-                closeAll("freeform_self_harm");
-              })();
-            }, 12000);
+        const utter = String(
+          (typeof msg.transcript === "string" && msg.transcript) ||
+          (typeof msg.text === "string" && msg.text) ||
+          (typeof msg.delta === "string" && msg.delta) ||
+          ""
+        ).trim();
+
+        if (utter && msg.type === "conversation.item.input_audio_transcription.completed") {
+          console.log(nowIso(), "[FREEFORM] Caller transcript:", utter);
+        }
+
+        if (utter) {
+          callState.lastUserUtterance = utter;
+
+          if (detectSelfHarmLanguage(utter)) {
+            console.log(nowIso(), "[FREEFORM] SAFETY_ALERT: Self-harm language detected", { utter, callSid, phase: callState.phase });
+            setPhase("ending", "self_harm_safety_exit");
+            cancelOpenAIResponseIfAnyOnce("self_harm_safety_exit");
+            if (callSid && hasTwilioRest()) {
+              setTimeout(() => {
+                (async () => {
+                  try {
+                    await twilioClient().calls(callSid).update({
+                      twiml: `<Response><Redirect method="POST">/emergency-end?callSid=${callSid}</Redirect></Response>`
+                    });
+                  } catch (e) {
+                    console.log(nowIso(), "[FREEFORM] Failed to redirect on self_harm:", e && e.message ? e.message : e);
+                  }
+                  closeAll("self_harm_safety_exit");
+                })();
+              }, 12000);
+            }
+            openaiResponseCreate({
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                instructions:
+                  "IMPORTANT: Speak this message exactly as written, then stop:\n" +
+                  "It sounds like you might be going through something really difficult right now, and I want to make sure you have support. Please reach out to the 988 Suicide and Crisis Lifeline — you can call or text 9 8 8 any time. Someone is always there to listen. We'll pause our practice session for now. Please take care of yourself.\n" +
+                  "CALLREADY_END: END_CALL_NOW"
+              }
+            }, "self_harm_exit");
+            return;
           }
         }
         return;
       }
 
-      // Tool calls via response.done
+      // Forward AI audio to Twilio
+      if (msg.type === "response.audio.delta" && msg.delta && streamSid) {
+        if (aiAudioBytesThisResponse === 0) {
+          aiAudioStartAtMs = Date.now();
+        }
+        const b = Buffer.from(msg.delta, "base64").length;
+        aiAudioBytesThisResponse += b;
+        const audioMs = Math.floor((aiAudioBytesThisResponse / 8000) * 1000);
+        listenBlockUntilMs = (aiAudioStartAtMs || Date.now()) + audioMs + 1000;
+
+        if (!aiSpeaking) {
+          aiSpeaking = true;
+          try {
+            if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
+          } catch { }
+          aiSpeakingTailTimer = null;
+        }
+
+        twilioSend({ event: "media", streamSid, media: { payload: msg.delta } });
+        return;
+      }
+
+      if (msg.type === "input_audio_buffer.speech_started") {
+        sawSpeechStarted = true;
+        if (waitingForFirstCallerSpeech) {
+          waitingForFirstCallerSpeech = false;
+        }
+        if (turnDetectionEnabled) {
+          maybeStartSessionTimer();
+        }
+        sawCallerSpeechSinceLastAIDone = true;
+        return;
+      }
+
+      if (msg.type === "input_audio_buffer.speech_stopped") {
+        if (!turnDetectionEnabled) return;
+        if (endingRequested || endRedirectRequested) return;
+
+        if (callState.phase === "roleplay" && !sawCallerSpeechSinceLastAIDone) {
+          console.log(nowIso(), "[FREEFORM] Roleplay guard: ignoring speech_stopped (caller did not speak)");
+          return;
+        }
+
+        if (responseActive) {
+          console.log(nowIso(), "[FREEFORM] Skipping speech_stopped: response already active");
+          return;
+        }
+
+        if (!sawSpeechStarted) {
+          console.log(nowIso(), "[FREEFORM] Ignoring speech_stopped without speech_started");
+          return;
+        }
+
+        sawSpeechStarted = false;
+        requireCallerSpeechBeforeNextAI = false;
+        sawCallerSpeechSinceLastAIDone = true;
+
+        // Freeform: no per-turn instructions; session instructions carry the full context
+        openaiSend({
+          type: "response.create",
+          response: { modalities: ["audio", "text"] }
+        });
+        return;
+      }
+
+      if (msg.type === "response.created") {
+        responseActive = true;
+        aiAudioBytesThisResponse = 0;
+        return;
+      }
+
       if (msg.type === "response.done") {
+        responseActive = false;
+        callState.openaiResponseActive = false;
+        aiAudioStartAtMs = 0;
+
+        const rawText = extractRawTextFromResponse(msg);
+        const cleanedText = stripJsonMarkers(rawText);
+
+        // Handle tool calls
         if (msg.response && msg.response.output) {
           for (const item of msg.response.output) {
             if (item.type === "function_call" && item.name === "request_end_session") {
               try {
                 const args = JSON.parse(item.arguments || '{}');
                 console.log(nowIso(), "[FREEFORM][END_SESSION_REQUESTED]", { utterance: args.caller_utterance, callSid });
+                cancelOpenAIResponseIfAnyOnce("end_session_tool");
                 setPhase("ending", "end_session_tool");
                 if (callSid && hasTwilioRest()) {
                   (async () => {
@@ -8989,28 +9177,76 @@ wss.on("connection", (twilioWs, req) => {
                     } catch (e) {
                       console.log(nowIso(), "[FREEFORM] Failed to redirect on end_session_tool:", e && e.message ? e.message : e);
                     }
-                    setTimeout(() => closeAll("freeform_end_session_tool"), 3000);
+                    setTimeout(() => closeAll("end_session_tool"), 3000);
                   })();
                 } else {
-                  closeAll("freeform_end_session_tool");
+                  closeAll("end_session_tool");
                 }
               } catch (e) {
                 console.log(nowIso(), "[FREEFORM] Error handling request_end_session:", e && e.message ? e.message : e);
               }
+            } else if (item.type === "function_call") {
+              console.log(nowIso(), "[FREEFORM] WARNING: Unexpected tool call in freeform path (ignored):", item.name);
             }
           }
         }
+
+        // Flush any queued response.create (same interlocking mechanism as legacy)
+        if (callState.pendingResponseCreate) {
+          const queued = callState.pendingResponseCreate;
+          callState.pendingResponseCreate = null;
+          console.log(nowIso(), "[FREEFORM] Flushing queued response.create after response.done");
+          openaiSend(queued);
+          return;
+        }
+
+        // Safety net: if AI outputs CALLREADY_END marker, route to end
+        const aiRequestedEnd = responseTextRequestsEnd(cleanedText);
+        if (!endRedirectRequested && aiRequestedEnd) {
+          (async () => {
+            cancelOpenAIResponseIfAnyOnce("ai_end");
+            await requestEnd("AI requested end", { skipTransition: true });
+          })().catch((e) => { console.error(nowIso(), "[FREEFORM][SILENT_ERROR]", e && e.message ? e.message : e); });
+          return;
+        }
+
+        // Clear aiSpeaking tail (same as legacy)
+        try {
+          if (aiSpeakingTailTimer) clearTimeout(aiSpeakingTailTimer);
+        } catch { }
+
+        aiSpeakingTailTimer = setTimeout(() => {
+          aiSpeaking = false;
+          try { openaiSend({ type: "input_audio_buffer.clear" }); } catch { }
+        }, 50);
+
+        requireCallerSpeechBeforeNextAI = false;
+        sawCallerSpeechSinceLastAIDone = true;
         return;
       }
     });
 
-    openaiWs.on("error", (err) => {
-      console.error(nowIso(), "[FREEFORM] OpenAI WS error:", err && err.message ? err.message : err);
+    openaiWs.on("close", (code, reason) => {
+      console.log(nowIso(), "[FREEFORM] OpenAI WS closed", { code, reason: reason ? reason.toString() : null });
+      openaiReady = false;
+
+      if (closing) return;
+      if (coachingRedirectRequested) return;
+      if (endingRequested) return;
+      if (endRedirectRequested) return;
+
+      redirectCallToUnavailable("openai_ws_closed");
     });
 
-    openaiWs.on("close", () => {
-      console.log(nowIso(), "[FREEFORM] OpenAI WS closed");
+    openaiWs.on("error", (err) => {
+      const msgText = err && err.message ? String(err.message) : "";
+      if (msgText.includes("response_cancel_not_active")) {
+        console.log(nowIso(), "[FREEFORM] OpenAI WS non-fatal error (ignored):", msgText);
+        return;
+      }
+      console.log(nowIso(), "[FREEFORM] OpenAI WS error:", err && err.message ? err.message : err);
       openaiReady = false;
+      closeAll("openai_ws_error");
     });
   }
 
