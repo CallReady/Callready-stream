@@ -205,7 +205,7 @@ const OPENAI_REALTIME_MODEL =
   process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-mini";
 
 const OPENAI_REALTIME_MODEL_FREEFORM =
-  process.env.OPENAI_REALTIME_MODEL_FREEFORM || "gpt-realtime";
+  process.env.OPENAI_REALTIME_MODEL_FREEFORM || "gpt-realtime-2";
 
 const OPENAI_VOICE = process.env.OPENAI_VOICE || "marin";
 
